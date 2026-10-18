@@ -1,7 +1,13 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace Wvb.Generated
 {
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public unsafe delegate int ManagedDispatchDelegate(
+        uint operationId, byte* request, nuint requestLength,
+        byte* response, nuint responseCapacity, nuint* responseLength);
+
     public static class ManagedDispatcher
     {
         public const int Ok = 0;
@@ -12,6 +18,37 @@ namespace Wvb.Generated
         {
             if (!BitConverter.IsLittleEndian)
                 throw new PlatformNotSupportedException("WinAPI VM Bridge scalar encoding requires little-endian Windows");
+        }
+        public static unsafe int DispatchUnmanaged(
+            uint operationId, byte* request, nuint requestLength,
+            byte* response, nuint responseCapacity, nuint* responseLength)
+        {
+            if (responseLength is null
+                || response is null
+                || (request is null && requestLength != 0)
+                || requestLength > int.MaxValue
+                || responseCapacity > int.MaxValue)
+                return InvalidBuffer;
+            *responseLength = 0;
+            try
+            {
+                byte[] managedRequest = new byte[(int)requestLength];
+                if (managedRequest.Length != 0)
+                    Marshal.Copy((IntPtr)request, managedRequest, 0, managedRequest.Length);
+                byte[] managedResponse = new byte[(int)responseCapacity];
+                int status = Dispatch(
+                    operationId, managedRequest, managedResponse, out int managedLength);
+                if (managedLength < 0 || managedLength > managedResponse.Length)
+                    return InvocationFailed;
+                if (managedLength != 0)
+                    Marshal.Copy(managedResponse, 0, (IntPtr)response, managedLength);
+                *responseLength = (nuint)managedLength;
+                return status;
+            }
+            catch
+            {
+                return InvocationFailed;
+            }
         }
         public static int Dispatch(
             uint operationId, byte[] request, byte[] response, out int responseLength)

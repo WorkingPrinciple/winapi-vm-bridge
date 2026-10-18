@@ -11,6 +11,7 @@ members = [
   "crates/wvb-inspect",
   "crates/wvb-ir",
   "crates/wvb-lifecycle",
+  "crates/wvb-managed-host",
   "crates/wvb-marshal",
   "crates/wvb-protocol",
   "crates/wvb-runtime",

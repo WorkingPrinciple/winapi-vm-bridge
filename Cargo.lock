@@ -1192,6 +1192,14 @@ name = "wvb-lifecycle"
 version = "0.2.0"
 
 [[package]]
+name = "wvb-managed-host"
+version = "0.2.0"
+dependencies = [
+ "sha2",
+ "wvb-broker",
+]
+
+[[package]]
 name = "wvb-marshal"
 version = "0.2.0"
 

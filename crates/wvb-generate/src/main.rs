@@ -156,11 +156,41 @@ fn generate_managed_assembly(
              \x20   <ImplicitUsings>disable</ImplicitUsings>\n\
              \x20   <Deterministic>true</Deterministic>\n\
              \x20 </PropertyGroup>\n\
+             \x20 <ItemGroup>\n\
+             \x20   <Compile Remove=\"Dispatcher.generated.cs\" />\n\
+             \x20 </ItemGroup>\n\
              </Project>\n",
         escape_xml(&managed.assembly_name),
         escape_xml(&managed.assembly_version),
         escape_xml(&managed.assembly_version),
         escape_xml(&managed.root_namespace),
+    );
+    let dispatcher_project = format!(
+        "<Project Sdk=\"Microsoft.NET.Sdk\">\n\
+             \x20 <PropertyGroup>\n\
+             \x20   <TargetFramework>{target_framework}</TargetFramework>\n\
+             \x20   <AssemblyName>{}.WvbDispatcher</AssemblyName>\n\
+             \x20   <RootNamespace>Wvb.Generated</RootNamespace>\n\
+             \x20   <PlatformTarget>x64</PlatformTarget>\n\
+             \x20   <Prefer32Bit>false</Prefer32Bit>\n\
+             \x20   <Nullable>enable</Nullable>\n\
+             \x20   <ImplicitUsings>disable</ImplicitUsings>\n\
+             \x20   <AllowUnsafeBlocks>true</AllowUnsafeBlocks>\n\
+             \x20   <Deterministic>true</Deterministic>\n\
+             \x20   <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>\n\
+             \x20   <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n\
+             \x20 </PropertyGroup>\n\
+             \x20 <ItemGroup>\n\
+             \x20   <Compile Include=\"Dispatcher.generated.cs\" />\n\
+             \x20   <Reference Include=\"{}\">\n\
+             \x20     <HintPath>{}</HintPath>\n\
+             \x20     <Private>true</Private>\n\
+             \x20   </Reference>\n\
+             \x20 </ItemGroup>\n\
+             </Project>\n",
+        escape_xml(&managed.assembly_name),
+        escape_xml(&managed.assembly_name),
+        escape_xml(&contract.target.relative_path),
     );
     let hash = contract.contract_hash()?;
     let hash_literal = hash
@@ -187,8 +217,12 @@ fn generate_managed_assembly(
              }}\n\n",
     );
     let mut dispatcher = String::from(
-        "using System;\n\n\
+        "using System;\nusing System.Runtime.InteropServices;\n\n\
          namespace Wvb.Generated\n{\n\
+         \x20   [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n\
+         \x20   public unsafe delegate int ManagedDispatchDelegate(\n\
+         \x20       uint operationId, byte* request, nuint requestLength,\n\
+         \x20       byte* response, nuint responseCapacity, nuint* responseLength);\n\n\
          \x20   public static class ManagedDispatcher\n\
          \x20   {\n\
          \x20       public const int Ok = 0;\n\
@@ -199,6 +233,37 @@ fn generate_managed_assembly(
          \x20       {\n\
          \x20           if (!BitConverter.IsLittleEndian)\n\
          \x20               throw new PlatformNotSupportedException(\"WinAPI VM Bridge scalar encoding requires little-endian Windows\");\n\
+         \x20       }\n\
+         \x20       public static unsafe int DispatchUnmanaged(\n\
+         \x20           uint operationId, byte* request, nuint requestLength,\n\
+         \x20           byte* response, nuint responseCapacity, nuint* responseLength)\n\
+         \x20       {\n\
+         \x20           if (responseLength is null\n\
+         \x20               || response is null\n\
+         \x20               || (request is null && requestLength != 0)\n\
+         \x20               || requestLength > int.MaxValue\n\
+         \x20               || responseCapacity > int.MaxValue)\n\
+         \x20               return InvalidBuffer;\n\
+         \x20           *responseLength = 0;\n\
+         \x20           try\n\
+         \x20           {\n\
+         \x20               byte[] managedRequest = new byte[(int)requestLength];\n\
+         \x20               if (managedRequest.Length != 0)\n\
+         \x20                   Marshal.Copy((IntPtr)request, managedRequest, 0, managedRequest.Length);\n\
+         \x20               byte[] managedResponse = new byte[(int)responseCapacity];\n\
+         \x20               int status = Dispatch(\n\
+         \x20                   operationId, managedRequest, managedResponse, out int managedLength);\n\
+         \x20               if (managedLength < 0 || managedLength > managedResponse.Length)\n\
+         \x20                   return InvocationFailed;\n\
+         \x20               if (managedLength != 0)\n\
+         \x20                   Marshal.Copy(managedResponse, 0, (IntPtr)response, managedLength);\n\
+         \x20               *responseLength = (nuint)managedLength;\n\
+         \x20               return status;\n\
+         \x20           }\n\
+         \x20           catch\n\
+         \x20           {\n\
+         \x20               return InvocationFailed;\n\
+         \x20           }\n\
          \x20       }\n\
          \x20       public static int Dispatch(\n\
          \x20           uint operationId, byte[] request, byte[] response, out int responseLength)\n\
@@ -226,6 +291,10 @@ fn generate_managed_assembly(
     fs::write(
         output.join(format!("{}.csproj", managed.assembly_name)),
         project,
+    )?;
+    fs::write(
+        output.join(format!("{}.WvbDispatcher.csproj", managed.assembly_name)),
+        dispatcher_project,
     )?;
     fs::write(output.join("Proxy.generated.cs"), source)?;
     fs::write(output.join("Dispatcher.generated.cs"), dispatcher)?;
@@ -825,6 +894,7 @@ mod tests {
 
         for file in [
             "Example.Math.csproj",
+            "Example.Math.WvbDispatcher.csproj",
             "Proxy.generated.cs",
             "Dispatcher.generated.cs",
             "contract.canonical.json",
@@ -846,6 +916,11 @@ mod tests {
         let project = fs::read_to_string(first.path().join("Example.Math.csproj")).unwrap();
         assert!(project.contains("<AssemblyVersion>1.0.0.0</AssemblyVersion>"));
         assert!(project.contains("<PlatformTarget>x64</PlatformTarget>"));
+        assert!(project.contains("<Compile Remove=\"Dispatcher.generated.cs\" />"));
+        let dispatcher_project =
+            fs::read_to_string(first.path().join("Example.Math.WvbDispatcher.csproj")).unwrap();
+        assert!(dispatcher_project.contains("<AllowUnsafeBlocks>true</AllowUnsafeBlocks>"));
+        assert!(dispatcher_project.contains("<HintPath>lib/Example.Math.dll</HintPath>"));
         let dispatcher = fs::read_to_string(first.path().join("Dispatcher.generated.cs")).unwrap();
         assert!(dispatcher.contains("case 1u:"));
         assert!(dispatcher.contains("case 2u:"));
@@ -853,6 +928,7 @@ mod tests {
             dispatcher.contains("global::@Example.@Math.@Calculator.@Add(argument0, argument1)")
         );
         assert!(dispatcher.contains("responseLength = 4;"));
+        assert!(dispatcher.contains("public static unsafe int DispatchUnmanaged("));
     }
 
     #[test]

@@ -11,4 +11,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Dispatcher.generated.cs" />
+  </ItemGroup>
 </Project>

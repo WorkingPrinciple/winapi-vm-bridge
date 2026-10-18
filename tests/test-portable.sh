@@ -18,6 +18,8 @@ cargo run -q -p wvb-generate -- \
   --out "$tmp/managed"
 cmp "$tmp/managed/Example.ManagedMath.csproj" \
   managed/fixtures/example-managed-math/Example.ManagedMath.csproj
+cmp "$tmp/managed/Example.ManagedMath.WvbDispatcher.csproj" \
+  managed/fixtures/example-managed-math/Example.ManagedMath.WvbDispatcher.csproj
 cmp "$tmp/managed/Proxy.generated.cs" \
   managed/fixtures/example-managed-math/Proxy.generated.cs
 cmp "$tmp/managed/Dispatcher.generated.cs" \
@@ -35,6 +37,11 @@ if command -v dotnet >/dev/null 2>&1; then
     dotnet build managed/fixtures/vendor-managed-math/Vendor.ManagedMath.csproj \
       -c Release --nologo
   target=managed/fixtures/vendor-managed-math/bin/Release/net8.0-windows/Example.ManagedMath.dll
+  mkdir -p "$tmp/managed/lib"
+  cp "$target" "$tmp/managed/lib/Example.ManagedMath.dll"
+  DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+    dotnet build "$tmp/managed/Example.ManagedMath.WvbDispatcher.csproj" \
+      -c Release --nologo
   DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
     dotnet run \
       --project managed/tools/Wvb.ManagedInspector/Wvb.ManagedInspector.csproj \
@@ -50,6 +57,14 @@ if command -v dotnet >/dev/null 2>&1; then
     --out "$tmp/inspected-generated"
   cmp "$tmp/inspected-generated/Dispatcher.generated.cs" \
     managed/fixtures/example-managed-math/Dispatcher.generated.cs
+  cmp "$tmp/inspected-generated/Example.ManagedMath.WvbDispatcher.csproj" \
+    managed/fixtures/example-managed-math/Example.ManagedMath.WvbDispatcher.csproj
+  mkdir -p "$tmp/inspected-generated/lib"
+  cp "$target" "$tmp/inspected-generated/lib/Example.ManagedMath.dll"
+  DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+    dotnet build \
+      "$tmp/inspected-generated/Example.ManagedMath.WvbDispatcher.csproj" \
+      -c Release --nologo
   DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
     dotnet run \
       --project managed/fixtures/managed-dispatch-oracle/ManagedDispatchOracle.csproj \
@@ -72,6 +87,7 @@ if command -v dotnet >/dev/null 2>&1; then
   fi
   printf '%s\n' "$unsupported_output" | grep -q 'is not a static type'
 fi
+./native/managed-host/build-and-test.sh
 grep -q 'DLL that exists in Windows' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
 if grep -R -E '(xuid|gamertag|token|signature).*[=:][[:space:]]*[0-9A-Za-z+/]{20,}' \
