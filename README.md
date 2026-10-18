@@ -83,7 +83,9 @@ The `canonical-runtime` baseline through `d5b8e89` includes:
 
 This branch additionally contains reviewed bundle admission, durable admission
 and operation state, transfer lifecycle, bounded native process codecs and a
-deterministic CrossOver Job Object oracle.
+deterministic CrossOver Job Object oracle. It also builds byte-reproducible
+unsigned macOS and Windows runtime archives with embedded SPDX and external
+artifact-bound provenance.
 
 ## Build and test
 

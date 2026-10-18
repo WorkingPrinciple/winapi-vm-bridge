@@ -6,6 +6,7 @@ trap 'rm -rf "$tmp"' EXIT
 python3 -m unittest \
   tests.test_runtime_acceptance \
   tests.test_runtime_metadata \
+  tests.test_runtime_package_builder \
   tests.test_topology_benchmark \
   tests.test_whiny_pin
 
@@ -69,6 +70,7 @@ for script in \
   setup/run_utm_managed_e2e.py \
   setup/run_utm_acceptance.py \
   setup/generate_runtime_metadata.py \
+  setup/build_runtime_package.py \
   setup/run_topology_benchmark.py; do
   python3 -m py_compile "$script"
   test -x "$script"
