@@ -22,6 +22,10 @@ class GeneratorTests(unittest.TestCase):
             self.assertTrue((target / "contract.json").is_file())
             self.assertIn("ExampleAdd", (target / "dispatch.generated.cpp").read_text())
             self.assertIn("real application operation", (target / "CHECKLIST.md").read_text())
+            task = (target / "IMPLEMENTATION_TASK.md").read_text()
+            self.assertIn("Implement adapter `example.math`", task)
+            self.assertIn("`Add` → `ExampleAdd`", task)
+            self.assertIn("Unresolved operations", task)
 
     def test_unknown_top_level_field_rejected(self):
         data = json.loads(Path("examples/example-math/adapter.json").read_text())

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 from pathlib import Path
 
 SCALARS = {"i32", "u32", "i64", "u64", "f32", "f64", "bool", "hresult"}
@@ -104,6 +103,92 @@ def render_dispatch(data: dict, custom: list[str]) -> str:
     )
 
 
+def render_implementation_task(data: dict, custom: list[str]) -> str:
+    lines = [
+        f"# Implement adapter `{data['adapter']}`",
+        "",
+        "This task is generated from the normalized adapter contract. Do not broaden it.",
+        "",
+        "## Frozen target",
+        "",
+        f"- DLL: `{data['windows']['dll']}`",
+        f"- Expected SHA-256: `{data['windows']['sha256']}`",
+        f"- Schema version: `{data['schemaVersion']}`",
+        "",
+        "## Operations",
+        "",
+    ]
+    for name, operation in data["operations"].items():
+        lines += [
+            f"### `{name}` → `{operation['export']}`",
+            "",
+            f"- Calling convention: `{operation['callingConvention']}`",
+            f"- Timeout: `{operation['timeoutMs']} ms`",
+            f"- Return: `{operation['returns']}`",
+            f"- Custom marshaller required: `{'yes' if name in custom else 'no'}`",
+            "",
+            "| Parameter | ABI type | Direction | Bound | Generated? | Required evidence |",
+            "|---|---|---|---:|---|---|",
+        ]
+        for parameter in operation["parameters"]:
+            needs_custom = parameter["type"] in {"opaque_handle", "custom"}
+            bound = parameter.get("maxBytes", "")
+            evidence = parameter.get("notes") or (
+                "Resolve ownership/lifetime/identity" if needs_custom else "Manifest contract")
+            lines.append(
+                f"| `{parameter['name']}` | `{parameter['type']}` | "
+                f"`{parameter['direction']}` | `{bound}` | "
+                f"{'no' if needs_custom else 'yes'} | {evidence} |")
+        if operation.get("notes"):
+            lines += ["", f"Notes: {operation['notes']}"]
+        lines.append("")
+    lines += [
+        "## Required implementation",
+        "",
+        "1. Preserve export name, calling convention, structure packing and native errors.",
+        "2. Complete only the unresolved marshalling listed above.",
+        "3. Keep DLL path/export allowlisted from the installed manifest.",
+        "4. Bound all payloads and preserve null/insufficient-buffer semantics.",
+        "5. Model remote handles with owner, generation, close and restart invalidation.",
+        "6. Preserve async begin/completion/result/cancellation and callback threading.",
+        "7. Never log credentials, capabilities, identifiers, profile values or payloads.",
+        "",
+        "## Required tests",
+        "",
+        "- generated contract/schema validation;",
+        "- Windows-local oracle for every operation;",
+        "- Wine shim ↔ VM dispatcher parity;",
+        "- minimum/maximum/null/malformed/insufficient-buffer cases;",
+        "- timeout, cancellation, disconnect, restart and stale-handle cases;",
+        "- callback ordering/reentrancy/threading where applicable;",
+        "- deterministic unsigned build and input/output hash receipt;",
+        "- one real application operation end to end.",
+        "",
+        "## Stop conditions",
+        "",
+        "Stop and report the exact blocker instead of guessing when ownership, allocator, "
+        "packing, callback thread, COM apartment, handle lifetime, authorization, or "
+        "security semantics cannot be established from authoritative metadata or "
+        "approved runtime evidence.",
+        "",
+    ]
+    if custom:
+        lines += [
+            "## Unresolved operations",
+            "",
+            *[f"- `{name}` requires custom marshalling." for name in custom],
+            "",
+        ]
+    else:
+        lines += [
+            "## Unresolved operations",
+            "",
+            "None from the manifest type model. Runtime parity is still required.",
+            "",
+        ]
+    return "\n".join(lines)
+
+
 def generate(manifest: Path, out: Path) -> None:
     data = json.loads(manifest.read_text())
     custom = validate(data)
@@ -112,8 +197,8 @@ def generate(manifest: Path, out: Path) -> None:
     (target / "contract.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
     (target / "shim.generated.c").write_text(render_shim(data, custom))
     (target / "dispatch.generated.cpp").write_text(render_dispatch(data, custom))
-    prompt = Path(__file__).with_name("templates") / "AI_ADAPTER_PROMPT.md"
-    shutil.copyfile(prompt, target / "IMPLEMENTATION_TASK.md")
+    (target / "IMPLEMENTATION_TASK.md").write_text(
+        render_implementation_task(data, custom))
     checklist = [
         "# Conformance checklist",
         "",
@@ -143,4 +228,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
