@@ -8,7 +8,7 @@
 > **Implementation destination:** reviewable checkpoints on the active branch until the complete release path passes
 > **Revision date:** 2026-10-18  
 > **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation; three adversarial revise loops were completed, their consolidated findings are binding, and the owner directed implementation to continue after those findings were corrected  
-> **Current state:** frozen Whiny v0.3.0 native and managed scalar bundles are independently verified, pinned and admitted; duplicate VM-owned inspection/IR/generation source has been removed atomically; the native frozen bundle executes under CrossOver; managed frozen bundle build and VM topology acceptance remain pending
+> **Current state:** frozen Whiny v0.3.0 native and managed scalar bundles are independently verified, pinned, separately execution-admitted and exercised under CrossOver; duplicate VM-owned inspection/IR/generation source has been removed atomically; deterministic/security gates and final implementation review pass; Windows VM clean-machine acceptance and external signing remain human/runtime holds
 > **Execution mode:** approved repository edit/build/test program; no publish, signing-secret access, production deployment or infrastructure mutation is authorized
 > **Notation:** **[D]** binding decision; **[GATE]** deterministic acceptance; **[STOP]** no inference or implementation beyond this point; **[CONDITIONAL]** implemented only after its specified evidence trigger
 
@@ -2455,7 +2455,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | deterministic packages and lifecycle controls ready; live Windows clean-machine run blocked on guest-agent/login control |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
 | R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic selection/correlation tests complete |
-| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | pending |
+| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | complete; final source-bound implementation review PASS at `3201547` |
 
 Rejected or conditional scope:
 
