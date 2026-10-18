@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <marker id="blue-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#0078d4"/>
+    </marker>
+    <marker id="green-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#107c10"/>
+    </marker>
+    <style>
+      text{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;fill:#242424}
+      .title{font-size:44px;font-weight:600}
+      .subtitle{font-size:22px;fill:#616161}
+      .boundary{fill:#fafafa;stroke:#8a8886;stroke-width:2;stroke-dasharray:8 6}
+      .label{font-size:15px;font-weight:600;fill:#605e5c;letter-spacing:1px}
+      .name{font-size:21px;font-weight:600}
+      .detail{font-size:16px;fill:#605e5c}
+      .node{fill:#fff;stroke:#c8c6c4;stroke-width:1.5}
+      .request{fill:none;stroke:#0078d4;stroke-width:4;marker-end:url(#blue-arrow)}
+      .result{fill:none;stroke:#107c10;stroke-width:4;marker-end:url(#green-arrow)}
+      .blue{fill:#0078d4}.orange{fill:#d83b01}.green{fill:#107c10}.gray{fill:#605e5c}
+    </style>
+  </defs>
+
+  <rect width="1200" height="630" fill="#ffffff"/>
+  <text x="52" y="62" class="title">WinAPI VM Bridge</text>
+  <text x="52" y="96" class="subtitle">Use a Windows DLL from an app running on macOS + Wine.</text>
+
+  <rect x="52" y="132" width="410" height="348" rx="4" class="boundary"/>
+  <text x="72" y="160" class="label">MAC HOST</text>
+
+  <!-- App icon -->
+  <rect x="91" y="196" width="144" height="96" rx="5" class="node"/>
+  <rect x="91" y="196" width="144" height="20" rx="5" class="blue"/>
+  <circle cx="105" cy="206" r="3.5" fill="#fff"/>
+  <circle cx="117" cy="206" r="3.5" fill="#fff" opacity=".75"/>
+  <path d="M121 308H205L217 322H109Z" fill="#d2d0ce"/>
+  <text x="163" y="348" text-anchor="middle" class="name">app.exe</text>
+  <text x="163" y="372" text-anchor="middle" class="detail">running under Wine</text>
+
+  <!-- Missing/proxy DLL icon -->
+  <path d="M291 195H385L413 223V292H291Z" class="node"/>
+  <path d="M385 195V223H413" fill="none" stroke="#c8c6c4" stroke-width="1.5"/>
+  <rect x="304" y="237" width="96" height="34" rx="3" fill="#fff4ce" stroke="#d83b01" stroke-width="1.5"/>
+  <text x="352" y="260" text-anchor="middle" font-size="16" font-weight="600" fill="#a4262c">DLL proxy</text>
+  <text x="352" y="348" text-anchor="middle" class="name">vendor.dll</text>
+  <text x="352" y="372" text-anchor="middle" class="detail">missing here → generated shim</text>
+
+  <path d="M236 244H278" stroke="#605e5c" stroke-width="2" marker-end="url(#blue-arrow)"/>
+
+  <!-- Pairing -->
+  <rect x="497" y="205" width="206" height="196" rx="4" class="node"/>
+  <circle cx="600" cy="258" r="35" fill="#e5f1fb" stroke="#0078d4" stroke-width="2"/>
+  <path d="M584 258H617M607 258V270M596 258V267" stroke="#0078d4" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="581" cy="258" r="8" fill="none" stroke="#0078d4" stroke-width="4"/>
+  <text x="600" y="323" text-anchor="middle" class="name">Private RPC</text>
+  <text x="600" y="348" text-anchor="middle" class="detail">one-time pairing code</text>
+  <text x="600" y="374" text-anchor="middle" class="detail">not a user/account login</text>
+
+  <path d="M414 242C458 242 465 242 486 242" class="request"/>
+  <path d="M497 350C467 350 445 350 414 350" class="result"/>
+  <text x="443" y="224" font-size="15" fill="#0078d4">call</text>
+  <text x="438" y="376" font-size="15" fill="#107c10">result</text>
+
+  <rect x="738" y="132" width="410" height="348" rx="4" class="boundary"/>
+  <text x="758" y="160" class="label">WINDOWS VM</text>
+
+  <!-- Broker/server icon -->
+  <rect x="782" y="195" width="128" height="112" rx="4" class="node"/>
+  <rect x="797" y="211" width="98" height="20" rx="2" fill="#0078d4"/>
+  <circle cx="884" cy="221" r="4" fill="#fff"/>
+  <rect x="797" y="241" width="98" height="20" rx="2" fill="#deecf9"/>
+  <circle cx="884" cy="251" r="4" fill="#0078d4"/>
+  <rect x="797" y="271" width="98" height="20" rx="2" fill="#deecf9"/>
+  <circle cx="884" cy="281" r="4" fill="#0078d4"/>
+  <text x="846" y="348" text-anchor="middle" class="name">Broker</text>
+  <text x="846" y="372" text-anchor="middle" class="detail">allowlisted calls only</text>
+
+  <!-- Real DLL icon -->
+  <path d="M960 195H1054L1082 223V292H960Z" class="node"/>
+  <path d="M1054 195V223H1082" fill="none" stroke="#c8c6c4" stroke-width="1.5"/>
+  <rect x="973" y="237" width="96" height="34" rx="3" fill="#dff6dd" stroke="#107c10" stroke-width="1.5"/>
+  <text x="1021" y="260" text-anchor="middle" font-size="16" font-weight="600" fill="#0b6a0b">real DLL</text>
+  <text x="1021" y="348" text-anchor="middle" class="name">vendor.dll</text>
+  <text x="1021" y="372" text-anchor="middle" class="detail">installed in Windows</text>
+
+  <path d="M911 244H947" stroke="#605e5c" stroke-width="2" marker-end="url(#blue-arrow)"/>
+  <path d="M703 242C717 242 723 242 727 242" class="request"/>
+  <path d="M738 350C728 350 718 350 703 350" class="result"/>
+
+  <rect x="52" y="526" width="1096" height="64" rx="3" fill="#f3f2f1" stroke="#d2d0ce"/>
+  <text x="76" y="565" class="name">Header + manifest</text>
+  <text x="278" y="565" class="name">→</text>
+  <text x="324" y="565" class="name">proxy DLL</text>
+  <text x="460" y="565" class="name">+</text>
+  <text x="493" y="565" class="name">Windows dispatcher</text>
+  <text x="710" y="565" class="name">+</text>
+  <text x="744" y="565" class="name">tests</text>
+  <text x="843" y="565" class="detail">Complex APIs add explicit marshalling.</text>
+</svg>

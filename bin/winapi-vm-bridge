@@ -26,7 +26,7 @@ Usage:
   winapi-vm-bridge call core.ping --json
   winapi-vm-bridge adapters --json
 
-The public bootstrap includes the authenticated core ping adapter. Native DLL
+The public bootstrap includes the paired core ping adapter. Native DLL
 adapters require their documented Windows SDK/runtime and explicit manifest.
 EOF
 exit 2

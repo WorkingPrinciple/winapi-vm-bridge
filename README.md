@@ -1,152 +1,115 @@
 # WinAPI VM Bridge
 
-A generic RPC framework for calling **Windows DLL exports** from an application
-running through Wine/CrossOver on macOS, using a Windows VM as the API
-coprocessor.
+![WinAPI VM Bridge: a missing DLL on Mac is represented by a proxy that calls the real DLL in a Windows VM](docs/assets/bridge-overview.svg)
 
-> Status: research proof and adapter SDK, not transparent arbitrary-DLL
-> remoting. A real application request crossed Mac → Windows VM → Mac and the
-> original caller consumed the native result. This does not prove compatibility
-> for every DLL, graphics acceleration, kernel-driver support, anti-cheat, or
-> Wine/CrossOver replacement.
+Use a DLL that exists in Windows from an app running under Wine on macOS. The
+app stays on the Mac. A generated proxy DLL exposes the missing exports, sends
+selected calls to the real DLL inside a Windows VM, and returns the native
+result.
 
-## Three-command quickstart
+## Try the bridge
 
-On Windows PowerShell:
+**Windows PowerShell**
 
 ```powershell
 irm https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-windows.ps1 | iex
 ```
 
-On the Mac:
+**Mac**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-mac.sh | bash
 ```
 
-Verify the round trip:
+**Round trip**
 
 ```bash
 winapi-vm-bridge call core.ping --json
 ```
 
-The setup commands are intentionally fail-closed. They install the source
-checkout and run the portable authenticated `core.ping` broker without
-downloading unverified binaries. Native DLL adapters additionally require their
-authorized Windows SDK/runtime, real DLL, verified hash, and adapter manifest.
+Windows prints a pairing code once. Paste it into the Mac setup prompt. The
+third command then performs a real private Mac → VM → Mac RPC call.
 
-## Architecture
+Here, **paired** means the Mac client and Windows broker prove they share the
+same random capability. It prevents an unrelated local process from using the
+broker. It is not user, Microsoft, application, or account authentication.
 
-```mermaid
-sequenceDiagram
-    participant App as Windows app under Wine
-    participant Shim as API-compatible shim
-    participant CLI as Mac bridge
-    participant VM as Windows VM broker
-    participant API as Real Windows API
-    App->>Shim: Ordinary API call
-    Shim->>VM: Authenticated, versioned RPC
-    VM->>API: Native Windows call
-    API-->>VM: Native result
-    VM-->>Shim: Exact result shape
-    Shim-->>App: Async completion / result
-```
-
-The game remains on the Mac. A generated or hand-written **shim DLL** exports
-the functions the application expects. The shim serializes calls to the VM,
-where the broker loads the allowlisted real DLL, invokes its export, and returns
-the result.
+## How it works
 
 ```text
-game.exe → generated shim.dll → RPC → VM broker → real vendor.dll
-game.exe ← generated shim.dll ← RPC ← VM broker ← real vendor.dll
+app.exe → shim.dll → private RPC → Windows broker → vendor.dll
+app.exe ← shim.dll ← private RPC ← Windows broker ← vendor.dll
 ```
 
-Each adapter manifest describes the library, export signatures, structures,
-buffer directions, handle types, calling convention, errors, and timeouts.
+1. Describe the DLL exports in a strict adapter manifest.
+2. Generate a Wine-side shim and Windows dispatcher review bundle.
+3. Implement custom marshalling only where the ABI needs it.
+4. Validate one complete operation in the real application.
 
-## What can be generic?
+## Build an adapter
 
-Manifest-driven without custom code:
+```bash
+winapi-vm-bridge init vendor.library
+winapi-vm-bridge generate adapter.json --out generated
+cat generated/vendor-library/IMPLEMENTATION_TASK.md
+```
 
-- scalar arguments and returns;
-- fixed-layout structs;
+The generated task is designed for either a developer or a coding agent. It
+includes the contract, unresolved marshalling work, tests, and stop conditions.
+
+### Works well
+
+- scalar arguments and fixed-layout structs;
 - bounded input/output buffers;
-- UTF-8/UTF-16 strings;
-- opaque handles represented by remote IDs;
-- synchronous or ordinary async request/result APIs.
+- UTF-8 and UTF-16 strings;
+- opaque remote handles;
+- coarse synchronous or async request/result APIs.
 
-Custom marshalling plugin required:
+### Needs custom marshalling
 
 - nested pointers and allocator ownership;
-- callbacks, COM interfaces, window messages, and thread affinity;
-- shared memory and process-local OS handles;
-- APIs with bespoke async or cancellation behavior.
+- callbacks, COM, thread affinity, and window messages;
+- shared memory and process-local handles;
+- bespoke cancellation or async lifecycles.
 
-Not supported as transparent arbitrary remoting:
+### Out of scope
 
 - kernel drivers and anti-cheat;
-- high-frequency graphics/per-frame APIs;
-- undocumented exports without a trustworthy ABI definition.
+- per-frame graphics calls;
+- undocumented ABIs;
+- arbitrary client-selected DLL paths or exports.
 
-See [architecture](docs/architecture.md), [evidence](docs/evidence.md), and the
-[adapter guide](docs/adapter-guide.md).
+## What is included
 
-## Security model
+- capability-paired, versioned RPC core;
+- Windows broker and Mac client;
+- adapter JSON schema and generator;
+- generated shim/dispatcher skeletons;
+- AI-ready implementation prompt;
+- bounds, pairing, and round-trip tests;
+- three-command setup and rollback guidance.
 
-- Capability-authenticated local transport.
-- Versioned operation allowlist; no arbitrary DLL export invocation.
-- Genuine API results only; never fabricate success.
-- Treat each output by sensitivity. Identifiers/public profile data can be
-  returned when required. Tokens and signatures require exact scope, lifetime,
-  bounded in-memory handling, and must never be logged.
-- No passwords, private keys, DRM bypass, or unrelated account access.
-
-## Adapter manifest
-
-```yaml
-adapter: example.math
-windows:
-  dll: vendor.dll
-exports:
-  - name: VendorAdd
-    callingConvention: stdcall
-    parameters:
-      - { name: left, type: i32, direction: in }
-      - { name: right, type: i32, direction: in }
-    returns: i32
-```
-
-The toolchain generates:
-
-- a Windows-compatible shim DLL for Wine;
-- broker dispatch/marshalling code;
-- schema validation and adversarial tests;
-- CLI calls such as `winapi-vm-bridge call example.math.VendorAdd`.
-
-See [generic adapter design](docs/generic-adapters.md).
-
-## Adapter independence
-
-The core repository is vendor- and application-neutral. Case studies belong in
-evidence documents or separate adapter repositories. The core does not ship
-third-party SDK headers, libraries, credentials, application files, or private
-configuration.
-
-## Project status
+## Status
 
 | Capability | Status |
 |---|---|
-| Framed authenticated RPC | Proven |
-| Real game user-add round trip | Proven |
-| Generated adapter review bundle | Implemented |
-| Portable authenticated `core.ping` | Implemented |
-| Compilable generated scalar shim/dispatcher | Tracked in issue #1 |
-| Sensitive async-result pattern | Tracked in issue #2 |
-| Arbitrary Windows DLL remoting | Out of scope |
+| Paired Mac ↔ Windows VM RPC | Working |
+| Portable `core.ping` round trip | Working |
+| Adapter schema and patch generator | Working |
+| Generated review/test bundle | Working |
+| Compilable scalar shim/dispatcher generation | [Planned](https://github.com/dragoshont/winapi-vm-bridge/issues/1) |
+| Complex API adapters | Per library |
+| Transparent arbitrary-DLL remoting | Not supported |
 
-## Legal
+## Read next
 
-Independent research; not affiliated with Microsoft, Xbox, Apple, CodeWeavers,
-UTM, or the tested game publisher. Third-party SDKs and products retain their
-own terms. Use only accounts, titles, and systems you are authorized to use.
+- [Architecture](docs/architecture.md)
+- [Generic adapter model](docs/generic-adapters.md)
+- [Adapter guide](docs/adapter-guide.md)
+- [Evidence method](docs/evidence.md)
+- [SDK](sdk/README.md)
+- [Security](SECURITY.md)
+
+Independent research. The project does not ship third-party SDKs, DLLs,
+credentials, application files, or private configuration. Use only libraries
+and systems you are authorized to use.

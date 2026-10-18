@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
   G[App/game under Wine on macOS] --> S[Generated API-compatible shim DLL]
-  S -->|versioned RPC| M[Mac loopback/forwarder]
+  S -->|paired, versioned RPC| M[Mac loopback/forwarder]
   M --> W[Windows VM broker]
   W --> A[Native Windows-only library/API]
   A --> W --> M --> S --> G
@@ -14,6 +14,10 @@ flowchart LR
 
 The bridge is an API coprocessor. It does not move rendering or the complete
 application into Windows.
+
+“Paired” is transport access control: setup creates a random capability known
+to the Mac client and Windows broker. It is not application-user or online
+account authentication.
 
 ## Generic DLL model
 

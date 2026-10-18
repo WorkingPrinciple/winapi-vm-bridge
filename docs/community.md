@@ -9,14 +9,15 @@ or Xodus announcement. No Reddit post has been published from this work.
 
 Short reusable introduction:
 
-> I have my own use cases, but I've been working on a generic bridge for
-> purpose-built Windows DLL/API calls from Wine-hosted applications through a
-> Windows VM. The public SDK includes an authenticated transport, strict adapter
-> manifests, generated shim/dispatcher skeletons, conformance tests, and an
-> AI-ready implementation task. It is not transparent arbitrary-DLL remoting:
-> each library needs an explicit ABI contract and, for complex pointers or
-> callbacks, custom marshalling. Repository:
+> I built a small generic bridge for calling an adapted Windows DLL from an app
+> running under Wine on macOS. The app stays on the Mac; selected calls go to
+> the real DLL inside a Windows VM and the native result comes back. The public
+> repo includes the paired private transport, three-command setup, adapter
+> schema/generator, diagrams, tests, and an AI-ready implementation task:
 > https://github.com/dragoshont/winapi-vm-bridge
+>
+> It is not magic arbitrary-DLL remoting. Simple C ABIs are straightforward;
+> pointers, callbacks, COM, handles, and async APIs need explicit marshalling.
 
 Only post this where it directly answers the thread. Adjust it to the user's
 problem and avoid cross-posting identical promotional text.
