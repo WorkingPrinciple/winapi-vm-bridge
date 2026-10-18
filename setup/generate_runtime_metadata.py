@@ -19,15 +19,22 @@ def canonical_json(value: object) -> bytes:
 
 
 def spdx_document(metadata: dict[str, Any], source_sha: str) -> dict[str, Any]:
+    def identity(package: dict[str, Any]) -> str:
+        return package.get("source") or f"workspace:{package['name']}"
+
     packages = sorted(
         metadata["packages"],
-        key=lambda package: (package["name"], package["version"], package["id"]),
+        key=lambda package: (
+            package["name"],
+            package["version"],
+            identity(package),
+        ),
     )
     spdx_packages = []
     relationships = []
     for package in packages:
         spdx_id = "SPDXRef-Package-" + hashlib.sha256(
-            f"{package['name']}@{package['version']}:{package['id']}".encode()
+            f"{package['name']}@{package['version']}:{identity(package)}".encode()
         ).hexdigest()[:24]
         license_value = package.get("license") or "NOASSERTION"
         spdx_packages.append(

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import unittest
 
 from setup.generate_runtime_metadata import (
@@ -26,6 +27,10 @@ class RuntimeMetadataTests(unittest.TestCase):
         first = canonical_json(spdx_document(metadata, source))
         second = canonical_json(spdx_document(metadata, source))
         self.assertEqual(first, second)
+        relocated = json.loads(json.dumps(metadata))
+        relocated["packages"][0]["id"] = "path+file:///tmp/other#beta@2.0.0"
+        relocated["packages"][1]["id"] = "path+file:///tmp/other#alpha@1.0.0"
+        self.assertEqual(first, canonical_json(spdx_document(relocated, source)))
         provenance = provenance_document(
             metadata,
             source,

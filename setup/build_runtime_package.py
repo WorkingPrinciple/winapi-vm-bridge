@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -58,6 +59,17 @@ def cargo_metadata() -> dict[str, object]:
         ).stdout
     )
 
+def deterministic_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    root = str(Path.cwd().resolve())
+    remap = f"--remap-path-prefix={root}=/workspace"
+    environment["RUSTFLAGS"] = " ".join(
+        value for value in [environment.get("RUSTFLAGS", ""), remap] if value
+    )
+    environment["CARGO_INCREMENTAL"] = "0"
+    environment["SOURCE_DATE_EPOCH"] = "0"
+    return environment
+
 
 def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
     metadata = cargo_metadata()
@@ -82,10 +94,11 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
     subprocess.run(
         ["cargo", "build", "--release", "--locked", "-p", "wvb-package"],
         check=True,
+        env=deterministic_environment(),
     )
     if target:
         command.extend(["--target", target])
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, env=deterministic_environment())
     build_root = Path("target") / (target or "release")
     if target:
         build_root /= "release"
