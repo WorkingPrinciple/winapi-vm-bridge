@@ -91,9 +91,13 @@ fi
 python3 -c 'import json; from pathlib import Path; p=Path("setup/runtime-pins/windows-dotnet8-x64.json"); v=json.loads(p.read_text(encoding="utf-8")); assert v["version"]=="8.0.32"; assert v["rid"]=="win-x64"; assert len(v["runtime"]["sha256"])==64; assert len(v["runtime"]["sha512"])==128; assert len(v["nethostPackage"]["sha256"])==64; assert len(v["files"]["hostfxr"]["sha256"])==64; assert len(v["files"]["nethost"]["sha256"])==64'
 python3 -c 'compile(open("setup/provision_windows_dotnet_runtime.py", encoding="utf-8").read(), "setup/provision_windows_dotnet_runtime.py", "exec")'
 python3 -c 'compile(open("setup/run_cross_platform_managed_e2e.py", encoding="utf-8").read(), "setup/run_cross_platform_managed_e2e.py", "exec")'
+python3 -c 'compile(open("setup/run_utm_deploy.py", encoding="utf-8").read(), "setup/run_utm_deploy.py", "exec")'
+python3 -c 'compile(open("setup/run_utm_managed_e2e.py", encoding="utf-8").read(), "setup/run_utm_managed_e2e.py", "exec")'
 test -x native/managed-host/run-managed-roundtrip.sh
 test -x setup/provision_windows_dotnet_runtime.py
 test -x setup/run_cross_platform_managed_e2e.py
+test -x setup/run_utm_deploy.py
+test -x setup/run_utm_managed_e2e.py
 grep -q 'DLL that exists in Windows' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
 if grep -R -E '(xuid|gamertag|token|signature).*[=:][[:space:]]*[0-9A-Za-z+/]{20,}' \

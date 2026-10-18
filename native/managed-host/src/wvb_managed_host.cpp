@@ -198,14 +198,20 @@ wvb_managed_host_create(const WvbManagedHostConfig *config,
     return WVB_MANAGED_HOST_INVALID_ARGUMENT;
   }
   *host = nullptr;
-  if (!hash_matches(config->nethost_path, config->nethost_sha256) ||
-      !hash_matches(config->runtime_config_path,
-                    config->runtime_config_sha256) ||
-      !hash_matches(config->dispatcher_assembly_path,
-                    config->dispatcher_assembly_sha256) ||
-      !hash_matches(config->target_assembly_path,
+  if (!hash_matches(config->nethost_path, config->nethost_sha256)) {
+    return WVB_MANAGED_HOST_NETHOST_HASH_MISMATCH;
+  }
+  if (!hash_matches(config->runtime_config_path,
+                    config->runtime_config_sha256)) {
+    return WVB_MANAGED_HOST_RUNTIME_CONFIG_HASH_MISMATCH;
+  }
+  if (!hash_matches(config->dispatcher_assembly_path,
+                    config->dispatcher_assembly_sha256)) {
+    return WVB_MANAGED_HOST_DISPATCHER_HASH_MISMATCH;
+  }
+  if (!hash_matches(config->target_assembly_path,
                     config->target_assembly_sha256)) {
-    return WVB_MANAGED_HOST_HASH_MISMATCH;
+    return WVB_MANAGED_HOST_TARGET_HASH_MISMATCH;
   }
 
   UniqueModule nethost(LoadLibraryExW(
@@ -228,7 +234,7 @@ wvb_managed_host_create(const WvbManagedHostConfig *config,
                        &path_parameters) != 0 ||
       hostfxr_path_size == 0 ||
       !hash_matches(hostfxr_path.data(), config->hostfxr_sha256)) {
-    return WVB_MANAGED_HOST_HASH_MISMATCH;
+    return WVB_MANAGED_HOST_HOSTFXR_HASH_MISMATCH;
   }
 
   UniqueModule hostfxr(LoadLibraryExW(
