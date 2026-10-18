@@ -7,6 +7,7 @@ use wvb_integrity::validate_portable_relative_path;
 
 pub const RECEIPT_IDENTIFIER: &str = "whiny.runtime-receipt.v1";
 pub const DISPATCHER_ABI: &str = "whiny.dispatch.v1";
+pub const SIGNING_DOMAIN: &[u8] = b"whiny.runtime-receipt.v1\0";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeIdentity {
@@ -99,7 +100,7 @@ impl RuntimeReceipt {
     pub fn sign(&mut self, seed: &[u8; 32]) -> Result<(), ReceiptError> {
         self.validate_unsigned()?;
         let key = Ed25519KeyPair::from_seed_unchecked(seed).map_err(|_| ReceiptError::Signing)?;
-        let payload = self.unsigned_bytes()?;
+        let payload = self.signing_bytes()?;
         let payload_hash = Sha256::digest(&payload);
         self.authentication = Authentication {
             scheme: String::from("ed25519"),
@@ -115,7 +116,7 @@ impl RuntimeReceipt {
         if self.authentication.key_id != hex(&Sha256::digest(public_key)) {
             return Err(ReceiptError::Verification);
         }
-        let payload = self.unsigned_bytes()?;
+        let payload = self.signing_bytes()?;
         if self.authentication.signed_payload_sha256 != hex(&Sha256::digest(&payload)) {
             return Err(ReceiptError::Verification);
         }
@@ -151,6 +152,14 @@ impl RuntimeReceipt {
             cleanup: &self.cleanup,
         })
         .map_err(|error| ReceiptError::Canonicalization(error.to_string()))
+    }
+
+    fn signing_bytes(&self) -> Result<Vec<u8>, ReceiptError> {
+        let unsigned = self.unsigned_bytes()?;
+        let mut payload = Vec::with_capacity(SIGNING_DOMAIN.len() + unsigned.len());
+        payload.extend_from_slice(SIGNING_DOMAIN);
+        payload.extend_from_slice(&unsigned);
+        Ok(payload)
     }
 
     fn validate_unsigned(&self) -> Result<(), ReceiptError> {
@@ -323,6 +332,10 @@ mod tests {
             let mut value = receipt(cleanup);
             value.sign(&seed).unwrap();
             value.verify(&public_key(&seed).unwrap()).unwrap();
+            assert_ne!(
+                value.authentication.signed_payload_sha256,
+                hex(&Sha256::digest(value.unsigned_bytes().unwrap()))
+            );
             let encoded = value.canonical_bytes().unwrap();
             let decoded: RuntimeReceipt = serde_json::from_slice(&encoded).unwrap();
             assert_eq!(decoded.cleanup.status, cleanup);

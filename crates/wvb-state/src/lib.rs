@@ -39,6 +39,14 @@ pub struct OperationRecord {
     pub detail: Vec<u8>,
 }
 
+pub struct TerminalReceiptCommit<'a> {
+    pub receipt_id: [u8; 16],
+    pub request_hash: Option<[u8; 32]>,
+    pub terminal_status: i32,
+    pub receipt_payload: &'a [u8],
+    pub audit_payload: &'a [u8],
+}
+
 impl std::fmt::Display for StateError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{self:?}")
@@ -736,6 +744,28 @@ impl Store {
             .map_err(StateError::Sql)
     }
 
+    pub fn redact_receipts_through(
+        &mut self,
+        event_sequence: u64,
+        audit_payload: &[u8],
+    ) -> Result<(Event, usize), StateError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let event = Self::append_event_transaction(
+            &transaction,
+            "receipt-retention-redacted",
+            audit_payload,
+        )?;
+        let changed = transaction.execute(
+            "UPDATE receipts SET payload=x''
+             WHERE event_sequence<=?1 AND length(payload)>0",
+            [sql_i64(event_sequence)?],
+        )?;
+        transaction.commit()?;
+        Ok((event, changed))
+    }
+
     pub fn create_operation(
         &mut self,
         operation: &OperationRecord,
@@ -836,6 +866,82 @@ impl Store {
         }
         transaction.commit()?;
         Ok(event)
+    }
+
+    pub fn commit_terminal_operation(
+        &mut self,
+        expected: OperationStatus,
+        operation: &OperationRecord,
+        terminal: &TerminalReceiptCommit<'_>,
+    ) -> Result<(Event, ReceiptRecord), StateError> {
+        if operation.terminal_receipt_id != Some(terminal.receipt_id) {
+            return Err(StateError::Corrupt("operation receipt mismatch"));
+        }
+        validate_operation(operation, Some(expected))?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let event = Self::append_event_transaction(
+            &transaction,
+            "operation-terminal",
+            terminal.audit_payload,
+        )?;
+        transaction.execute(
+            "INSERT INTO receipts(
+                receipt_id,actor_id,request_hash,terminal_status,
+                event_sequence,event_hash,payload
+             ) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                terminal.receipt_id.as_slice(),
+                operation.actor_id.as_slice(),
+                terminal.request_hash.as_ref().map(<[u8; 32]>::as_slice),
+                i64::from(terminal.terminal_status),
+                sql_i64(event.sequence)?,
+                event.event_hash.as_slice(),
+                terminal.receipt_payload
+            ],
+        )?;
+        let changed = transaction.execute(
+            "UPDATE operations SET
+                status=?2,stage=?3,attempt=?4,idempotency_hash=?5,retryable=?6,
+                cancellable=?7,rerunnable=?8,updated_unix_ms=?9,started_unix_ms=?10,
+                completed_unix_ms=?11,terminal_receipt_id=?12,detail=?13,updated_event=?14
+             WHERE operation_id=?1 AND status=?15",
+            params![
+                operation.operation_id.as_slice(),
+                i64::from(u16::from(operation.status)),
+                i64::from(operation.stage),
+                i64::from(operation.attempt),
+                operation
+                    .idempotency_hash
+                    .as_ref()
+                    .map(<[u8; 32]>::as_slice),
+                i64::from(u8::from(operation.retryable)),
+                i64::from(u8::from(operation.cancellable)),
+                i64::from(u8::from(operation.rerunnable)),
+                sql_i64(operation.updated_unix_ms)?,
+                operation.started_unix_ms.map(sql_i64).transpose()?,
+                operation.completed_unix_ms.map(sql_i64).transpose()?,
+                terminal.receipt_id.as_slice(),
+                operation.detail,
+                sql_i64(event.sequence)?,
+                i64::from(u16::from(expected))
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StateError::Corrupt("operation transition conflict"));
+        }
+        let receipt = ReceiptRecord {
+            receipt_id: terminal.receipt_id,
+            actor_id: Some(operation.actor_id),
+            request_hash: terminal.request_hash,
+            terminal_status: terminal.terminal_status,
+            event_sequence: event.sequence,
+            event_hash: event.event_hash,
+            payload: terminal.receipt_payload.to_vec(),
+        };
+        transaction.commit()?;
+        Ok((event, receipt))
     }
 
     pub fn operation(&self, operation_id: [u8; 16]) -> Result<Option<OperationRecord>, StateError> {
@@ -1472,6 +1578,25 @@ mod tests {
                 .is_err()
         );
         assert_eq!(store.verify_chain().unwrap().unwrap().sequence, 1);
+    }
+
+    #[test]
+    fn receipt_retention_redacts_payload_but_preserves_chain_and_identity() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("retention.db");
+        let mut store = Store::open(&path).unwrap();
+        let receipt = store
+            .commit_receipt([1; 16], None, Some([2; 32]), 0, b"sensitive detail")
+            .unwrap();
+        let (event, changed) = store
+            .redact_receipts_through(receipt.event_sequence, b"retention policy")
+            .unwrap();
+        assert_eq!(changed, 1);
+        assert_eq!(event.kind, "receipt-retention-redacted");
+        let redacted = store.receipt(receipt.receipt_id).unwrap().unwrap();
+        assert!(redacted.payload.is_empty());
+        assert_eq!(redacted.event_hash, receipt.event_hash);
+        store.verify_chain().unwrap();
     }
 
     #[test]

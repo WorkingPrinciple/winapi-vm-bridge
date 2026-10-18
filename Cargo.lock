@@ -1209,7 +1209,10 @@ dependencies = [
  "serde_jcs",
  "serde_json",
  "sha2",
+ "tempfile",
+ "wvb-receipt",
  "wvb-state",
+ "zeroize",
 ]
 
 [[package]]
