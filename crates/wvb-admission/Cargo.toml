@@ -7,8 +7,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-sha2.workspace = true
 wvb-authz = { path = "../wvb-authz" }
+wvb-integrity = { path = "../wvb-integrity" }
 
 [dev-dependencies]
 tempfile.workspace = true

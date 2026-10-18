@@ -3,7 +3,12 @@ set -eu
 ./mac/doctor.sh | grep -q 'doctor=ok'
 ./bin/winapi-vm-bridge adapters --json | grep -q '"core"'
 ./bin/winapi-vm-bridge adapters --json | grep -q '"windows.kernel32"'
-python3 -m unittest tests.test_sdk
+python3 -m unittest \
+  tests.test_sdk \
+  tests.test_runtime_acceptance \
+  tests.test_runtime_metadata
+cargo test -q -p wvb-admission -p wvb-integrity -p wvb-operations \
+  -p wvb-package -p wvb-state -p wvb-transfer -p wvb-exe
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 ./bin/winapi-vm-bridge generate examples/example-math/adapter.json --out "$tmp"
@@ -88,17 +93,22 @@ if command -v dotnet >/dev/null 2>&1; then
   printf '%s\n' "$unsupported_output" | grep -q 'is not a static type'
 fi
 ./native/managed-host/build-and-test.sh
+./native/fixtures/native-exe/build-and-test.sh
 python3 -c 'import json; from pathlib import Path; p=Path("setup/runtime-pins/windows-dotnet8-x64.json"); v=json.loads(p.read_text(encoding="utf-8")); assert v["version"]=="8.0.32"; assert v["rid"]=="win-x64"; assert len(v["runtime"]["sha256"])==64; assert len(v["runtime"]["sha512"])==128; assert len(v["nethostPackage"]["sha256"])==64; assert len(v["files"]["hostfxr"]["sha256"])==64; assert len(v["files"]["nethost"]["sha256"])==64'
 python3 -c 'compile(open("setup/provision_windows_dotnet_runtime.py", encoding="utf-8").read(), "setup/provision_windows_dotnet_runtime.py", "exec")'
 python3 -c 'compile(open("setup/run_cross_platform_managed_e2e.py", encoding="utf-8").read(), "setup/run_cross_platform_managed_e2e.py", "exec")'
 python3 -c 'compile(open("setup/run_utm_deploy.py", encoding="utf-8").read(), "setup/run_utm_deploy.py", "exec")'
 python3 -c 'compile(open("setup/run_utm_managed_e2e.py", encoding="utf-8").read(), "setup/run_utm_managed_e2e.py", "exec")'
+python3 -c 'compile(open("setup/run_utm_acceptance.py", encoding="utf-8").read(), "setup/run_utm_acceptance.py", "exec")'
+python3 -c 'compile(open("setup/generate_runtime_metadata.py", encoding="utf-8").read(), "setup/generate_runtime_metadata.py", "exec")'
 test -x native/managed-host/run-managed-roundtrip.sh
 test -x setup/provision_windows_dotnet_runtime.py
 test -x setup/run_cross_platform_managed_e2e.py
 test -x setup/run_utm_deploy.py
 test -x setup/run_utm_managed_e2e.py
-grep -q 'DLL that exists in Windows' README.md
+test -x setup/run_utm_acceptance.py
+test -x setup/generate_runtime_metadata.py
+grep -q 'runtime and execution plane' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
 if grep -R -E '(xuid|gamertag|token|signature).*[=:][[:space:]]*[0-9A-Za-z+/]{20,}' \
     --exclude-dir=.git \

@@ -1100,9 +1100,9 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "wvb-admission"
 version = "0.2.0"
 dependencies = [
- "sha2",
  "tempfile",
  "wvb-authz",
+ "wvb-integrity",
 ]
 
 [[package]]
@@ -1192,6 +1192,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wvb-integrity"
+version = "0.2.0"
+dependencies = [
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "wvb-ir"
 version = "0.2.0"
 dependencies = [
@@ -1234,6 +1242,21 @@ dependencies = [
 [[package]]
 name = "wvb-marshal"
 version = "0.2.0"
+
+[[package]]
+name = "wvb-operations"
+version = "0.2.0"
+
+[[package]]
+name = "wvb-package"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "tempfile",
+ "wvb-integrity",
+]
 
 [[package]]
 name = "wvb-protocol"

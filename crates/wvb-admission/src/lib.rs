@@ -1,12 +1,14 @@
 //! Admission of immutable, operator-approved Whiny bundles into the runtime.
 
 use std::collections::BTreeSet;
-use std::fs::{self, File};
-use std::io::{self, Read};
-use std::path::{Component, Path, PathBuf};
+use std::io;
+use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
 use wvb_authz::{ActorId, AuthorizationError, Registry, Role};
+use wvb_integrity::{
+    IntegrityError, canonical_root, resolve_regular_file, sha256_bytes, sha256_file,
+    validate_portable_relative_path,
+};
 
 const MAX_DESCRIPTOR_BYTES: usize = 16 * 1024 * 1024;
 const MAX_FILES: usize = 4_096;
@@ -112,14 +114,14 @@ impl AdmittedBundle {
 
     pub fn reverify_files(&self) -> Result<(), AdmissionError> {
         for file in &self.files {
-            let resolved = resolve_file(&self.load_root, &file.relative_path)?;
+            let resolved = resolve_regular_file(&self.load_root, &file.relative_path)?;
             if resolved != file.canonical_path {
                 return Err(AdmissionError::PathIdentityChanged {
                     expected: file.canonical_path.clone(),
                     observed: resolved,
                 });
             }
-            if hash_file(&resolved)? != file.sha256 {
+            if sha256_file(&resolved)? != file.sha256 {
                 return Err(AdmissionError::HashMismatch(resolved));
             }
         }
@@ -168,6 +170,18 @@ impl From<io::Error> for AdmissionError {
     }
 }
 
+impl From<IntegrityError> for AdmissionError {
+    fn from(value: IntegrityError) -> Self {
+        match value {
+            IntegrityError::InvalidPath(path) => Self::InvalidPath(path),
+            IntegrityError::PathEscape(path) => Self::PathEscape(path),
+            IntegrityError::SymlinkOrReparsePoint(path) => Self::SymlinkOrReparsePoint(path),
+            IntegrityError::NotRegularFile(path) => Self::NotRegularFile(path),
+            IntegrityError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
 pub struct AdmissionEngine {
     load_root: PathBuf,
     compatibility: Compatibility,
@@ -177,15 +191,8 @@ impl AdmissionEngine {
     pub fn new(load_root: &Path) -> Result<Self, AdmissionError> {
         let compatibility = current_compatibility();
         verify_compatibility_identifiers(&compatibility)?;
-        verify_regular_directory(load_root)?;
-        let metadata = fs::symlink_metadata(load_root)?;
-        if is_symlink_or_reparse(&metadata) {
-            return Err(AdmissionError::SymlinkOrReparsePoint(
-                load_root.to_path_buf(),
-            ));
-        }
         Ok(Self {
-            load_root: fs::canonicalize(load_root)?,
+            load_root: canonical_root(load_root)?,
             compatibility,
         })
     }
@@ -214,10 +221,10 @@ impl AdmissionEngine {
         {
             return Err(AdmissionError::DescriptorBoundExceeded);
         }
-        if hash_bytes(inputs.contract) != approval.contract_sha256 {
+        if sha256_bytes(inputs.contract) != approval.contract_sha256 {
             return Err(AdmissionError::ContractHashMismatch);
         }
-        if hash_bytes(inputs.bundle_descriptor) != approval.bundle_descriptor_sha256 {
+        if sha256_bytes(inputs.bundle_descriptor) != approval.bundle_descriptor_sha256 {
             return Err(AdmissionError::BundleDescriptorHashMismatch);
         }
         if approval.files.len() > MAX_FILES {
@@ -247,13 +254,13 @@ impl AdmissionEngine {
                 BundleFileKind::Target => target_count += 1,
                 BundleFileKind::Dependency => {}
             }
-            validate_relative_path(&file.relative_path)?;
+            validate_portable_relative_path(&file.relative_path)?;
             let normalized = file.relative_path.to_ascii_lowercase();
             if !normalized_paths.insert(normalized) {
                 return Err(AdmissionError::DuplicatePath(file.relative_path.clone()));
             }
             let path = self.resolve_file(&file.relative_path)?;
-            if hash_file(&path)? != file.sha256 {
+            if sha256_file(&path)? != file.sha256 {
                 return Err(AdmissionError::HashMismatch(path));
             }
             admitted_files.push(AdmittedFile {
@@ -299,7 +306,7 @@ impl AdmissionEngine {
     }
 
     fn resolve_file(&self, relative_path: &str) -> Result<PathBuf, AdmissionError> {
-        resolve_file(&self.load_root, relative_path)
+        Ok(resolve_regular_file(&self.load_root, relative_path)?)
     }
 }
 
@@ -339,92 +346,6 @@ fn verify_format_identifier(value: &str) -> Result<(), AdmissionError> {
     Ok(())
 }
 
-fn validate_relative_path(value: &str) -> Result<(), AdmissionError> {
-    if value.is_empty()
-        || value.len() > 1_024
-        || value.contains(['\\', ':', '\0'])
-        || value.starts_with('/')
-        || value.ends_with('/')
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
-        || value
-            .split('/')
-            .any(|component| component.is_empty() || matches!(component, "." | ".."))
-    {
-        return Err(AdmissionError::InvalidPath(value.to_owned()));
-    }
-    Ok(())
-}
-
-fn verify_regular_directory(path: &Path) -> Result<(), AdmissionError> {
-    if !fs::metadata(path)?.is_dir() {
-        return Err(AdmissionError::InvalidPath(path.display().to_string()));
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
-fn is_symlink_or_reparse(metadata: &fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    metadata.file_type().is_symlink()
-        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_symlink_or_reparse(metadata: &fs::Metadata) -> bool {
-    metadata.file_type().is_symlink()
-}
-
-fn hash_file(path: &Path) -> Result<[u8; 32], AdmissionError> {
-    let mut file = File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
-    loop {
-        let length = file.read(&mut buffer)?;
-        if length == 0 {
-            break;
-        }
-        digest.update(&buffer[..length]);
-    }
-    Ok(digest.finalize().into())
-}
-
-fn resolve_file(load_root: &Path, relative_path: &str) -> Result<PathBuf, AdmissionError> {
-    validate_relative_path(relative_path)?;
-    let relative = Path::new(relative_path);
-    let mut current = load_root.to_path_buf();
-    let component_count = relative.components().count();
-    for (index, component) in relative.components().enumerate() {
-        let Component::Normal(component) = component else {
-            return Err(AdmissionError::InvalidPath(relative_path.to_owned()));
-        };
-        current.push(component);
-        let metadata = fs::symlink_metadata(&current)?;
-        if is_symlink_or_reparse(&metadata) {
-            return Err(AdmissionError::SymlinkOrReparsePoint(current));
-        }
-        if index + 1 == component_count {
-            if !metadata.is_file() {
-                return Err(AdmissionError::NotRegularFile(current));
-            }
-        } else if !metadata.is_dir() {
-            return Err(AdmissionError::InvalidPath(relative_path.to_owned()));
-        }
-    }
-    let canonical = fs::canonicalize(&current)?;
-    if !canonical.starts_with(load_root) {
-        return Err(AdmissionError::PathEscape(canonical));
-    }
-    Ok(canonical)
-}
-
-fn hash_bytes(value: &[u8]) -> [u8; 32] {
-    Sha256::digest(value).into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,23 +377,23 @@ mod tests {
         let descriptor = b"frozen-bundle".to_vec();
         let approval = OperatorAdmission {
             compatibility: compatibility(),
-            contract_sha256: hash_bytes(&contract),
-            bundle_descriptor_sha256: hash_bytes(&descriptor),
+            contract_sha256: sha256_bytes(&contract),
+            bundle_descriptor_sha256: sha256_bytes(&descriptor),
             files: vec![
                 BundleFile {
                     kind: BundleFileKind::Dispatcher,
                     relative_path: String::from("bin/dispatcher.dll"),
-                    sha256: hash_bytes(b"dispatcher"),
+                    sha256: sha256_bytes(b"dispatcher"),
                 },
                 BundleFile {
                     kind: BundleFileKind::Target,
                     relative_path: String::from("bin/target.dll"),
-                    sha256: hash_bytes(b"target"),
+                    sha256: sha256_bytes(b"target"),
                 },
                 BundleFile {
                     kind: BundleFileKind::Dependency,
                     relative_path: String::from("lib/dependency.dll"),
-                    sha256: hash_bytes(b"dependency"),
+                    sha256: sha256_bytes(b"dependency"),
                 },
             ],
             operation_ids: vec![7],
