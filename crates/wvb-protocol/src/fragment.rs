@@ -100,9 +100,10 @@ pub fn fragment_logical_frame(
     Ok(fragments)
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Reassembler {
     active: Option<ActiveFrame>,
+    expected_physical_sequence: u64,
 }
 
 #[derive(Debug)]
@@ -116,6 +117,14 @@ struct ActiveFrame {
 }
 
 impl Reassembler {
+    #[must_use]
+    pub const fn new(first_physical_sequence: u64) -> Self {
+        Self {
+            active: None,
+            expected_physical_sequence: first_physical_sequence,
+        }
+    }
+
     pub fn push(
         &mut self,
         plaintext: &[u8],
@@ -128,10 +137,18 @@ impl Reassembler {
         if header.connection_epoch != expected_epoch {
             return Err(ProtocolError::FragmentEpochInvalid);
         }
+        if header.physical_sequence != self.expected_physical_sequence {
+            return Err(ProtocolError::FragmentOrderInvalid);
+        }
+        self.expected_physical_sequence = self
+            .expected_physical_sequence
+            .checked_add(1)
+            .ok_or(ProtocolError::SequenceExhausted)?;
         let body = &plaintext[FRAGMENT_HEADER_BYTES..];
         if body.len() > FRAGMENT_BODY_MAX {
             return Err(ProtocolError::PhysicalMessageTooLarge);
         }
+
         match &mut self.active {
             None => {
                 if header.fragment_index != 0 {
@@ -182,6 +199,12 @@ impl Reassembler {
     }
 }
 
+impl Default for Reassembler {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,7 +222,7 @@ mod tests {
         let logical = vec![0xa5; 1_048_656];
         let frames = fragment_logical_frame(&logical, 9, 100, 200).unwrap();
         assert_eq!(frames.len(), 17);
-        let mut reassembler = Reassembler::default();
+        let mut reassembler = Reassembler::new(100);
         let mut result = None;
         for frame in frames {
             result = reassembler.push(&frame, 9).unwrap().or(result);
@@ -220,7 +243,7 @@ mod tests {
     fn gaps_and_wrong_epoch_are_rejected() {
         let logical = vec![1_u8; FRAGMENT_BODY_MAX + 1];
         let mut frames = fragment_logical_frame(&logical, 4, 8, 12).unwrap();
-        let mut reassembler = Reassembler::default();
+        let mut reassembler = Reassembler::new(8);
         assert!(reassembler.push(&frames[0], 4).unwrap().is_none());
         frames[1][12..20].copy_from_slice(&99_u64.to_le_bytes());
         assert_eq!(
@@ -228,7 +251,7 @@ mod tests {
             Err(ProtocolError::FragmentOrderInvalid)
         );
         assert_eq!(
-            Reassembler::default().push(&frames[0], 5),
+            Reassembler::new(8).push(&frames[0], 5),
             Err(ProtocolError::FragmentEpochInvalid)
         );
     }
