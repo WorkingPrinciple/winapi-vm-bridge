@@ -118,6 +118,8 @@ pub struct AttemptCorrelation {
     pub host_id: String,
     pub bundle_sha256: [u8; 32],
     pub operation_id: Option<u32>,
+    #[serde(default)]
+    pub request_sha256: Option<[u8; 32]>,
     pub receipt_id: Option<[u8; 16]>,
 }
 
@@ -180,6 +182,8 @@ impl AttemptCorrelation {
     ) -> Result<EmittedReceipt, OwnerError> {
         if input.bundle_sha256 != self.bundle_sha256
             || input.operation_id != self.operation_id
+            || self.request_sha256 != Some(input.request_sha256)
+            || input.runtime_identity.host_id != self.host_id
             || input.receipt_id == [0; 16]
         {
             return Err(OwnerError::InvalidCorrelation);
@@ -458,6 +462,7 @@ mod tests {
             host_id: String::from("windows-x64"),
             bundle_sha256: [3; 32],
             operation_id: Some(7),
+            request_sha256: Some([8; 32]),
             receipt_id: Some([4; 16]),
         };
         let operation = correlation.operation_record([5; 16], 10, [6; 16]).unwrap();
@@ -497,6 +502,7 @@ mod tests {
             host_id: String::from("windows-x64"),
             bundle_sha256: [3; 32],
             operation_id: Some(7),
+            request_sha256: Some([11; 32]),
             receipt_id: None,
         };
         let mut operation = correlation.operation_record(actor_id, 10, [6; 16]).unwrap();

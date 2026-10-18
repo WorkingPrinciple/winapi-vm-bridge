@@ -5,6 +5,7 @@
 > **Integration baseline:** `canonical-runtime` at `d5b8e89`; active implementation branch `dragoshont-vm-bridge-runtime-split`
 > **Canonical Run ID:** `wvb-canonical-v2`  
 > **Public ledger destination:** the owner has authorized the ledger-only T002 publication to `main`; product integration remains gated by T161 and the clean-machine hold
+> **Public ledger publication:** commit `5f315391d3501c24ea941138f7db82a893369da9`, blob `9b09c1e3e8c0f480a8fe7331546954f2cc5b9603`, published-byte SHA-256 `ede93391ff0e4c9b17d6cc833099603ed4bbe255d761cdb0aeaa5e2e2a30b124`
 > **Implementation destination:** reviewable checkpoints on the active branch until the complete release path passes
 > **Revision date:** 2026-10-18  
 > **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation; three adversarial revise loops were completed, their consolidated findings are binding, and the owner directed implementation to continue after those findings were corrected  
@@ -2717,7 +2718,7 @@ T000 shall record:
 - [x] Audit algorithm/key generation and sustainable TPM anchor cadence are explicit.
 - [x] T000 records the exhausted review-loop evidence and deterministic blocker closure.
 - [ ] T000 records the approved ledger hash and reconciled live-status hashes.
-- [ ] T002 publishes the redacted ledger-only commit.
+- [x] T002 publishes the redacted ledger-only commit.
 - [ ] P1 hold is released.
 - [ ] All implementation and release receipts pass.
 - [ ] Final independent implementation review returns `PASS`.
