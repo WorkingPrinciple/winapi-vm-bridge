@@ -10,6 +10,7 @@ rust-version.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 wvb-call = { path = "../wvb-call" }
+wvb-authz = { path = "../wvb-authz" }
 wvb-protocol = { path = "../wvb-protocol" }
 wvb-transport = { path = "../wvb-transport" }
 

@@ -1110,6 +1110,7 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "tokio",
+ "wvb-authz",
  "wvb-call",
  "wvb-client",
  "wvb-crypto",

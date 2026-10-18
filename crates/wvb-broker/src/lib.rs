@@ -1,11 +1,12 @@
 //! Concurrent canonical broker session driver.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Semaphore, mpsc};
+use wvb_authz::{ActorId, AuthorizationError, Registry};
 use wvb_call::{CallAssembler, CallRequest, CallResult};
 use wvb_protocol::{Envelope, EnvelopeFlags, MessageType};
 use wvb_transport::{SecureConnection, TransportError};
@@ -50,6 +51,56 @@ pub trait Handler: Send + Sync + 'static {
 #[async_trait]
 pub trait CallHandler: Send + Sync + 'static {
     async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError>;
+}
+
+pub fn actor_for_session_key(
+    registry: &RwLock<Registry>,
+    remote_public_key: &[u8; 32],
+) -> Result<ActorId, BrokerError> {
+    registry
+        .read()
+        .map_err(|_| BrokerError::Handler("authorization registry poisoned".into()))?
+        .actor_for_key(remote_public_key)
+        .map_err(authorization_error)
+}
+
+pub struct AuthorizedCallHandler {
+    actor_id: ActorId,
+    registry: Arc<RwLock<Registry>>,
+    inner: Arc<dyn CallHandler>,
+}
+
+impl AuthorizedCallHandler {
+    #[must_use]
+    pub fn new(
+        actor_id: ActorId,
+        registry: Arc<RwLock<Registry>>,
+        inner: Arc<dyn CallHandler>,
+    ) -> Self {
+        Self {
+            actor_id,
+            registry,
+            inner,
+        }
+    }
+}
+
+#[async_trait]
+impl CallHandler for AuthorizedCallHandler {
+    async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
+        let now = unix_time_ms();
+        self.registry
+            .read()
+            .map_err(|_| BrokerError::Handler("authorization registry poisoned".into()))?
+            .authorize_invoke(
+                self.actor_id,
+                request.adapter_hash,
+                request.operation_id,
+                now,
+            )
+            .map_err(authorization_error)?;
+        self.inner.handle_call(request).await
+    }
 }
 
 struct Completed {
@@ -267,12 +318,25 @@ fn response_stream_message_id(request: [u8; 16], index: usize) -> Result<[u8; 16
     Ok(response)
 }
 
+fn authorization_error(error: AuthorizationError) -> BrokerError {
+    BrokerError::Handler(format!("authorization denied: {error:?}"))
+}
+
+fn unix_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
 
     use tokio::io::duplex;
+    use wvb_authz::{Grant, Role};
     use wvb_client::Client;
     use wvb_crypto::{Handshake, PairingPsk, StaticPrivateKey, Transport};
 
@@ -367,5 +431,48 @@ mod tests {
         assert_eq!(second.response_schema_id, 0x3000_0003);
         assert_eq!(second.body, vec![2; 80_000]);
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn authenticated_actor_is_still_default_denied_without_exact_grant() {
+        let actor = [1; 16];
+        let key = [2; 32];
+        let adapter = [3; 32];
+        let mut registry = Registry::default();
+        registry.register(actor, key).unwrap();
+        assert_eq!(
+            actor_for_session_key(&RwLock::new(registry), &key).unwrap(),
+            actor
+        );
+
+        let mut registry = Registry::default();
+        registry.register(actor, key).unwrap();
+        let registry = Arc::new(RwLock::new(registry));
+        let authorized = AuthorizedCallHandler::new(actor, registry.clone(), Arc::new(EchoCall));
+        let request = CallRequest {
+            adapter_hash: adapter,
+            operation_id: 7,
+            request_schema_id: 1,
+            deduplication_mode: 0,
+            idempotency_key: None,
+            disconnect_policy: 0,
+            sensitivity: 0,
+            body: vec![1],
+        };
+        assert!(authorized.handle_call(request.clone()).await.is_err());
+        registry
+            .write()
+            .unwrap()
+            .grant(
+                actor,
+                Grant {
+                    role: Role::Invoke,
+                    adapter_hash: Some(adapter),
+                    operation_id: Some(7),
+                    expires_at_unix_ms: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(authorized.handle_call(request).await.unwrap().body, vec![1]);
     }
 }
