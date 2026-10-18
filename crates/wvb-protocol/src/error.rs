@@ -12,6 +12,11 @@ pub enum ProtocolError {
     EnvelopeInvalid,
     FlagsInvalid,
     SequenceExhausted,
+    PackedHeaderInvalid,
+    FieldOrderInvalid,
+    FieldDuplicate,
+    FieldTypeInvalid,
+    FieldBoundsExceeded,
 }
 
 impl fmt::Display for ProtocolError {
