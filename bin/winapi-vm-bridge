@@ -12,13 +12,12 @@ if [ "${1:-}" = generate ] && [ -n "${2:-}" ]; then
   shift
   exec python3 "$root/sdk/generate.py" "$@"
 fi
-if [ "${1:-}" = call ] && [ "${2:-}" = core.ping ]; then
-  printf '{"ok":true,"adapter":"core.mock","operation":"ping","note":"Configure a Windows adapter for native calls."}\n'
+if [ "${1:-}" = adapters ]; then
+  printf '{"adapters":["core"],"note":"Install generated manifests to add Windows DLL adapters."}\n'
   exit 0
 fi
-if [ "${1:-}" = adapters ]; then
-  printf '{"adapters":["core.mock"],"note":"Install generated manifests to add Windows DLL adapters."}\n'
-  exit 0
+if [ "${1:-}" = call ]; then
+  PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m winapi_vm_bridge.cli "$@"
 fi
 cat >&2 <<'EOF'
 Usage:

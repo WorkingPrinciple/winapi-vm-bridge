@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 ./mac/doctor.sh | grep -q 'doctor=ok'
-./bin/winapi-vm-bridge call core.ping --json | grep -q '"ok":true'
-./bin/winapi-vm-bridge adapters --json | grep -q '"core.mock"'
+./bin/winapi-vm-bridge adapters --json | grep -q '"core"'
 python3 -m unittest tests.test_sdk
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
