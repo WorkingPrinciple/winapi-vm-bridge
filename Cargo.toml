@@ -8,6 +8,7 @@ members = [
   "crates/wvb-client",
   "crates/wvb-client-ffi",
   "crates/wvb-crypto",
+  "crates/wvb-exe",
   "crates/wvb-generate",
   "crates/wvb-inspect",
   "crates/wvb-ir",
@@ -20,6 +21,7 @@ members = [
   "crates/wvb-session",
   "crates/wvb-state",
   "crates/wvb-transport",
+  "crates/wvb-transfer",
 ]
 
 [workspace.package]

@@ -17,6 +17,7 @@ wvb-transport = { path = "../wvb-transport" }
 [dev-dependencies]
 wvb-client = { path = "../wvb-client" }
 wvb-crypto = { path = "../wvb-crypto" }
+wvb-exe = { path = "../wvb-exe" }
 
 [lints]
 workspace = true

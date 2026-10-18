@@ -1123,6 +1123,7 @@ dependencies = [
  "wvb-call",
  "wvb-client",
  "wvb-crypto",
+ "wvb-exe",
  "wvb-protocol",
  "wvb-transport",
 ]
@@ -1163,6 +1164,10 @@ dependencies = [
  "snow",
  "zeroize",
 ]
+
+[[package]]
+name = "wvb-exe"
+version = "0.2.0"
 
 [[package]]
 name = "wvb-generate"
@@ -1265,6 +1270,14 @@ dependencies = [
  "rusqlite",
  "sha2",
  "tempfile",
+]
+
+[[package]]
+name = "wvb-transfer"
+version = "0.2.0"
+dependencies = [
+ "sha2",
+ "wvb-protocol",
 ]
 
 [[package]]

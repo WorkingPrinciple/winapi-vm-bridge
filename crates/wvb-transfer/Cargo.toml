@@ -1,0 +1,14 @@
+[package]
+name = "wvb-transfer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sha2.workspace = true
+wvb-protocol = { path = "../wvb-protocol" }
+
+[lints]
+workspace = true

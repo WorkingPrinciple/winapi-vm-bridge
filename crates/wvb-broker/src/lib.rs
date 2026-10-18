@@ -399,10 +399,14 @@ mod tests {
     use wvb_authz::{Grant, Role};
     use wvb_client::Client;
     use wvb_crypto::{Handshake, PairingPsk, StaticPrivateKey, Transport};
+    use wvb_exe::{Limits, ProcessRequest, ProcessResult};
 
     struct Echo;
     struct EchoCall;
     struct ScalarAdd;
+    struct ProcessFixture {
+        limits: Limits,
+    }
 
     #[async_trait]
     impl Handler for Echo {
@@ -445,6 +449,34 @@ mod tests {
                     status: 3,
                     body: Vec::new(),
                 },
+            }
+        }
+    }
+
+    impl TypedDispatchModule for ProcessFixture {
+        fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome {
+            let Ok(request) = ProcessRequest::decode(request, &self.limits) else {
+                return DispatchOutcome {
+                    status: 1,
+                    body: Vec::new(),
+                };
+            };
+            if operation_id != 1 || request.arguments != ["alpha", "two words"] {
+                return DispatchOutcome {
+                    status: 1,
+                    body: Vec::new(),
+                };
+            }
+            let result = ProcessResult {
+                exit_code: 17,
+                timed_out: false,
+                cancelled: false,
+                stdout: b"fixture-stdout".to_vec(),
+                stderr: b"fixture-stderr".to_vec(),
+            };
+            DispatchOutcome {
+                status: 0,
+                body: result.encode(&self.limits).unwrap(),
             }
         }
     }
@@ -558,6 +590,66 @@ mod tests {
         assert_eq!(result.response_schema_id, 0x3000_0002);
         assert_eq!(result.native_status, 0_i32.to_le_bytes());
         assert_eq!(i32::from_le_bytes(result.body.try_into().unwrap()), 42);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn native_exe_contract_runs_through_canonical_runtime() {
+        let limits = Limits {
+            max_arguments: 8,
+            max_argument_bytes: 128,
+            max_stdin_bytes: 1024,
+            max_stdout_bytes: 1024,
+            max_stderr_bytes: 1024,
+            environment_allowlist: std::collections::BTreeSet::from([String::from("WVB_MODE")]),
+        };
+        let request_body = ProcessRequest {
+            invocation_id: [0x33; 16],
+            arguments: vec![String::from("alpha"), String::from("two words")],
+            environment: BTreeMap::from([(String::from("WVB_MODE"), String::from("oracle"))]),
+            stdin: b"fixture-input".to_vec(),
+        }
+        .encode(&limits)
+        .unwrap();
+        let (client_crypto, broker_crypto) = paired_transports();
+        let (client_io, broker_io) = duplex(1 << 20);
+        let client_connection = SecureConnection::new(client_io, client_crypto, 99);
+        let broker_connection = SecureConnection::new(broker_io, broker_crypto, 99);
+        let handler = DispatcherCallHandler::new(
+            [4; 32],
+            BTreeMap::from([(
+                1,
+                OperationSchema {
+                    request_schema_id: 0x3000_0101,
+                    response_schema_id: 0x3000_0102,
+                },
+            )]),
+            Arc::new(ProcessFixture {
+                limits: limits.clone(),
+            }),
+        );
+        let server = tokio::spawn(serve_calls(broker_connection, Arc::new(handler), 1));
+        let client = Client::spawn(client_connection, 99, [7; 8], 8);
+        let result = client
+            .call(
+                &CallRequest {
+                    adapter_hash: [4; 32],
+                    operation_id: 1,
+                    request_schema_id: 0x3000_0101,
+                    deduplication_mode: 0,
+                    idempotency_key: None,
+                    disconnect_policy: 0,
+                    sensitivity: 0,
+                    body: request_body,
+                },
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        let process = ProcessResult::decode(&result.body, &limits).unwrap();
+        assert_eq!(process.exit_code, 17);
+        assert_eq!(process.stdout, b"fixture-stdout");
+        assert_eq!(process.stderr, b"fixture-stderr");
         server.abort();
     }
 
