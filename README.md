@@ -2,6 +2,10 @@
 
 ![WinAPI VM Bridge: a missing DLL on Mac is represented by a proxy that calls the real DLL in a Windows VM](docs/assets/bridge-overview.svg)
 
+> **Research preview—not production ready.** The real Windows DLL round trip
+> works. Packaging, transport hardening, generated production adapters, and
+> clean-machine qualification are still incomplete.
+
 Use a DLL that exists in Windows from an app running under Wine on macOS. The
 app stays on the Mac. A generated proxy DLL exposes the missing exports, sends
 selected calls to the real DLL inside a Windows VM, and returns the native
@@ -138,6 +142,22 @@ Best for coarse request/result calls:
 | Compilable scalar shim/dispatcher generation | [Planned](https://github.com/dragoshont/winapi-vm-bridge/issues/1) |
 | Complex API adapters | Per library |
 | Transparent arbitrary-DLL remoting | Not supported |
+
+## Production readiness
+
+Before calling this production-ready, the project still needs:
+
+- encrypted and mutually authenticated transport, not capability-only access;
+- signed/notarized Mac and signed Windows release artifacts;
+- installers and rollback that do not depend on Python or a source checkout;
+- automatic or fully guided VM networking/forwarding;
+- compilable generated shim and dispatcher output;
+- protocol compatibility/version migration guarantees;
+- clean-machine Mac ↔ Windows VM end-to-end tests;
+- fuzzing, threat modelling, dependency/provenance checks, and security review;
+- crash recovery, update, rotation, multi-client, and observability behavior;
+- at least one independently built real-library adapter beyond the system-DLL
+  proof.
 
 ## Read next
 
