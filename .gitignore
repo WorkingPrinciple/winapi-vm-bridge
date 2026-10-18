@@ -1,0 +1,8 @@
+.DS_Store
+build/
+out/
+*.log
+*.token
+*.secret
+config.local.*
+

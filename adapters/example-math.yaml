@@ -1,0 +1,14 @@
+schemaVersion: 1
+adapter: example.math
+windows:
+  dll: example-math.dll
+  sha256: replace-at-install
+operations:
+  Add:
+    export: ExampleAdd
+    callingConvention: stdcall
+    timeoutMs: 1000
+    parameters:
+      - { name: left, type: i32, direction: in }
+      - { name: right, type: i32, direction: in }
+    returns: i32

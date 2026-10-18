@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+if [ "${1:-}" = call ] && [ "${2:-}" = core.ping ]; then
+  printf '{"ok":true,"adapter":"core.mock","operation":"ping","note":"Configure a Windows adapter for native calls."}\n'
+  exit 0
+fi
+if [ "${1:-}" = adapters ]; then
+  printf '{"adapters":["core.mock"],"note":"Install generated manifests to add Windows DLL adapters."}\n'
+  exit 0
+fi
+cat >&2 <<'EOF'
+Usage:
+  winapi-vm-bridge call core.ping --json
+  winapi-vm-bridge adapters --json
+
+The public bootstrap installs mock mode only. Native adapters require their
+documented Windows SDK/runtime and explicit configuration.
+EOF
+exit 2

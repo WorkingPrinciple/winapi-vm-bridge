@@ -1,0 +1,8 @@
+schemaVersion: 1
+transport:
+  host: 127.0.0.1
+  port: 47802
+  capabilityFile: ~/.config/winapi-vm-bridge/capability
+adapters:
+  - adapters/example-math.yaml
+
