@@ -114,6 +114,7 @@ fn generate_native_c(contract: &AdapterContract, output: &Path) -> Result<(), Ge
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn generate_managed_assembly(
     contract: &AdapterContract,
     output: &Path,
@@ -185,9 +186,41 @@ fn generate_managed_assembly(
              \x20       out UIntPtr responseLength);\n\
              }}\n\n",
     );
+    let mut dispatcher = String::from(
+        "using System;\n\n\
+         namespace Wvb.Generated\n{\n\
+         \x20   public static class ManagedDispatcher\n\
+         \x20   {\n\
+         \x20       public const int Ok = 0;\n\
+         \x20       public const int InvalidBuffer = 1;\n\
+         \x20       public const int OperationUnknown = 2;\n\
+         \x20       public const int InvocationFailed = 3;\n\
+         \x20       static ManagedDispatcher()\n\
+         \x20       {\n\
+         \x20           if (!BitConverter.IsLittleEndian)\n\
+         \x20               throw new PlatformNotSupportedException(\"WinAPI VM Bridge scalar encoding requires little-endian Windows\");\n\
+         \x20       }\n\
+         \x20       public static int Dispatch(\n\
+         \x20           uint operationId, byte[] request, byte[] response, out int responseLength)\n\
+         \x20       {\n\
+         \x20           responseLength = 0;\n\
+         \x20           if (request is null || response is null)\n\
+         \x20               return InvalidBuffer;\n\
+         \x20           switch (operationId)\n\
+         \x20           {\n",
+    );
     for operation in &contract.operations {
         source.push_str(&generate_managed_operation(operation)?);
+        dispatcher.push_str(&generate_managed_dispatch_operation(operation)?);
     }
+    dispatcher.push_str(
+        "                default:\n\
+         \x20                   return OperationUnknown;\n\
+         \x20           }\n\
+         \x20       }\n\
+         \x20   }\n\
+         }\n",
+    );
     source.truncate(source.trim_end_matches('\n').len());
     source.push('\n');
     fs::write(
@@ -195,6 +228,7 @@ fn generate_managed_assembly(
         project,
     )?;
     fs::write(output.join("Proxy.generated.cs"), source)?;
+    fs::write(output.join("Dispatcher.generated.cs"), dispatcher)?;
     fs::write(
         output.join("contract.canonical.json"),
         contract.canonical_bytes()?,
@@ -257,6 +291,7 @@ fn generate_managed_operation(operation: &Operation) -> Result<String, GenerateE
             "            {}",
             csharp_write(
                 &parameter.type_id,
+                "request",
                 &csharp_identifier(&parameter.name),
                 offset
             )?
@@ -313,6 +348,82 @@ fn generate_managed_operation(operation: &Operation) -> Result<String, GenerateE
     ))
 }
 
+fn generate_managed_dispatch_operation(operation: &Operation) -> Result<String, GenerateError> {
+    if operation
+        .parameters
+        .iter()
+        .any(|parameter| parameter.direction != Direction::In || !is_scalar(&parameter.type_id))
+        || !is_scalar(&operation.return_type_id)
+    {
+        return Err(GenerateError::Unsupported(format!(
+            "managed operation {} needs custom marshalling",
+            operation.name
+        )));
+    }
+    let managed = operation
+        .managed
+        .as_ref()
+        .ok_or_else(|| GenerateError::Unsupported("managed operation metadata".into()))?;
+    let request_bytes = operation
+        .parameters
+        .iter()
+        .map(|parameter| scalar_size(&parameter.type_id))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .sum::<usize>();
+    let response_bytes = scalar_size(&operation.return_type_id)?;
+    let mut reads = String::new();
+    let mut arguments = Vec::new();
+    let mut offset = 0;
+    for (index, parameter) in operation.parameters.iter().enumerate() {
+        if parameter.type_id == "bool" {
+            writeln!(
+                reads,
+                "                    if (request[{offset}] > 1) return InvalidBuffer;"
+            )
+            .expect("write to string");
+        }
+        let variable = format!("argument{index}");
+        writeln!(
+            reads,
+            "                    {} {variable} = {};",
+            csharp_type(&parameter.type_id)?,
+            csharp_read(&parameter.type_id, "request", offset)?
+        )
+        .expect("write to string");
+        arguments.push(variable);
+        offset += scalar_size(&parameter.type_id)?;
+    }
+    let call = format!(
+        "global::{}.{}({})",
+        csharp_qualified_identifier(&managed.declaring_type),
+        csharp_identifier(&managed.member_name),
+        arguments.join(", ")
+    );
+    let write_result = csharp_write(&operation.return_type_id, "response", "result", 0)?;
+    Ok(format!(
+        "                case {operation_id}u:\n\
+         \x20               {{\n\
+         \x20                   if (request.Length != {request_bytes} || response.Length < {response_bytes})\n\
+         \x20                       return InvalidBuffer;\n\
+         {reads}\
+         \x20                   try\n\
+         \x20                   {{\n\
+         \x20                       {return_type} result = {call};\n\
+         \x20                       {write_result}\n\
+         \x20                       responseLength = {response_bytes};\n\
+         \x20                       return Ok;\n\
+         \x20                   }}\n\
+         \x20                   catch\n\
+         \x20                   {{\n\
+         \x20                       return InvocationFailed;\n\
+         \x20                   }}\n\
+         \x20               }}\n",
+        operation_id = operation.id,
+        return_type = csharp_type(&operation.return_type_id)?,
+    ))
+}
+
 fn csharp_type(value: &str) -> Result<&'static str, GenerateError> {
     match value {
         "i8" => Ok("sbyte"),
@@ -330,16 +441,23 @@ fn csharp_type(value: &str) -> Result<&'static str, GenerateError> {
     }
 }
 
-fn csharp_write(value: &str, name: &str, offset: usize) -> Result<String, GenerateError> {
+fn csharp_write(
+    value: &str,
+    buffer: &str,
+    name: &str,
+    offset: usize,
+) -> Result<String, GenerateError> {
     let expression = match value {
-        "i8" | "u8" => return Ok(format!("request[{offset}] = unchecked((byte){name});")),
-        "bool" => return Ok(format!("request[{offset}] = {name} ? (byte)1 : (byte)0;")),
+        "i8" | "u8" => {
+            return Ok(format!("{buffer}[{offset}] = unchecked((byte){name});"));
+        }
+        "bool" => return Ok(format!("{buffer}[{offset}] = {name} ? (byte)1 : (byte)0;")),
         "i16" | "u16" | "i32" | "hresult" | "u32" | "i64" | "u64" | "f32" | "f64" => {
             format!("BitConverter.GetBytes({name})")
         }
         other => return Err(GenerateError::Unsupported(other.to_owned())),
     };
-    Ok(format!("{expression}.CopyTo(request, {offset});"))
+    Ok(format!("{expression}.CopyTo({buffer}, {offset});"))
 }
 
 fn csharp_read(value: &str, buffer: &str, offset: usize) -> Result<String, GenerateError> {
@@ -361,6 +479,14 @@ fn csharp_read(value: &str, buffer: &str, offset: usize) -> Result<String, Gener
 
 fn csharp_identifier(value: &str) -> String {
     format!("@{value}")
+}
+
+fn csharp_qualified_identifier(value: &str) -> String {
+    value
+        .split('.')
+        .map(csharp_identifier)
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 fn escape_xml(value: &str) -> String {
@@ -700,6 +826,7 @@ mod tests {
         for file in [
             "Example.Math.csproj",
             "Proxy.generated.cs",
+            "Dispatcher.generated.cs",
             "contract.canonical.json",
         ] {
             assert_eq!(
@@ -719,6 +846,13 @@ mod tests {
         let project = fs::read_to_string(first.path().join("Example.Math.csproj")).unwrap();
         assert!(project.contains("<AssemblyVersion>1.0.0.0</AssemblyVersion>"));
         assert!(project.contains("<PlatformTarget>x64</PlatformTarget>"));
+        let dispatcher = fs::read_to_string(first.path().join("Dispatcher.generated.cs")).unwrap();
+        assert!(dispatcher.contains("case 1u:"));
+        assert!(dispatcher.contains("case 2u:"));
+        assert!(
+            dispatcher.contains("global::@Example.@Math.@Calculator.@Add(argument0, argument1)")
+        );
+        assert!(dispatcher.contains("responseLength = 4;"));
     }
 
     #[test]

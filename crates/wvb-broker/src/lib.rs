@@ -53,6 +53,66 @@ pub trait CallHandler: Send + Sync + 'static {
     async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError>;
 }
 
+pub trait TypedDispatchModule: Send + Sync + 'static {
+    fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome;
+}
+
+pub struct DispatchOutcome {
+    pub status: i32,
+    pub body: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+pub struct OperationSchema {
+    pub request_schema_id: u32,
+    pub response_schema_id: u32,
+}
+
+pub struct DispatcherCallHandler {
+    adapter_hash: [u8; 32],
+    operations: BTreeMap<u32, OperationSchema>,
+    dispatcher: Arc<dyn TypedDispatchModule>,
+}
+
+impl DispatcherCallHandler {
+    #[must_use]
+    pub fn new(
+        adapter_hash: [u8; 32],
+        operations: BTreeMap<u32, OperationSchema>,
+        dispatcher: Arc<dyn TypedDispatchModule>,
+    ) -> Self {
+        Self {
+            adapter_hash,
+            operations,
+            dispatcher,
+        }
+    }
+}
+
+#[async_trait]
+impl CallHandler for DispatcherCallHandler {
+    async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
+        if request.adapter_hash != self.adapter_hash {
+            return Err(BrokerError::Handler("adapter hash mismatch".into()));
+        }
+        let schema = self.operations.get(&request.operation_id).ok_or_else(|| {
+            BrokerError::Handler("operation is not in dispatcher contract".into())
+        })?;
+        if request.request_schema_id != schema.request_schema_id {
+            return Err(BrokerError::Handler("request schema mismatch".into()));
+        }
+        let outcome = self
+            .dispatcher
+            .dispatch(request.operation_id, &request.body);
+        Ok(CallResult {
+            response_schema_id: schema.response_schema_id,
+            operation_uuid: None,
+            native_status: outcome.status.to_le_bytes().to_vec(),
+            body: outcome.body,
+        })
+    }
+}
+
 pub fn actor_for_session_key(
     registry: &RwLock<Registry>,
     remote_public_key: &[u8; 32],
@@ -342,6 +402,7 @@ mod tests {
 
     struct Echo;
     struct EchoCall;
+    struct ScalarAdd;
 
     #[async_trait]
     impl Handler for Echo {
@@ -362,6 +423,29 @@ mod tests {
                 native_status: vec![1],
                 body: request.body,
             })
+        }
+    }
+
+    impl TypedDispatchModule for ScalarAdd {
+        fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome {
+            if operation_id != 1 || request.len() != 8 {
+                return DispatchOutcome {
+                    status: 1,
+                    body: Vec::new(),
+                };
+            }
+            let left = i32::from_le_bytes(request[..4].try_into().unwrap());
+            let right = i32::from_le_bytes(request[4..].try_into().unwrap());
+            match left.checked_add(right) {
+                Some(result) => DispatchOutcome {
+                    status: 0,
+                    body: result.to_le_bytes().to_vec(),
+                },
+                None => DispatchOutcome {
+                    status: 3,
+                    body: Vec::new(),
+                },
+            }
         }
     }
 
@@ -430,6 +514,50 @@ mod tests {
         assert_eq!(first.body, vec![1; 70_000]);
         assert_eq!(second.response_schema_id, 0x3000_0003);
         assert_eq!(second.body, vec![2; 80_000]);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn typed_dispatcher_runs_scalar_call_through_canonical_runtime() {
+        let (client_crypto, broker_crypto) = paired_transports();
+        let (client_io, broker_io) = duplex(1 << 20);
+        let client_connection = SecureConnection::new(client_io, client_crypto, 99);
+        let broker_connection = SecureConnection::new(broker_io, broker_crypto, 99);
+        let handler = DispatcherCallHandler::new(
+            [3; 32],
+            BTreeMap::from([(
+                1,
+                OperationSchema {
+                    request_schema_id: 0x3000_0001,
+                    response_schema_id: 0x3000_0002,
+                },
+            )]),
+            Arc::new(ScalarAdd),
+        );
+        let server = tokio::spawn(serve_calls(broker_connection, Arc::new(handler), 4));
+        let client = Client::spawn(client_connection, 99, [7; 8], 8);
+        let mut body = Vec::new();
+        body.extend_from_slice(&20_i32.to_le_bytes());
+        body.extend_from_slice(&22_i32.to_le_bytes());
+        let result = client
+            .call(
+                &CallRequest {
+                    adapter_hash: [3; 32],
+                    operation_id: 1,
+                    request_schema_id: 0x3000_0001,
+                    deduplication_mode: 0,
+                    idempotency_key: None,
+                    disconnect_policy: 0,
+                    sensitivity: 0,
+                    body,
+                },
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.response_schema_id, 0x3000_0002);
+        assert_eq!(result.native_status, 0_i32.to_le_bytes());
+        assert_eq!(i32::from_le_bytes(result.body.try_into().unwrap()), 42);
         server.abort();
     }
 

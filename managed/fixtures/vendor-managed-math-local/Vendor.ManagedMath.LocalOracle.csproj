@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Example.ManagedMath.LocalOracle</AssemblyName>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <RootNamespace>Example.ManagedMath</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../vendor-managed-math/Calculator.cs"
+             Link="Calculator.cs" />
+  </ItemGroup>
+</Project>

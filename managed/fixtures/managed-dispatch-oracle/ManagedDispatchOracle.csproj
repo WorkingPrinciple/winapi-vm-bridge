@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>ManagedDispatchOracle</AssemblyName>
+    <RootNamespace>ManagedDispatchOracle</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../example-managed-math/Dispatcher.generated.cs"
+             Link="Dispatcher.generated.cs" />
+    <ProjectReference Include="../vendor-managed-math-local/Vendor.ManagedMath.LocalOracle.csproj" />
+  </ItemGroup>
+</Project>
