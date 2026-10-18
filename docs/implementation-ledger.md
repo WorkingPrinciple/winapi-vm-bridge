@@ -129,6 +129,21 @@ scalar. This evidence is a scalar runtime checkpoint. It does not establish
 production runtime identity, Windows clean-machine acceptance or T162
 completion.
 
+T16, T26 and T32 remain **UNVERIFIED source-plane dependencies**, not VM
+Bridge runtime defects and not failed runtime executions. Exact frozen Whiny
+package `870da868f3d3d48f1da1a36123a9aaf1a6435e53` /
+`e95244e9056997a1887052744c1e235403f8e560cc2fa80d23ad14a4094c7a6f` /
+`11dd56f11e9f46b5099fd8b842a3b4455298698d570706fb267f329598da2731`
+contains only the native-scalar and managed-scalar profiles. It does not
+contain frozen shell-hook, `NtWait*` or ALPC contracts, dispatchers, provider
+identities, operations or acceptance commands. No side-effecting execution was
+attempted and no retry is authorized from this absence. The dependent tasks
+remain held until Whiny supplies exact frozen bundles and dispatchers,
+provider/candidate hashes, operation IDs, cleanup/challenge policy and
+acceptance commands, or an independent review records an unsupported decision.
+VM Bridge shall not invent `loaded_files`, runtime receipts or provider
+identity for these missing source-plane profiles.
+
 ### 0.5 Public redaction boundary
 
 The public ledger may contain:
@@ -2700,7 +2715,7 @@ T000 shall record:
 - [x] Top-level/nested schema IDs and enum compatibility rules are frozen.
 - [x] Flow-control, call and transfer state machines are executable.
 - [x] Audit algorithm/key generation and sustainable TPM anchor cadence are explicit.
-- [ ] T000 records the exhausted review-loop evidence and deterministic blocker closure.
+- [x] T000 records the exhausted review-loop evidence and deterministic blocker closure.
 - [ ] T000 records the approved ledger hash and reconciled live-status hashes.
 - [ ] T002 publishes the redacted ledger-only commit.
 - [ ] P1 hold is released.

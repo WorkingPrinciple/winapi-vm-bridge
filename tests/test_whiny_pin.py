@@ -12,6 +12,10 @@ class WhinyPinTests(unittest.TestCase):
             pin["revision"],
             "870da868f3d3d48f1da1a36123a9aaf1a6435e53",
         )
+        self.assertEqual(
+            set(pin["bundles"]),
+            {"native-scalar", "managed-scalar"},
+        )
         for name, fields in pin["bundles"].items():
             bundle = root / "frozen-bundles" / name
             expected = {
