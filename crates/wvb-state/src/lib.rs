@@ -38,6 +38,23 @@ pub struct Event {
     pub event_hash: [u8; 32],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActorRecord {
+    pub actor_id: [u8; 16],
+    pub public_key: [u8; 32],
+    pub label: String,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrantRecord {
+    pub actor_id: [u8; 16],
+    pub role: u16,
+    pub adapter_hash: Option<[u8; 32]>,
+    pub operation_id: Option<u32>,
+    pub expires_unix_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnchorState {
     pub database_generation: u64,
@@ -75,7 +92,7 @@ impl Store {
                 value INTEGER NOT NULL
             ) STRICT;
             INSERT OR IGNORE INTO metadata(key,value) VALUES
-                ('schema_version',1),
+                ('schema_version',2),
                 ('database_generation',1),
                 ('checkpoint_sequence',0),
                 ('key_generation',1);
@@ -101,9 +118,15 @@ impl Store {
                 operation_id INTEGER,
                 expires_unix_ms INTEGER,
                 created_event INTEGER NOT NULL REFERENCES events(sequence),
-                revoked_event INTEGER REFERENCES events(sequence),
-                PRIMARY KEY(actor_id,role,adapter_hash,operation_id)
+                revoked_event INTEGER REFERENCES events(sequence)
             ) STRICT;
+            CREATE UNIQUE INDEX IF NOT EXISTS grants_normalized_unique
+                ON grants(
+                    actor_id,
+                    role,
+                    IFNULL(hex(adapter_hash),''),
+                    IFNULL(operation_id,-1)
+                );
             CREATE TABLE IF NOT EXISTS receipts(
                 receipt_id BLOB PRIMARY KEY CHECK(length(receipt_id)=16),
                 actor_id BLOB REFERENCES actors(actor_id),
@@ -115,6 +138,45 @@ impl Store {
             ) STRICT;
             ",
         )?;
+        let schema_version = self.metadata("schema_version")?;
+        if schema_version == 1 {
+            self.connection.execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                DROP INDEX IF EXISTS grants_normalized_unique;
+                CREATE TABLE grants_v2(
+                    actor_id BLOB NOT NULL REFERENCES actors(actor_id),
+                    role INTEGER NOT NULL,
+                    adapter_hash BLOB,
+                    operation_id INTEGER,
+                    expires_unix_ms INTEGER,
+                    created_event INTEGER NOT NULL REFERENCES events(sequence),
+                    revoked_event INTEGER REFERENCES events(sequence)
+                ) STRICT;
+                INSERT INTO grants_v2(
+                    actor_id,role,adapter_hash,operation_id,expires_unix_ms,
+                    created_event,revoked_event
+                )
+                SELECT
+                    actor_id,role,adapter_hash,operation_id,expires_unix_ms,
+                    created_event,revoked_event
+                FROM grants;
+                DROP TABLE grants;
+                ALTER TABLE grants_v2 RENAME TO grants;
+                CREATE UNIQUE INDEX grants_normalized_unique
+                    ON grants(
+                        actor_id,
+                        role,
+                        IFNULL(hex(adapter_hash),''),
+                        IFNULL(operation_id,-1)
+                    );
+                UPDATE metadata SET value=2 WHERE key='schema_version';
+                COMMIT;
+                ",
+            )?;
+        } else if schema_version != 2 {
+            return Err(StateError::Corrupt("unsupported schema version"));
+        }
         Ok(())
     }
 
@@ -122,45 +184,148 @@ impl Store {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let latest: Option<(i64, Vec<u8>)> = transaction
-            .query_row(
-                "SELECT sequence,event_hash FROM events ORDER BY sequence DESC LIMIT 1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let (sequence, previous_hash) = match latest {
-            Some((sequence, hash)) => (
-                u64::try_from(sequence)
-                    .map_err(|_| StateError::Corrupt("negative sequence"))?
-                    .checked_add(1)
-                    .ok_or(StateError::Corrupt("sequence overflow"))?,
-                fixed_hash(&hash)?,
-            ),
-            None => (1, ZERO_HASH),
-        };
-        let event_hash = event_hash(previous_hash, sequence, kind, payload);
-        let sequence_sql =
-            i64::try_from(sequence).map_err(|_| StateError::Corrupt("sequence exceeds sqlite"))?;
+        let event = Self::append_event_transaction(&transaction, kind, payload)?;
+        transaction.commit()?;
+        Ok(event)
+    }
+
+    pub fn commit_pairing(
+        &mut self,
+        actor: &ActorRecord,
+        grants: &[GrantRecord],
+        audit_payload: &[u8],
+    ) -> Result<Event, StateError> {
+        if !actor.active || grants.iter().any(|grant| grant.actor_id != actor.actor_id) {
+            return Err(StateError::Corrupt("invalid pairing records"));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let event = Self::append_event_transaction(&transaction, "pair-committed", audit_payload)?;
+        let event_sequence = sql_i64(event.sequence)?;
         transaction.execute(
-            "INSERT INTO events(sequence,kind,payload,previous_hash,event_hash)
-             VALUES(?1,?2,?3,?4,?5)",
+            "INSERT INTO actors(actor_id,public_key,label,status,created_event,revoked_event)
+             VALUES(?1,?2,?3,1,?4,NULL)",
             params![
-                sequence_sql,
-                kind,
-                payload,
-                previous_hash.as_slice(),
-                event_hash.as_slice()
+                actor.actor_id.as_slice(),
+                actor.public_key.as_slice(),
+                actor.label,
+                event_sequence
             ],
         )?;
+        for grant in grants {
+            transaction.execute(
+                "INSERT INTO grants(
+                    actor_id,role,adapter_hash,operation_id,expires_unix_ms,
+                    created_event,revoked_event
+                 ) VALUES(?1,?2,?3,?4,?5,?6,NULL)",
+                params![
+                    grant.actor_id.as_slice(),
+                    i64::from(grant.role),
+                    grant.adapter_hash.as_ref().map(<[u8; 32]>::as_slice),
+                    grant.operation_id.map(i64::from),
+                    grant.expires_unix_ms.map(sql_i64).transpose()?,
+                    event_sequence
+                ],
+            )?;
+        }
         transaction.commit()?;
-        Ok(Event {
-            sequence,
-            kind: kind.to_owned(),
-            payload: payload.to_vec(),
-            previous_hash,
-            event_hash,
-        })
+        Ok(event)
+    }
+
+    pub fn revoke_actor(
+        &mut self,
+        actor_id: [u8; 16],
+        audit_payload: &[u8],
+    ) -> Result<Event, StateError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let event = Self::append_event_transaction(&transaction, "actor-revoked", audit_payload)?;
+        let changed = transaction.execute(
+            "UPDATE actors SET status=2,revoked_event=?2
+             WHERE actor_id=?1 AND status=1",
+            params![actor_id.as_slice(), sql_i64(event.sequence)?],
+        )?;
+        if changed != 1 {
+            return Err(StateError::Corrupt("actor not active"));
+        }
+        transaction.execute(
+            "UPDATE grants SET revoked_event=?2
+             WHERE actor_id=?1 AND revoked_event IS NULL",
+            params![actor_id.as_slice(), sql_i64(event.sequence)?],
+        )?;
+        transaction.commit()?;
+        Ok(event)
+    }
+
+    pub fn actors(&self) -> Result<Vec<ActorRecord>, StateError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT actor_id,public_key,label,status FROM actors ORDER BY actor_id")?;
+        let rows = statement.query_map([], |row| {
+            let actor_id = fixed_array_sql::<16>(row.get(0)?)?;
+            let public_key = fixed_array_sql::<32>(row.get(1)?)?;
+            let status: i64 = row.get(3)?;
+            if !matches!(status, 1 | 2) {
+                return Err(rusqlite::Error::FromSqlConversionFailure(
+                    3,
+                    rusqlite::types::Type::Integer,
+                    "invalid actor status".into(),
+                ));
+            }
+            Ok(ActorRecord {
+                actor_id,
+                public_key,
+                label: row.get(2)?,
+                active: status == 1,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(StateError::Sql)
+    }
+
+    pub fn active_grants(&self) -> Result<Vec<GrantRecord>, StateError> {
+        let mut statement = self.connection.prepare(
+            "SELECT actor_id,role,adapter_hash,operation_id,expires_unix_ms
+             FROM grants WHERE revoked_event IS NULL
+             ORDER BY actor_id,role,adapter_hash,operation_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let role = sql_u64(row, 1)?;
+            let operation = row
+                .get::<_, Option<i64>>(3)?
+                .map(|value| {
+                    u32::try_from(value).map_err(|_| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            3,
+                            rusqlite::types::Type::Integer,
+                            "operation id exceeds u32".into(),
+                        )
+                    })
+                })
+                .transpose()?;
+            let expires = row
+                .get::<_, Option<i64>>(4)?
+                .map(|value| sql_u64_value(value, 4))
+                .transpose()?;
+            Ok(GrantRecord {
+                actor_id: fixed_array_sql::<16>(row.get(0)?)?,
+                role: u16::try_from(role).map_err(|_| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        1,
+                        rusqlite::types::Type::Integer,
+                        "role exceeds u16".into(),
+                    )
+                })?,
+                adapter_hash: row
+                    .get::<_, Option<Vec<u8>>>(2)?
+                    .map(fixed_array_sql::<32>)
+                    .transpose()?,
+                operation_id: operation,
+                expires_unix_ms: expires,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(StateError::Sql)
     }
 
     pub fn latest_event(&self) -> Result<Option<Event>, StateError> {
@@ -183,6 +348,49 @@ impl Store {
             )
             .optional()
             .map_err(StateError::Sql)
+    }
+
+    fn append_event_transaction(
+        transaction: &rusqlite::Transaction<'_>,
+        kind: &str,
+        payload: &[u8],
+    ) -> Result<Event, StateError> {
+        let latest: Option<(i64, Vec<u8>)> = transaction
+            .query_row(
+                "SELECT sequence,event_hash FROM events ORDER BY sequence DESC LIMIT 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let (sequence, previous_hash) = match latest {
+            Some((sequence, hash)) => (
+                u64::try_from(sequence)
+                    .map_err(|_| StateError::Corrupt("negative sequence"))?
+                    .checked_add(1)
+                    .ok_or(StateError::Corrupt("sequence overflow"))?,
+                fixed_hash(&hash)?,
+            ),
+            None => (1, ZERO_HASH),
+        };
+        let event_hash = event_hash(previous_hash, sequence, kind, payload);
+        transaction.execute(
+            "INSERT INTO events(sequence,kind,payload,previous_hash,event_hash)
+             VALUES(?1,?2,?3,?4,?5)",
+            params![
+                sql_i64(sequence)?,
+                kind,
+                payload,
+                previous_hash.as_slice(),
+                event_hash.as_slice()
+            ],
+        )?;
+        Ok(Event {
+            sequence,
+            kind: kind.to_owned(),
+            payload: payload.to_vec(),
+            previous_hash,
+            event_hash,
+        })
     }
 
     pub fn verify_chain(&self) -> Result<Option<Event>, StateError> {
@@ -282,8 +490,21 @@ fn fixed_hash_sql(value: Vec<u8>) -> rusqlite::Result<[u8; 32]> {
     })
 }
 
-fn sql_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
-    let value: i64 = row.get(index)?;
+fn fixed_array_sql<const N: usize>(value: Vec<u8>) -> rusqlite::Result<[u8; N]> {
+    value.try_into().map_err(|_| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Blob,
+            "invalid fixed array length".into(),
+        )
+    })
+}
+
+fn sql_i64(value: u64) -> Result<i64, StateError> {
+    i64::try_from(value).map_err(|_| StateError::Corrupt("value exceeds sqlite integer"))
+}
+
+fn sql_u64_value(value: i64, index: usize) -> rusqlite::Result<u64> {
     u64::try_from(value).map_err(|_| {
         rusqlite::Error::FromSqlConversionFailure(
             index,
@@ -291,6 +512,11 @@ fn sql_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
             "negative integer for unsigned field".into(),
         )
     })
+}
+
+fn sql_u64(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
+    let value: i64 = row.get(index)?;
+    sql_u64_value(value, index)
 }
 
 #[cfg(test)]
@@ -348,5 +574,70 @@ mod tests {
         };
         anchor.store(value).unwrap();
         assert_eq!(anchor.load().unwrap(), Some(value));
+    }
+
+    #[test]
+    fn pairing_and_revocation_are_atomic_durable_and_audited() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("actors.db");
+        let actor = ActorRecord {
+            actor_id: [1; 16],
+            public_key: [2; 32],
+            label: String::from("Mac"),
+            active: true,
+        };
+        let grants = [
+            GrantRecord {
+                actor_id: actor.actor_id,
+                role: 1,
+                adapter_hash: Some([3; 32]),
+                operation_id: Some(7),
+                expires_unix_ms: Some(1_000),
+            },
+            GrantRecord {
+                actor_id: actor.actor_id,
+                role: 5,
+                adapter_hash: None,
+                operation_id: None,
+                expires_unix_ms: None,
+            },
+        ];
+        {
+            let mut store = Store::open(&path).unwrap();
+            let paired = store
+                .commit_pairing(&actor, &grants, b"pair receipt")
+                .unwrap();
+            assert_eq!(paired.sequence, 1);
+            assert_eq!(store.actors().unwrap(), vec![actor.clone()]);
+            assert_eq!(store.active_grants().unwrap(), grants);
+            let revoked = store
+                .revoke_actor(actor.actor_id, b"revoke receipt")
+                .unwrap();
+            assert_eq!(revoked.sequence, 2);
+            assert!(store.active_grants().unwrap().is_empty());
+            assert!(!store.actors().unwrap()[0].active);
+            store.verify_chain().unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.verify_chain().unwrap().unwrap().sequence, 2);
+        assert!(!store.actors().unwrap()[0].active);
+        assert!(store.active_grants().unwrap().is_empty());
+    }
+
+    #[test]
+    fn failed_pairing_rolls_back_event_and_actor_together() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("rollback.db");
+        let mut store = Store::open(&path).unwrap();
+        let actor = ActorRecord {
+            actor_id: [4; 16],
+            public_key: [5; 32],
+            label: String::from("Mac"),
+            active: true,
+        };
+        store.commit_pairing(&actor, &[], b"first").unwrap();
+        assert!(store.commit_pairing(&actor, &[], b"duplicate").is_err());
+        assert_eq!(store.verify_chain().unwrap().unwrap().sequence, 1);
+        assert_eq!(store.actors().unwrap().len(), 1);
     }
 }
