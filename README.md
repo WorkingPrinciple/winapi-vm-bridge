@@ -2,9 +2,9 @@
 
 ![WinAPI VM Bridge: a missing DLL on Mac is represented by a proxy that calls the real DLL in a Windows VM](docs/assets/bridge-overview.svg)
 
-> **Research preview—not production ready.** The real Windows DLL round trip
-> works. Packaging, transport hardening, generated production adapters, and
-> clean-machine qualification are still incomplete.
+> **The bridge core is working.** The CLI performs a real Mac → Windows VM →
+> `kernel32.dll` → Mac round trip. Automatic drop-in proxy DLL generation is the
+> next build milestone.
 
 Use a DLL that exists in Windows from an app running under Wine on macOS. The
 app stays on the Mac. A generated proxy DLL exposes the missing exports, sends
@@ -143,21 +143,22 @@ Best for coarse request/result calls:
 | Complex API adapters | Per library |
 | Transparent arbitrary-DLL remoting | Not supported |
 
-## Production readiness
+## What is complete
 
-Before calling this production-ready, the project still needs:
+- paired Mac ↔ Windows VM transport;
+- real Windows `kernel32.dll` call and native result;
+- repeatable setup scripts and pairing reuse;
+- adapter manifest/schema, generator, tests, and AI implementation task.
 
-- encrypted and mutually authenticated transport, not capability-only access;
-- signed/notarized Mac and signed Windows release artifacts;
-- installers and rollback that do not depend on Python or a source checkout;
-- automatic or fully guided VM networking/forwarding;
-- compilable generated shim and dispatcher output;
-- protocol compatibility/version migration guarantees;
-- clean-machine Mac ↔ Windows VM end-to-end tests;
-- fuzzing, threat modelling, dependency/provenance checks, and security review;
-- crash recovery, update, rotation, multi-client, and observability behavior;
-- at least one independently built real-library adapter beyond the system-DLL
-  proof.
+## What remains
+
+1. Generate and compile the actual drop-in proxy DLL and Windows dispatcher for
+   scalar manifest operations.
+2. Qualify the three-command setup on a clean Mac + UTM Windows VM, including
+   forwarding discovery instead of relying on prior VM configuration.
+
+Everything else is normal hardening and packaging work, not a missing core
+proof.
 
 ## Read next
 
