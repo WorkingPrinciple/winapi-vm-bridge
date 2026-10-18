@@ -32,10 +32,10 @@ Verify the round trip:
 winapi-vm-bridge call core.ping --json
 ```
 
-The setup commands are intentionally fail-closed. Until signed release
-artifacts exist, they install the source checkout and run the portable mock
-adapter rather than downloading unverified binaries. The Xbox/GDK adapter also
-requires an authorized local GDK installation and title configuration.
+The setup commands are intentionally fail-closed. They install the source
+checkout and run the portable authenticated `core.ping` broker without
+downloading unverified binaries. Native DLL adapters additionally require their
+authorized Windows SDK/runtime, real DLL, verified hash, and adapter manifest.
 
 ## Architecture
 
