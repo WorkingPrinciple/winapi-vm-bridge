@@ -1,11 +1,14 @@
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use wvb_operations::{CheckStatus, OverallStatus, ReadinessCheck, ReadinessRegistry};
+use wvb_owner::{AttemptCorrelation, TerminalReceiptInput};
 use wvb_package::{HealthReceipt, PackageManifest};
 use wvb_state::Store;
+use zeroize::Zeroize;
 
 #[derive(Parser)]
 struct Arguments {
@@ -27,6 +30,18 @@ enum Command {
         #[arg(long)]
         receipt: Option<PathBuf>,
     },
+    CompleteReceipt {
+        #[arg(long)]
+        state: PathBuf,
+        #[arg(long)]
+        correlation: PathBuf,
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        public_key: PathBuf,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +59,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             package_root,
             receipt,
         } => doctor(&state, &package_root, receipt),
+        Command::CompleteReceipt {
+            state,
+            correlation,
+            input,
+            output,
+            public_key,
+        } => {
+            let mut store = Store::open(&state)?;
+            let mut correlation: AttemptCorrelation =
+                serde_json::from_slice(&fs::read(correlation)?)?;
+            let input: TerminalReceiptInput = serde_json::from_slice(&fs::read(input)?)?;
+            let mut seed = [0_u8; 32];
+            io::stdin().read_exact(&mut seed)?;
+            let emitted = correlation.complete_with_receipt(&mut store, seed, input);
+            seed.zeroize();
+            let emitted = emitted?;
+            fs::write(output, emitted.receipt.canonical_bytes()?)?;
+            fs::write(public_key, emitted.public_key)?;
+            println!(
+                "runtime-receipt=committed attempt={}",
+                correlation
+                    .attempt_id
+                    .iter()
+                    .fold(String::new(), |mut value, byte| {
+                        use std::fmt::Write;
+                        write!(value, "{byte:02x}").expect("writing to String cannot fail");
+                        value
+                    })
+            );
+            Ok(())
+        }
     }
 }
 

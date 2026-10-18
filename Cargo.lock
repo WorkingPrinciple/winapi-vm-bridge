@@ -1262,10 +1262,12 @@ dependencies = [
  "wvb-client",
  "wvb-crypto",
  "wvb-operations",
+ "wvb-owner",
  "wvb-package",
  "wvb-session",
  "wvb-state",
  "wvb-transport",
+ "zeroize",
 ]
 
 [[package]]

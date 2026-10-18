@@ -191,6 +191,16 @@ impl AttemptCorrelation {
         if operation.status != OperationStatus::Running {
             return Err(OwnerError::State);
         }
+        if self.receipt_id.is_some()
+            || operation.operation_type != "runtime-owner-attempt"
+            || operation.target_hash != self.bundle_sha256
+            || operation.idempotency_hash != Some(self.sha256()?)
+            || serde_json::from_slice::<AttemptCorrelation>(&operation.detail)
+                .map_err(|_| OwnerError::State)?
+                != *self
+        {
+            return Err(OwnerError::InvalidCorrelation);
+        }
         self.receipt_id = Some(input.receipt_id);
         let status = input.status.clone();
         let mut receipt = RuntimeReceipt {
@@ -263,13 +273,13 @@ impl AttemptCorrelation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoadedArtifact {
     pub path: String,
     pub sha256: [u8; 32],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalReceiptInput {
     pub receipt_id: [u8; 16],
     pub bundle_sha256: [u8; 32],
@@ -356,6 +366,42 @@ mod tests {
             profiles: profiles.iter().map(|value| String::from(*value)).collect(),
             maximum_payload_bytes: 1024 * 1024,
             capability_revision: 1,
+        }
+    }
+
+    fn terminal_input(
+        correlation: &AttemptCorrelation,
+        receipt_id: [u8; 16],
+        host_id: String,
+    ) -> TerminalReceiptInput {
+        TerminalReceiptInput {
+            receipt_id,
+            bundle_sha256: correlation.bundle_sha256,
+            contract_sha256: [10; 32],
+            operation_id: correlation.operation_id,
+            request_sha256: [11; 32],
+            response_sha256: [12; 32],
+            status: String::from("ok"),
+            runtime_identity: RuntimeIdentity {
+                host_id,
+                os_build: String::from("Windows 11"),
+                architecture: String::from("x86-64"),
+                bridge_version: String::from("0.2.0"),
+            },
+            loaded_files: vec![LoadedArtifact {
+                path: String::from("dispatcher.dll"),
+                sha256: [13; 32],
+            }],
+            authorization_receipt_sha256: [14; 32],
+            challenge_sha256: [15; 32],
+            sequence: 1,
+            started_at: String::from("2026-10-18T00:00:00Z"),
+            completed_at: String::from("2026-10-18T00:00:01Z"),
+            completed_unix_ms: 12,
+            cleanup: Cleanup {
+                status: String::from("verified"),
+                diagnostics: Vec::new(),
+            },
         }
     }
 
@@ -465,39 +511,22 @@ mod tests {
             .transition_operation(OperationStatus::Queued, &operation, b"attempt running")
             .unwrap();
         let receipt_id = [8; 16];
+        let mut wrong = correlation.clone();
+        wrong.host_id = String::from("other-host");
+        assert_eq!(
+            wrong.complete_with_receipt(
+                &mut store,
+                [9; 32],
+                terminal_input(&correlation, receipt_id, wrong.host_id.clone()),
+            ),
+            Err(OwnerError::InvalidCorrelation)
+        );
+        assert!(store.receipt(receipt_id).unwrap().is_none());
         let emitted = correlation
             .complete_with_receipt(
                 &mut store,
                 [9; 32],
-                TerminalReceiptInput {
-                    receipt_id,
-                    bundle_sha256: correlation.bundle_sha256,
-                    contract_sha256: [10; 32],
-                    operation_id: correlation.operation_id,
-                    request_sha256: [11; 32],
-                    response_sha256: [12; 32],
-                    status: String::from("ok"),
-                    runtime_identity: RuntimeIdentity {
-                        host_id: correlation.host_id.clone(),
-                        os_build: String::from("Windows 11"),
-                        architecture: String::from("x86-64"),
-                        bridge_version: String::from("0.2.0"),
-                    },
-                    loaded_files: vec![LoadedArtifact {
-                        path: String::from("dispatcher.dll"),
-                        sha256: [13; 32],
-                    }],
-                    authorization_receipt_sha256: [14; 32],
-                    challenge_sha256: [15; 32],
-                    sequence: 1,
-                    started_at: String::from("2026-10-18T00:00:00Z"),
-                    completed_at: String::from("2026-10-18T00:00:01Z"),
-                    completed_unix_ms: 12,
-                    cleanup: Cleanup {
-                        status: String::from("verified"),
-                        diagnostics: Vec::new(),
-                    },
-                },
+                terminal_input(&correlation, receipt_id, correlation.host_id.clone()),
             )
             .unwrap();
         emitted.receipt.verify(&emitted.public_key).unwrap();

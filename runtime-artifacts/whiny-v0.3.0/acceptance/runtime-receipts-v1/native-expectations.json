@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "policy_sha256": "fedfc843772405c0dd799ba83e6a108f56e2c98ea06a1935efd61f114fa292e9",
+  "bundle_sha256": "67330e6444fdb8876d8c162692b544a891cc47d15d8140c3bd92f0ab6e51d828",
+  "contract_sha256": "b40ca13272e1b0ce29a8dd489a22e727db287981a7d2d2d2e48301e5d6e96c47",
+  "operation_id": 1,
+  "request_sha256": "a4026a1b788a19c6c9e9e49c6e370f1c52289826badf3d948da78e1d97d45f15",
+  "response_sha256": "e8a4b2ee7ede79a3afb332b5b6cc3d952a65fd8cffb897f5d18016577c33d7cc",
+  "authorization_receipt_sha256": "af312bb95eca80a9dac6443df2e14549b0f7fd50a1e1972aeb0a765b73466dd6",
+  "loaded_files": [
+    {
+      "path": "dispatcher.dll",
+      "sha256": "af0df10d005a149c10dc3134e22e63a2e2962990d0aa5c164a5742dd57e10cdf"
+    },
+    {
+      "path": "target/native_math.dll",
+      "sha256": "f1c49f073076e540e43592f7d12ecc27d8cb5a8c5983c6b6fd81f2924d4f60ee"
+    }
+  ]
+}
