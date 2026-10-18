@@ -8,4 +8,5 @@ out/
 *.secret
 config.local.*
 .architrave/runtime.key
+.architrave/resources.lock
 .architrave/runs/*/.run.lock
