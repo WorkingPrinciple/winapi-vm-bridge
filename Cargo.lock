@@ -1168,6 +1168,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "wvb-control"
+version = "0.2.0"
+dependencies = [
+ "wvb-protocol",
+]
+
+[[package]]
 name = "wvb-crypto"
 version = "0.2.0"
 dependencies = [

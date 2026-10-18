@@ -9,6 +9,7 @@ members = [
   "crates/wvb-client",
   "crates/wvb-client-ffi",
   "crates/wvb-crypto",
+  "crates/wvb-control",
   "crates/wvb-exe",
   "crates/wvb-generate",
   "crates/wvb-inspect",

@@ -10,8 +10,9 @@ python3 -m unittest \
   tests.test_topology_benchmark
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-cargo test -q -p wvb-admission -p wvb-integrity -p wvb-operations \
-  -p wvb-package -p wvb-state -p wvb-transfer -p wvb-exe
+cargo test -q -p wvb-admission -p wvb-callback -p wvb-control \
+  -p wvb-integrity -p wvb-operations -p wvb-package -p wvb-state \
+  -p wvb-transfer -p wvb-exe
 mkdir -p "$tmp/runtime-package"
 printf '{}\n' > "$tmp/runtime-package/manifest.jcs"
 cargo run -q -p wvb-runtime -- doctor \
