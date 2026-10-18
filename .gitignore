@@ -11,3 +11,5 @@ config.local.*
 .architrave/runtime.key
 .architrave/resources.lock
 .architrave/runs/*/.run.lock
+managed/**/bin/
+managed/**/obj/

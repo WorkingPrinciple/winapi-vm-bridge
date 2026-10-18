@@ -64,6 +64,34 @@ pub enum CallingConvention {
     Winapi,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ManagedTargetFramework {
+    #[serde(rename = "net481")]
+    Net481,
+    #[serde(rename = "net8.0-windows")]
+    Net8Windows,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedTarget {
+    pub assembly_name: String,
+    pub assembly_version: String,
+    pub root_namespace: String,
+    pub target_framework: ManagedTargetFramework,
+    #[serde(default)]
+    pub requires_strong_name: bool,
+    pub strong_name_key_file: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedOperation {
+    pub declaring_type: String,
+    pub declaring_type_is_static: bool,
+    pub member_name: String,
+    pub is_public: bool,
+    pub is_static: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetIdentity {
     pub relative_path: String,
@@ -104,6 +132,8 @@ pub struct Operation {
     pub response_schema_id: u32,
     pub parameters: Vec<Parameter>,
     pub return_type_id: String,
+    #[serde(default)]
+    pub managed: Option<ManagedOperation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +143,8 @@ pub struct AdapterContract {
     pub adapter_version: String,
     pub family: TargetFamily,
     pub target: TargetIdentity,
+    #[serde(default)]
+    pub managed: Option<ManagedTarget>,
     #[serde(default)]
     pub dependencies: Vec<Dependency>,
     #[serde(default)]
@@ -137,6 +169,7 @@ pub enum ContractError {
     DuplicateOperation(u32),
     Timeout(String),
     Bound(String),
+    Managed(String),
     Canonicalization(String),
 }
 
@@ -159,6 +192,11 @@ impl AdapterContract {
         }
         validate_relative_path(&self.target.relative_path)?;
         validate_hash(&self.target.sha256)?;
+        let is_managed = matches!(
+            self.family,
+            TargetFamily::DotNetAssembly | TargetFamily::DotNetExe
+        );
+        validate_managed_target(self.managed.as_ref(), is_managed)?;
 
         let mut dependencies = BTreeMap::new();
         for dependency in &self.dependencies {
@@ -199,6 +237,7 @@ impl AdapterContract {
             if !(1..=300_000).contains(&operation.timeout_ms) {
                 return Err(ContractError::Timeout(operation.name.clone()));
             }
+            validate_managed_operation(operation, is_managed)?;
             for parameter in &operation.parameters {
                 validate_identifier(&parameter.name)?;
                 validate_identifier(&parameter.type_id)?;
@@ -222,6 +261,81 @@ impl AdapterContract {
         let digest = Sha256::digest(self.canonical_bytes()?);
         Ok(digest.into())
     }
+}
+
+fn validate_managed_target(
+    managed: Option<&ManagedTarget>,
+    is_managed: bool,
+) -> Result<(), ContractError> {
+    match (managed, is_managed) {
+        (Some(managed), true) => {
+            validate_assembly_name(&managed.assembly_name)?;
+            validate_assembly_version(&managed.assembly_version)?;
+            validate_qualified_identifier(&managed.root_namespace)?;
+            if managed.requires_strong_name && managed.strong_name_key_file.is_none() {
+                return Err(ContractError::Managed("strong-name key is required".into()));
+            }
+            if let Some(path) = &managed.strong_name_key_file {
+                validate_relative_path(path)?;
+            }
+        }
+        (None, true) => {
+            return Err(ContractError::Managed(
+                "managed target metadata is required".into(),
+            ));
+        }
+        (None, false) => {}
+        (Some(_), false) => {
+            return Err(ContractError::Managed(
+                "managed metadata on native target".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_managed_operation(
+    operation: &Operation,
+    is_managed: bool,
+) -> Result<(), ContractError> {
+    match (&operation.managed, is_managed) {
+        (Some(managed), true) => {
+            validate_qualified_identifier(&managed.declaring_type)?;
+            validate_identifier(&managed.member_name)?;
+            if !managed.declaring_type_is_static {
+                return Err(ContractError::Managed(format!(
+                    "{} is declared on a non-static type",
+                    operation.name
+                )));
+            }
+            if !managed.is_public {
+                return Err(ContractError::Managed(format!(
+                    "{} is not a public managed member",
+                    operation.name
+                )));
+            }
+            if !managed.is_static {
+                return Err(ContractError::Managed(format!(
+                    "{} requires instance-state semantics",
+                    operation.name
+                )));
+            }
+        }
+        (None, true) => {
+            return Err(ContractError::Managed(format!(
+                "{} lacks managed member metadata",
+                operation.name
+            )));
+        }
+        (None, false) => {}
+        (Some(_), false) => {
+            return Err(ContractError::Managed(format!(
+                "{} has managed metadata on native target",
+                operation.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_acyclic(dependencies: &BTreeMap<&str, &Dependency>) -> Result<(), ContractError> {
@@ -291,6 +405,43 @@ fn validate_dotted_identifier(value: &str) -> Result<(), ContractError> {
     Ok(())
 }
 
+fn validate_qualified_identifier(value: &str) -> Result<(), ContractError> {
+    if value.is_empty() {
+        return Err(ContractError::Identifier(value.to_owned()));
+    }
+    for part in value.split('.') {
+        validate_identifier(part)?;
+    }
+    Ok(())
+}
+
+fn validate_assembly_name(value: &str) -> Result<(), ContractError> {
+    if value.is_empty()
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err(ContractError::Identifier(value.to_owned()));
+    }
+    Ok(())
+}
+
+fn validate_assembly_version(value: &str) -> Result<(), ContractError> {
+    let parts = value.split('.').collect::<Vec<_>>();
+    if parts.len() != 4
+        || parts.iter().any(|part| {
+            part.is_empty()
+                || !part.bytes().all(|byte| byte.is_ascii_digit())
+                || part.parse::<u16>().is_err()
+        })
+    {
+        return Err(ContractError::Managed(format!(
+            "invalid assembly version {value}"
+        )));
+    }
+    Ok(())
+}
+
 fn validate_identifier(value: &str) -> Result<(), ContractError> {
     let mut bytes = value.bytes();
     if !bytes
@@ -326,6 +477,7 @@ mod tests {
                 sha256: "a".repeat(64),
                 architecture: Architecture::X86_64,
             },
+            managed: None,
             dependencies: vec![
                 Dependency {
                     id: "runtime".into(),
@@ -363,6 +515,7 @@ mod tests {
                     max_bytes: None,
                 }],
                 return_type_id: "i32".into(),
+                managed: None,
             }],
         }
     }
@@ -390,5 +543,92 @@ mod tests {
         let mut value = contract();
         value.operations.push(value.operations[0].clone());
         assert_eq!(value.validate(), Err(ContractError::DuplicateOperation(1)));
+    }
+
+    fn managed_contract() -> AdapterContract {
+        let mut value = contract();
+        value.family = TargetFamily::DotNetAssembly;
+        value.target.relative_path = "lib/Example.Math.dll".into();
+        value.managed = Some(ManagedTarget {
+            assembly_name: "Example.Math".into(),
+            assembly_version: "1.0.0.0".into(),
+            root_namespace: "Example.Math".into(),
+            target_framework: ManagedTargetFramework::Net8Windows,
+            requires_strong_name: false,
+            strong_name_key_file: None,
+        });
+        value.operations[0].managed = Some(ManagedOperation {
+            declaring_type: "Example.Math.Calculator".into(),
+            declaring_type_is_static: true,
+            member_name: "Add".into(),
+            is_public: true,
+            is_static: true,
+        });
+        value
+    }
+
+    #[test]
+    fn managed_metadata_requires_static_members_and_authorized_key_material() {
+        managed_contract().validate().unwrap();
+
+        let mut value = managed_contract();
+        value.operations[0].managed.as_mut().unwrap().is_static = false;
+        assert!(matches!(
+            value.validate(),
+            Err(ContractError::Managed(reason))
+                if reason.contains("instance-state semantics")
+        ));
+
+        let mut value = managed_contract();
+        value.operations[0]
+            .managed
+            .as_mut()
+            .unwrap()
+            .declaring_type_is_static = false;
+        assert!(matches!(
+            value.validate(),
+            Err(ContractError::Managed(reason))
+                if reason.contains("non-static type")
+        ));
+
+        let mut value = managed_contract();
+        value.operations[0].managed.as_mut().unwrap().is_public = false;
+        assert!(matches!(
+            value.validate(),
+            Err(ContractError::Managed(reason))
+                if reason.contains("not a public managed member")
+        ));
+
+        let mut value = managed_contract();
+        value.managed.as_mut().unwrap().requires_strong_name = true;
+        assert_eq!(
+            value.validate(),
+            Err(ContractError::Managed("strong-name key is required".into()))
+        );
+
+        let mut value = managed_contract();
+        value.managed.as_mut().unwrap().requires_strong_name = true;
+        value.managed.as_mut().unwrap().strong_name_key_file = Some("../private/key.snk".into());
+        assert!(matches!(value.validate(), Err(ContractError::Path(_))));
+    }
+
+    #[test]
+    fn managed_metadata_is_rejected_on_native_contracts() {
+        let mut value = contract();
+        value.managed = managed_contract().managed;
+        assert_eq!(
+            value.validate(),
+            Err(ContractError::Managed(
+                "managed metadata on native target".into()
+            ))
+        );
+
+        let mut value = contract();
+        value.operations[0].managed = managed_contract().operations[0].managed.clone();
+        assert!(matches!(
+            value.validate(),
+            Err(ContractError::Managed(reason))
+                if reason.contains("managed metadata on native target")
+        ));
     }
 }

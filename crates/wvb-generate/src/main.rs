@@ -3,7 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use wvb_ir::{AdapterContract, CallingConvention, ContractError, Direction, Operation};
+use wvb_ir::{
+    AdapterContract, Architecture, CallingConvention, ContractError, Direction,
+    ManagedTargetFramework, Operation, TargetFamily,
+};
 
 #[derive(Parser)]
 struct Arguments {
@@ -65,6 +68,17 @@ impl From<ContractError> for GenerateError {
 }
 
 fn generate(contract: &AdapterContract, output: &Path) -> Result<(), GenerateError> {
+    match contract.family {
+        TargetFamily::NativeCDll => generate_native_c(contract, output),
+        TargetFamily::DotNetAssembly => generate_managed_assembly(contract, output),
+        _ => Err(GenerateError::Unsupported(format!(
+            "target family {:?} generator is not implemented",
+            contract.family
+        ))),
+    }
+}
+
+fn generate_native_c(contract: &AdapterContract, output: &Path) -> Result<(), GenerateError> {
     fs::create_dir_all(output)?;
     let hash = contract.contract_hash()?;
     let hash_literal = byte_array(&hash);
@@ -100,6 +114,263 @@ fn generate(contract: &AdapterContract, output: &Path) -> Result<(), GenerateErr
     Ok(())
 }
 
+fn generate_managed_assembly(
+    contract: &AdapterContract,
+    output: &Path,
+) -> Result<(), GenerateError> {
+    fs::create_dir_all(output)?;
+    let managed = contract
+        .managed
+        .as_ref()
+        .ok_or_else(|| GenerateError::Unsupported("managed metadata is required".into()))?;
+    let target_framework = match managed.target_framework {
+        ManagedTargetFramework::Net481 => {
+            return Err(GenerateError::Unsupported(
+                ".NET Framework 4.8.1 generation is not proven by this slice".into(),
+            ));
+        }
+        ManagedTargetFramework::Net8Windows => "net8.0-windows",
+    };
+    if managed.requires_strong_name || managed.strong_name_key_file.is_some() {
+        return Err(GenerateError::Unsupported(
+            "strong-name identity requires an authorized signing and binding proof".into(),
+        ));
+    }
+    if contract.target.architecture != Architecture::X86_64 {
+        return Err(GenerateError::Unsupported(
+            "managed scalar generation is currently proven only for x86-64".into(),
+        ));
+    }
+    let project = format!(
+        "<Project Sdk=\"Microsoft.NET.Sdk\">\n\
+             \x20 <PropertyGroup>\n\
+             \x20   <TargetFramework>{target_framework}</TargetFramework>\n\
+             \x20   <AssemblyName>{}</AssemblyName>\n\
+             \x20   <AssemblyVersion>{}</AssemblyVersion>\n\
+             \x20   <FileVersion>{}</FileVersion>\n\
+             \x20   <RootNamespace>{}</RootNamespace>\n\
+             \x20   <PlatformTarget>x64</PlatformTarget>\n\
+             \x20   <Prefer32Bit>false</Prefer32Bit>\n\
+             \x20   <Nullable>enable</Nullable>\n\
+             \x20   <ImplicitUsings>disable</ImplicitUsings>\n\
+             \x20   <Deterministic>true</Deterministic>\n\
+             \x20 </PropertyGroup>\n\
+             </Project>\n",
+        escape_xml(&managed.assembly_name),
+        escape_xml(&managed.assembly_version),
+        escape_xml(&managed.assembly_version),
+        escape_xml(&managed.root_namespace),
+    );
+    let hash = contract.contract_hash()?;
+    let hash_literal = hash
+        .iter()
+        .map(|byte| format!("0x{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut source = format!(
+        "using System;\nusing System.Runtime.InteropServices;\n\n\
+             internal static class WvbNative\n{{\n\
+             \x20   internal const int Ok = 0;\n\
+             \x20   internal static readonly byte[] AdapterHash = new byte[] {{ {hash_literal} }};\n\
+             \x20   static WvbNative()\n\
+             \x20   {{\n\
+             \x20       if (!BitConverter.IsLittleEndian)\n\
+             \x20           throw new PlatformNotSupportedException(\"WinAPI VM Bridge scalar encoding requires little-endian Windows\");\n\
+             \x20   }}\n\
+             \x20   [DllImport(\"wvb_client_ffi\", EntryPoint = \"wvb_client_call\", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]\n\
+             \x20   internal static extern int wvb_client_call(\n\
+             \x20       byte[] adapterHash, uint operationId,\n\
+             \x20       byte[] request, UIntPtr requestLength,\n\
+             \x20       [Out] byte[] response, UIntPtr responseCapacity,\n\
+             \x20       out UIntPtr responseLength);\n\
+             }}\n\n",
+    );
+    for operation in &contract.operations {
+        source.push_str(&generate_managed_operation(operation)?);
+    }
+    source.truncate(source.trim_end_matches('\n').len());
+    source.push('\n');
+    fs::write(
+        output.join(format!("{}.csproj", managed.assembly_name)),
+        project,
+    )?;
+    fs::write(output.join("Proxy.generated.cs"), source)?;
+    fs::write(
+        output.join("contract.canonical.json"),
+        contract.canonical_bytes()?,
+    )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+fn generate_managed_operation(operation: &Operation) -> Result<String, GenerateError> {
+    if operation
+        .parameters
+        .iter()
+        .any(|parameter| parameter.direction != Direction::In || !is_scalar(&parameter.type_id))
+        || !is_scalar(&operation.return_type_id)
+    {
+        return Err(GenerateError::Unsupported(format!(
+            "managed operation {} needs custom marshalling",
+            operation.name
+        )));
+    }
+    let managed = operation
+        .managed
+        .as_ref()
+        .ok_or_else(|| GenerateError::Unsupported("managed operation metadata".into()))?;
+    if !managed.is_static {
+        return Err(GenerateError::Unsupported(format!(
+            "{} is not static",
+            operation.name
+        )));
+    }
+    let (namespace, class_name) = managed.declaring_type.rsplit_once('.').map_or(
+        (None, managed.declaring_type.as_str()),
+        |(namespace, name)| (Some(namespace), name),
+    );
+    let parameters = operation
+        .parameters
+        .iter()
+        .map(|parameter| {
+            Ok(format!(
+                "{} {}",
+                csharp_type(&parameter.type_id)?,
+                csharp_identifier(&parameter.name)
+            ))
+        })
+        .collect::<Result<Vec<_>, GenerateError>>()?
+        .join(", ");
+    let request_bytes = operation
+        .parameters
+        .iter()
+        .map(|parameter| scalar_size(&parameter.type_id))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .sum::<usize>();
+    let response_bytes = scalar_size(&operation.return_type_id)?;
+    let mut writes = String::new();
+    let mut offset = 0;
+    for parameter in &operation.parameters {
+        writeln!(
+            writes,
+            "            {}",
+            csharp_write(
+                &parameter.type_id,
+                &csharp_identifier(&parameter.name),
+                offset
+            )?
+        )
+        .expect("write to string");
+        offset += scalar_size(&parameter.type_id)?;
+    }
+    let namespace_open = namespace.map_or_else(String::new, |value| {
+        format!(
+            "namespace {}\n{{\n",
+            value
+                .split('.')
+                .map(csharp_identifier)
+                .collect::<Vec<_>>()
+                .join(".")
+        )
+    });
+    let namespace_close = if namespace.is_some() { "}\n\n" } else { "\n" };
+    let class_indent = if namespace.is_some() { "    " } else { "" };
+    let body_indent = if namespace.is_some() {
+        "        "
+    } else {
+        "    "
+    };
+    let statement_indent = if namespace.is_some() {
+        "            "
+    } else {
+        "        "
+    };
+    Ok(format!(
+        "{namespace_open}\
+             {class_indent}public static partial class {class_name}\n\
+             {class_indent}{{\n\
+             {body_indent}public static {return_type} {member_name}({parameters})\n\
+             {body_indent}{{\n\
+             {statement_indent}byte[] request = new byte[{request_bytes}];\n\
+             {writes}\
+             {statement_indent}byte[] response = new byte[{response_bytes}];\n\
+             {statement_indent}UIntPtr responseLength;\n\
+             {statement_indent}int status = WvbNative.wvb_client_call(\n\
+             {statement_indent}    WvbNative.AdapterHash, {operation_id}u, request, (UIntPtr)request.Length,\n\
+             {statement_indent}    response, (UIntPtr)response.Length, out responseLength);\n\
+             {statement_indent}if (status != WvbNative.Ok || responseLength.ToUInt64() != (ulong)response.Length)\n\
+             {statement_indent}    throw new ExternalException(\"WinAPI VM Bridge call failed\", status);\n\
+             {statement_indent}return {read};\n\
+             {body_indent}}}\n\
+             {class_indent}}}\n\
+             {namespace_close}",
+        class_name = csharp_identifier(class_name),
+        return_type = csharp_type(&operation.return_type_id)?,
+        member_name = csharp_identifier(&managed.member_name),
+        operation_id = operation.id,
+        read = csharp_read(&operation.return_type_id, "response", 0)?,
+    ))
+}
+
+fn csharp_type(value: &str) -> Result<&'static str, GenerateError> {
+    match value {
+        "i8" => Ok("sbyte"),
+        "u8" => Ok("byte"),
+        "i16" => Ok("short"),
+        "u16" => Ok("ushort"),
+        "i32" | "hresult" => Ok("int"),
+        "u32" => Ok("uint"),
+        "i64" => Ok("long"),
+        "u64" => Ok("ulong"),
+        "f32" => Ok("float"),
+        "f64" => Ok("double"),
+        "bool" => Ok("bool"),
+        other => Err(GenerateError::Unsupported(other.to_owned())),
+    }
+}
+
+fn csharp_write(value: &str, name: &str, offset: usize) -> Result<String, GenerateError> {
+    let expression = match value {
+        "i8" | "u8" => return Ok(format!("request[{offset}] = unchecked((byte){name});")),
+        "bool" => return Ok(format!("request[{offset}] = {name} ? (byte)1 : (byte)0;")),
+        "i16" | "u16" | "i32" | "hresult" | "u32" | "i64" | "u64" | "f32" | "f64" => {
+            format!("BitConverter.GetBytes({name})")
+        }
+        other => return Err(GenerateError::Unsupported(other.to_owned())),
+    };
+    Ok(format!("{expression}.CopyTo(request, {offset});"))
+}
+
+fn csharp_read(value: &str, buffer: &str, offset: usize) -> Result<String, GenerateError> {
+    match value {
+        "i8" => Ok(format!("unchecked((sbyte){buffer}[{offset}])")),
+        "u8" => Ok(format!("{buffer}[{offset}]")),
+        "bool" => Ok(format!("{buffer}[{offset}] != 0")),
+        "i16" => Ok(format!("BitConverter.ToInt16({buffer}, {offset})")),
+        "u16" => Ok(format!("BitConverter.ToUInt16({buffer}, {offset})")),
+        "i32" | "hresult" => Ok(format!("BitConverter.ToInt32({buffer}, {offset})")),
+        "u32" => Ok(format!("BitConverter.ToUInt32({buffer}, {offset})")),
+        "i64" => Ok(format!("BitConverter.ToInt64({buffer}, {offset})")),
+        "u64" => Ok(format!("BitConverter.ToUInt64({buffer}, {offset})")),
+        "f32" => Ok(format!("BitConverter.ToSingle({buffer}, {offset})")),
+        "f64" => Ok(format!("BitConverter.ToDouble({buffer}, {offset})")),
+        other => Err(GenerateError::Unsupported(other.to_owned())),
+    }
+}
+
+fn csharp_identifier(value: &str) -> String {
+    format!("@{value}")
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
 struct GeneratedOperation {
     proxy: String,
     dispatcher: String,
@@ -326,8 +597,8 @@ mod tests {
     use std::collections::BTreeMap;
     use tempfile::tempdir;
     use wvb_ir::{
-        Architecture, CallingConvention, Direction, Operation, Parameter, Sensitivity,
-        TargetFamily, TargetIdentity,
+        Architecture, CallingConvention, Direction, ManagedOperation, ManagedTarget,
+        ManagedTargetFramework, Operation, Parameter, Sensitivity, TargetFamily, TargetIdentity,
     };
 
     fn contract() -> AdapterContract {
@@ -341,6 +612,7 @@ mod tests {
                 sha256: "a".repeat(64),
                 architecture: Architecture::X86_64,
             },
+            managed: None,
             dependencies: Vec::new(),
             types: BTreeMap::new(),
             operations: vec![Operation {
@@ -368,6 +640,7 @@ mod tests {
                     },
                 ],
                 return_type_id: "i32".into(),
+                managed: None,
             }],
         }
     }
@@ -384,5 +657,108 @@ mod tests {
         assert!(dispatcher.contains("LoadLibraryExW"));
         assert!(dispatcher.contains("GetProcAddress"));
         assert!(dispatcher.contains("case 1"));
+    }
+
+    fn managed_contract() -> AdapterContract {
+        let mut value = contract();
+        value.family = TargetFamily::DotNetAssembly;
+        value.target.relative_path = "lib/Example.Math.dll".into();
+        value.managed = Some(ManagedTarget {
+            assembly_name: "Example.Math".into(),
+            assembly_version: "1.0.0.0".into(),
+            root_namespace: "Example.Math".into(),
+            target_framework: ManagedTargetFramework::Net8Windows,
+            requires_strong_name: false,
+            strong_name_key_file: None,
+        });
+        value.operations[0].managed = Some(ManagedOperation {
+            declaring_type: "Example.Math.Calculator".into(),
+            declaring_type_is_static: true,
+            member_name: "Add".into(),
+            is_public: true,
+            is_static: true,
+        });
+        value
+    }
+
+    #[test]
+    fn managed_scalar_static_proxy_is_deterministic() {
+        let first = tempdir().unwrap();
+        let second = tempdir().unwrap();
+        let mut contract = managed_contract();
+        let mut second_operation = contract.operations[0].clone();
+        second_operation.id = 2;
+        second_operation.name = "Subtract".into();
+        second_operation.symbol = "Example.ManagedMath.Calculator.Subtract".into();
+        second_operation.managed.as_mut().unwrap().member_name = "Subtract".into();
+        contract.operations.push(second_operation);
+        contract.validate().unwrap();
+
+        generate(&contract, first.path()).unwrap();
+        generate(&contract, second.path()).unwrap();
+
+        for file in [
+            "Example.Math.csproj",
+            "Proxy.generated.cs",
+            "contract.canonical.json",
+        ] {
+            assert_eq!(
+                fs::read(first.path().join(file)).unwrap(),
+                fs::read(second.path().join(file)).unwrap()
+            );
+        }
+        let source = fs::read_to_string(first.path().join("Proxy.generated.cs")).unwrap();
+        assert!(source.contains("namespace @Example.@Math"));
+        assert!(source.contains("public static partial class @Calculator"));
+        assert!(source.contains("public static int @Add(int @left, int @right)"));
+        assert!(source.contains("public static int @Subtract(int @left, int @right)"));
+        assert!(source.contains("EntryPoint = \"wvb_client_call\""));
+        assert_eq!(source.matches("AdapterHash = new byte[]").count(), 1);
+        assert!(source.contains("BitConverter.GetBytes(@left).CopyTo(request, 0);"));
+        assert!(source.contains("BitConverter.ToInt32(response, 0)"));
+        let project = fs::read_to_string(first.path().join("Example.Math.csproj")).unwrap();
+        assert!(project.contains("<AssemblyVersion>1.0.0.0</AssemblyVersion>"));
+        assert!(project.contains("<PlatformTarget>x64</PlatformTarget>"));
+    }
+
+    #[test]
+    fn managed_generation_stops_on_instance_and_non_scalar_members() {
+        let directory = tempdir().unwrap();
+        let mut contract = managed_contract();
+        contract.operations[0].managed.as_mut().unwrap().is_static = false;
+        assert!(matches!(
+            generate(&contract, directory.path()),
+            Err(GenerateError::Contract(ContractError::Managed(reason)))
+                if reason.contains("instance-state semantics")
+        ));
+
+        let directory = tempdir().unwrap();
+        let mut contract = managed_contract();
+        contract.operations[0].parameters[0].type_id = "utf16".into();
+        assert!(matches!(
+            generate(&contract, directory.path()),
+            Err(GenerateError::Unsupported(reason))
+                if reason.contains("custom marshalling")
+        ));
+
+        let directory = tempdir().unwrap();
+        let mut contract = managed_contract();
+        let managed = contract.managed.as_mut().unwrap();
+        managed.requires_strong_name = true;
+        managed.strong_name_key_file = Some("signing/authorized.snk".into());
+        assert!(matches!(
+            generate(&contract, directory.path()),
+            Err(GenerateError::Unsupported(reason))
+                if reason.contains("strong-name identity")
+        ));
+
+        let directory = tempdir().unwrap();
+        let mut contract = managed_contract();
+        contract.managed.as_mut().unwrap().target_framework = ManagedTargetFramework::Net481;
+        assert!(matches!(
+            generate(&contract, directory.path()),
+            Err(GenerateError::Unsupported(reason))
+                if reason.contains(".NET Framework 4.8.1")
+        ));
     }
 }
