@@ -1,18 +1,36 @@
 //! Default-deny actor and operation authorization.
 
 use std::collections::{BTreeMap, BTreeSet};
+use wvb_state::{StateError, Store};
 
 pub type ActorId = [u8; 16];
 pub type AdapterHash = [u8; 32];
 
+#[repr(u16)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Role {
-    Invoke,
-    Operator,
-    AdapterAdmin,
-    PairingAdmin,
-    Auditor,
-    ServiceAdmin,
+    Invoke = 1,
+    Operator = 2,
+    AdapterAdmin = 3,
+    PairingAdmin = 4,
+    Auditor = 5,
+    ServiceAdmin = 6,
+}
+
+impl TryFrom<u16> for Role {
+    type Error = RestoreError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Invoke),
+            2 => Ok(Self::Operator),
+            3 => Ok(Self::AdapterAdmin),
+            4 => Ok(Self::PairingAdmin),
+            5 => Ok(Self::Auditor),
+            6 => Ok(Self::ServiceAdmin),
+            _ => Err(RestoreError::InvalidRecord),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,6 +62,26 @@ pub enum AuthorizationError {
     Denied,
 }
 
+#[derive(Debug)]
+pub enum RestoreError {
+    State(StateError),
+    InvalidRecord,
+}
+
+impl std::fmt::Display for RestoreError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for RestoreError {}
+
+impl From<StateError> for RestoreError {
+    fn from(value: StateError) -> Self {
+        Self::State(value)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Registry {
     actors: BTreeMap<ActorId, Actor>,
@@ -51,6 +89,34 @@ pub struct Registry {
 }
 
 impl Registry {
+    pub fn from_store(store: &Store) -> Result<Self, RestoreError> {
+        let mut registry = Self::default();
+        for actor in store.actors()? {
+            registry
+                .register(actor.actor_id, actor.public_key)
+                .map_err(|_| RestoreError::InvalidRecord)?;
+            if !actor.active {
+                registry
+                    .revoke(actor.actor_id)
+                    .map_err(|_| RestoreError::InvalidRecord)?;
+            }
+        }
+        for grant in store.active_grants()? {
+            registry
+                .grant(
+                    grant.actor_id,
+                    Grant {
+                        role: Role::try_from(grant.role)?,
+                        adapter_hash: grant.adapter_hash,
+                        operation_id: grant.operation_id,
+                        expires_at_unix_ms: grant.expires_unix_ms,
+                    },
+                )
+                .map_err(|_| RestoreError::InvalidRecord)?;
+        }
+        Ok(registry)
+    }
+
     pub fn register(
         &mut self,
         id: ActorId,
@@ -141,6 +207,8 @@ impl Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+    use wvb_state::{ActorRecord, GrantRecord};
 
     #[test]
     fn authorization_is_default_deny_scoped_and_expiring() {
@@ -176,6 +244,48 @@ mod tests {
         registry.revoke(actor).unwrap();
         assert_eq!(
             registry.actor_for_key(&key),
+            Err(AuthorizationError::Revoked)
+        );
+    }
+
+    #[test]
+    fn durable_registry_restores_active_and_revoked_actors() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("state.db");
+        let actor = [1; 16];
+        let key = [2; 32];
+        let adapter = [3; 32];
+        let mut store = Store::open(&path).unwrap();
+        store
+            .commit_pairing(
+                &ActorRecord {
+                    actor_id: actor,
+                    public_key: key,
+                    label: String::from("Mac"),
+                    active: true,
+                },
+                &[GrantRecord {
+                    actor_id: actor,
+                    role: Role::Invoke as u16,
+                    adapter_hash: Some(adapter),
+                    operation_id: Some(7),
+                    expires_unix_ms: None,
+                }],
+                b"pair",
+            )
+            .unwrap();
+        let registry = Registry::from_store(&store).unwrap();
+        assert_eq!(registry.actor_for_key(&key).unwrap(), actor);
+        registry.authorize_invoke(actor, adapter, 7, 1).unwrap();
+
+        store.revoke_actor(actor, b"revoke").unwrap();
+        let registry = Registry::from_store(&store).unwrap();
+        assert_eq!(
+            registry.actor_for_key(&key),
+            Err(AuthorizationError::Revoked)
+        );
+        assert_eq!(
+            registry.authorize_invoke(actor, adapter, 7, 1),
             Err(AuthorizationError::Revoked)
         );
     }
