@@ -4,6 +4,7 @@ members = [
   "crates/wvb-crypto",
   "crates/wvb-ir",
   "crates/wvb-protocol",
+  "crates/wvb-state",
 ]
 
 [workspace.package]
@@ -29,3 +30,5 @@ serde_jcs = "0.2.0"
 sha2 = "0.10.9"
 snow = { version = "0.10.0", default-features = true }
 zeroize = { version = "1.8.2", features = ["derive"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tempfile = "3.23.0"
