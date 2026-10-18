@@ -1144,6 +1144,7 @@ version = "0.2.0"
 dependencies = [
  "wvb-lifecycle",
  "wvb-protocol",
+ "wvb-registry",
 ]
 
 [[package]]
@@ -1281,6 +1282,10 @@ name = "wvb-protocol"
 version = "0.2.0"
 
 [[package]]
+name = "wvb-registry"
+version = "0.2.0"
+
+[[package]]
 name = "wvb-runtime"
 version = "0.2.0"
 dependencies = [
@@ -1293,6 +1298,7 @@ dependencies = [
  "wvb-client",
  "wvb-crypto",
  "wvb-operations",
+ "wvb-package",
  "wvb-session",
  "wvb-state",
  "wvb-transport",
@@ -1313,8 +1319,11 @@ name = "wvb-state"
 version = "0.2.0"
 dependencies = [
  "rusqlite",
+ "serde",
+ "serde_jcs",
  "sha2",
  "tempfile",
+ "wvb-registry",
 ]
 
 [[package]]
@@ -1322,7 +1331,9 @@ name = "wvb-transfer"
 version = "0.2.0"
 dependencies = [
  "sha2",
+ "tempfile",
  "wvb-protocol",
+ "wvb-registry",
 ]
 
 [[package]]

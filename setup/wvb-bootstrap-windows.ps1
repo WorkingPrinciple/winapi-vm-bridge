@@ -9,6 +9,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Invoke-Native([string]$FilePath, [string[]]$Arguments) {
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Native command failed: $FilePath exit=$LASTEXITCODE"
+    }
+}
+
 function Verify-Release([string]$Manifest) {
     if ($env:WVB_ALLOW_UNSIGNED -eq '1') {
         Write-Warning 'Unsigned development package explicitly allowed.'
@@ -17,10 +24,7 @@ function Verify-Release([string]$Manifest) {
     if (-not $env:WVB_SIGNATURE_VERIFIER) {
         throw 'WVB_SIGNATURE_VERIFIER is required for release packages.'
     }
-    & $env:WVB_SIGNATURE_VERIFIER $Manifest
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Release signature verification failed.'
-    }
+    Invoke-Native $env:WVB_SIGNATURE_VERIFIER @($Manifest)
 }
 
 function Package-Cli([string]$PackageDirectory) {
@@ -40,8 +44,10 @@ switch ($Operation) {
         $payload = Join-Path $PackageOrVersion 'payload'
         Verify-Release $manifest
         $cli = Package-Cli $PackageOrVersion
-        & $cli verify --source $payload --manifest $manifest
-        & $cli stage --root $InstallRoot --source $payload --manifest $manifest
+        Invoke-Native $cli @('verify', '--source', $payload, '--manifest', $manifest)
+        Invoke-Native $cli @(
+            'stage', '--root', $InstallRoot, '--source', $payload, '--manifest', $manifest
+        )
         $version = (Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json).package_version
         $runtime = Join-Path $InstallRoot "versions\$version\bin\wvb-runtime.exe"
         if (-not (Test-Path -LiteralPath $runtime -PathType Leaf)) {
@@ -49,11 +55,19 @@ switch ($Operation) {
         }
         $health = Join-Path $env:TEMP "wvb-health-$PID.txt"
         try {
-            & $runtime doctor `
-                --state (Join-Path $InstallRoot 'state.db') `
-                --package-root (Join-Path $InstallRoot "versions\$version") `
-                --receipt $health
-            & $cli activate --root $InstallRoot --manifest $manifest --health-receipt $health
+            Invoke-Native $runtime @(
+                'init-state', '--state', (Join-Path $InstallRoot 'state.db')
+            )
+            Invoke-Native $runtime @(
+                'doctor',
+                '--state', (Join-Path $InstallRoot 'state.db'),
+                '--package-root', (Join-Path $InstallRoot "versions\$version"),
+                '--receipt', $health
+            )
+            Invoke-Native $cli @(
+                'activate', '--root', $InstallRoot, '--manifest', $manifest,
+                '--health-receipt', $health
+            )
         } finally {
             Remove-Item -LiteralPath $health -Force -ErrorAction SilentlyContinue
         }
@@ -62,7 +76,7 @@ switch ($Operation) {
         if (-not $PackageOrVersion) {
             throw 'A package directory containing wvb-package.exe is required.'
         }
-        & (Package-Cli $PackageOrVersion) rollback --root $InstallRoot
+        Invoke-Native (Package-Cli $PackageOrVersion) @('rollback', '--root', $InstallRoot)
     }
     'uninstall' {
         if (-not $PackageOrVersion) {
@@ -72,11 +86,15 @@ switch ($Operation) {
         if (-not $cli) {
             $cli = Join-Path $InstallRoot 'bin\wvb-package.exe'
         }
-        & $cli uninstall-preflight --root $InstallRoot --version $PackageOrVersion
+        Invoke-Native $cli @(
+            'uninstall-preflight', '--root', $InstallRoot, '--version', $PackageOrVersion
+        )
         if ($env:WVB_CONFIRM_UNINSTALL -ne '1') {
             throw 'Set WVB_CONFIRM_UNINSTALL=1 after reviewing the preflight.'
         }
-        & $cli uninstall --root $InstallRoot --version $PackageOrVersion
+        Invoke-Native $cli @(
+            'uninstall', '--root', $InstallRoot, '--version', $PackageOrVersion
+        )
     }
     'doctor' {
         $active = Join-Path $InstallRoot 'active.jcs'
@@ -84,8 +102,10 @@ switch ($Operation) {
             throw 'Runtime is not active.'
         }
         $version = (Get-Content -Raw -LiteralPath $active | ConvertFrom-Json).package_version
-        & (Join-Path $InstallRoot "versions\$version\bin\wvb-runtime.exe") doctor `
-            --state (Join-Path $InstallRoot 'state.db') `
-            --package-root (Join-Path $InstallRoot "versions\$version")
+        Invoke-Native (Join-Path $InstallRoot "versions\$version\bin\wvb-runtime.exe") @(
+            'doctor',
+            '--state', (Join-Path $InstallRoot 'state.db'),
+            '--package-root', (Join-Path $InstallRoot "versions\$version")
+        )
     }
 }

@@ -1,11 +1,15 @@
 //! Bounded content-addressed transfer lifecycle and protocol messages.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
+use std::path::Path;
 
 use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
 use wvb_protocol::{
     MessageType, PackedDecoder, PackedEncoder, ProtocolError, WireType, top_level_schema_id,
 };
+pub use wvb_registry::{TransferKind, TransferTerminal};
 
 const REQUIRED: u8 = 0x01;
 
@@ -19,15 +23,6 @@ pub struct TransferLimits {
     pub maximum_active: usize,
     pub maximum_metadata_bytes: usize,
     pub maximum_receipt_bytes: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransferKind {
-    RequestInput,
-    ResponseOutput,
-    ProcessStdin,
-    ProcessStdout,
-    ProcessStderr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,13 +96,6 @@ pub struct TransferReceipt {
     pub terminal: TransferTerminal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransferTerminal {
-    Completed,
-    Cancelled,
-    Failed,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransferError {
     Capacity,
@@ -140,7 +128,23 @@ struct ActiveTransfer {
     actor_id: ActorId,
     begin: TransferBegin,
     next_chunk: u32,
-    bytes: Vec<u8>,
+    bytes_written: usize,
+    hasher: Sha256,
+    chunks: BTreeMap<u32, (usize, usize, [u8; 32])>,
+    file: NamedTempFile,
+}
+
+#[derive(Debug)]
+pub struct CompletedTransfer {
+    pub receipt: TransferReceipt,
+    file: NamedTempFile,
+}
+
+impl CompletedTransfer {
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        self.file.path()
+    }
 }
 
 #[derive(Debug)]
@@ -184,9 +188,12 @@ impl TransferRegistry {
             begin.transfer_id,
             ActiveTransfer {
                 actor_id,
-                bytes: Vec::with_capacity(begin.declared_length),
                 begin,
                 next_chunk: 0,
+                bytes_written: 0,
+                hasher: Sha256::new(),
+                chunks: BTreeMap::new(),
+                file: NamedTempFile::new().map_err(|_| TransferError::Capacity)?,
             },
         );
         Ok(())
@@ -200,7 +207,16 @@ impl TransferRegistry {
         if active.actor_id != actor_id {
             return Err(TransferError::WrongActor);
         }
-        if data.chunk_index != active.next_chunk || data.offset != active.bytes.len() {
+        if data.chunk_index < active.next_chunk {
+            return if active.chunks.get(&data.chunk_index)
+                == Some(&(data.offset, data.bytes.len(), data.chunk_hash))
+            {
+                Ok(())
+            } else {
+                Err(TransferError::Replay)
+            };
+        }
+        if data.chunk_index != active.next_chunk || data.offset != active.bytes_written {
             return Err(TransferError::InvalidOrder);
         }
         if data.bytes.len() > self.limits.maximum_chunk_bytes
@@ -209,14 +225,22 @@ impl TransferRegistry {
             return Err(TransferError::HashMismatch);
         }
         let new_length = active
-            .bytes
-            .len()
+            .bytes_written
             .checked_add(data.bytes.len())
             .ok_or(TransferError::BoundExceeded)?;
         if new_length > active.begin.declared_length || new_length > self.limits.maximum_bytes {
             return Err(TransferError::BoundExceeded);
         }
-        active.bytes.extend_from_slice(&data.bytes);
+        active
+            .file
+            .write_all(&data.bytes)
+            .map_err(|_| TransferError::Capacity)?;
+        active.hasher.update(&data.bytes);
+        active.chunks.insert(
+            data.chunk_index,
+            (data.offset, data.bytes.len(), data.chunk_hash),
+        );
+        active.bytes_written = new_length;
         active.next_chunk = active
             .next_chunk
             .checked_add(1)
@@ -228,8 +252,8 @@ impl TransferRegistry {
         &mut self,
         actor_id: ActorId,
         end: &TransferEnd,
-    ) -> Result<(Vec<u8>, TransferReceipt), TransferError> {
-        let active = self
+    ) -> Result<CompletedTransfer, TransferError> {
+        let mut active = self
             .active
             .remove(&end.transfer_id)
             .ok_or(TransferError::Unknown)?;
@@ -241,24 +265,20 @@ impl TransferRegistry {
         if end.receipt.len() > self.limits.maximum_receipt_bytes {
             return Err(TransferError::BoundExceeded);
         }
-        let observed_hash = hash(&active.bytes);
-        if active.bytes.len() != active.begin.declared_length
+        active.file.flush().map_err(|_| TransferError::Capacity)?;
+        let observed_hash: [u8; 32] = active.hasher.clone().finalize().into();
+        if active.bytes_written != active.begin.declared_length
             || active.next_chunk != end.chunk_count
-            || active.bytes.len() != end.total_length
+            || active.bytes_written != end.total_length
             || active.begin.content_hash != observed_hash
             || end.total_hash != observed_hash
         {
             return Err(TransferError::HashMismatch);
         }
-        let terminal = match end.terminal_status {
-            1 => TransferTerminal::Completed,
-            2 => TransferTerminal::Cancelled,
-            3 => TransferTerminal::Failed,
-            _ => return Err(TransferError::Terminal),
-        };
-        Ok((
-            active.bytes,
-            TransferReceipt {
+        let terminal =
+            TransferTerminal::try_from(end.terminal_status).map_err(|_| TransferError::Terminal)?;
+        Ok(CompletedTransfer {
+            receipt: TransferReceipt {
                 transfer_id: end.transfer_id,
                 actor_id,
                 kind: active.begin.kind,
@@ -266,7 +286,8 @@ impl TransferRegistry {
                 sha256: observed_hash,
                 terminal,
             },
-        ))
+            file: active.file,
+        })
     }
 
     pub fn cancel(
@@ -287,9 +308,9 @@ impl TransferRegistry {
             transfer_id: cancel.transfer_id,
             actor_id,
             kind: active.begin.kind,
-            total_bytes: active.bytes.len(),
-            sha256: hash(&active.bytes),
-            terminal: TransferTerminal::Cancelled,
+            total_bytes: active.bytes_written,
+            sha256: active.hasher.finalize().into(),
+            terminal: TransferTerminal::Canceled,
         })
     }
 
@@ -319,7 +340,8 @@ impl TransferMessage {
         match message_type {
             MessageType::TransferBegin => Ok(Self::Begin(TransferBegin {
                 transfer_id: uuid(&decoder, 1)?,
-                kind: decode_kind(u16_value(&decoder, 2)?)?,
+                kind: TransferKind::try_from(u16_value(&decoder, 2)?)
+                    .map_err(|_| TransferError::Protocol)?,
                 parent_message_id: optional_uuid(&decoder, 3)?,
                 parent_operation_id: optional_uuid(&decoder, 4)?,
                 declared_length: usize_value(&decoder, 5)?,
@@ -368,7 +390,7 @@ fn encode_begin(begin: &TransferBegin) -> Result<(MessageType, Vec<u8>), Transfe
             2,
             WireType::U16,
             REQUIRED,
-            kind_value(begin.kind).to_le_bytes(),
+            u16::from(begin.kind).to_le_bytes(),
         )?
         .field(
             5,
@@ -478,27 +500,6 @@ fn validate_optional_text(value: Option<&str>, maximum: usize) -> Result<(), Tra
         return Err(TransferError::BoundExceeded);
     }
     Ok(())
-}
-
-const fn kind_value(kind: TransferKind) -> u16 {
-    match kind {
-        TransferKind::RequestInput => 1,
-        TransferKind::ResponseOutput => 2,
-        TransferKind::ProcessStdin => 3,
-        TransferKind::ProcessStdout => 4,
-        TransferKind::ProcessStderr => 5,
-    }
-}
-
-fn decode_kind(value: u16) -> Result<TransferKind, TransferError> {
-    match value {
-        1 => Ok(TransferKind::RequestInput),
-        2 => Ok(TransferKind::ResponseOutput),
-        3 => Ok(TransferKind::ProcessStdin),
-        4 => Ok(TransferKind::ProcessStdout),
-        5 => Ok(TransferKind::ProcessStderr),
-        _ => Err(TransferError::Protocol),
-    }
 }
 
 fn required<'a>(
@@ -618,7 +619,7 @@ mod tests {
     fn begin(id: TransferId, body: &[u8]) -> TransferBegin {
         TransferBegin {
             transfer_id: id,
-            kind: TransferKind::RequestInput,
+            kind: TransferKind::CallInput,
             parent_message_id: Some([8; 16]),
             parent_operation_id: None,
             declared_length: body.len(),
@@ -660,9 +661,9 @@ mod tests {
             terminal_status: 1,
             receipt: b"sender-receipt".to_vec(),
         };
-        let (completed, receipt) = transfers.finish(actor, &end).unwrap();
-        assert_eq!(completed, body);
-        assert_eq!(receipt.terminal, TransferTerminal::Completed);
+        let completed = transfers.finish(actor, &end).unwrap();
+        assert_eq!(std::fs::read(completed.path()).unwrap(), body);
+        assert_eq!(completed.receipt.terminal, TransferTerminal::Complete);
         assert_eq!(
             transfers.begin(actor, begin(id, &[])),
             Err(TransferError::Replay)
@@ -727,7 +728,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(receipt.terminal, TransferTerminal::Cancelled);
+        assert_eq!(receipt.terminal, TransferTerminal::Canceled);
         assert_eq!(
             transfers.cancel(
                 actor,

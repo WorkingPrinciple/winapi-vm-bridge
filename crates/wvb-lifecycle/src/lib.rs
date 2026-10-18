@@ -164,7 +164,6 @@ impl<T> HandleTable<T> {
 pub enum CallbackThread {
     Any,
     Registering(u64),
-    Serialized,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -179,6 +178,7 @@ struct Callback {
     thread: CallbackThread,
     allow_reentrant: bool,
     max_concurrency: u16,
+    serial: bool,
     in_flight: u32,
 }
 
@@ -189,7 +189,6 @@ pub struct CallbackRegistry {
     maximum: usize,
     next_id: u64,
     callbacks: BTreeMap<u64, Callback>,
-    serialized_in_flight: bool,
 }
 
 impl CallbackRegistry {
@@ -201,7 +200,6 @@ impl CallbackRegistry {
             maximum,
             next_id: 1,
             callbacks: BTreeMap::new(),
-            serialized_in_flight: false,
         }
     }
 
@@ -210,6 +208,7 @@ impl CallbackRegistry {
         thread: CallbackThread,
         allow_reentrant: bool,
         max_concurrency: u16,
+        serial: bool,
     ) -> Result<CallbackToken, LifecycleError> {
         if self.callbacks.len() >= self.maximum || max_concurrency == 0 {
             return Err(LifecycleError::Capacity);
@@ -225,6 +224,7 @@ impl CallbackRegistry {
                 thread,
                 allow_reentrant,
                 max_concurrency,
+                serial,
                 in_flight: 0,
             },
         );
@@ -245,21 +245,14 @@ impl CallbackRegistry {
             CallbackThread::Any => {}
             CallbackThread::Registering(expected) if expected == thread_id => {}
             CallbackThread::Registering(_) => return Err(LifecycleError::WrongThread),
-            CallbackThread::Serialized if self.serialized_in_flight => {
-                return Err(LifecycleError::Busy);
-            }
-            CallbackThread::Serialized => self.serialized_in_flight = true,
+        }
+        if callback.serial && callback.in_flight > 0 {
+            return Err(LifecycleError::Busy);
         }
         if callback.in_flight > 0 && !callback.allow_reentrant {
-            if callback.thread == CallbackThread::Serialized {
-                self.serialized_in_flight = false;
-            }
             return Err(LifecycleError::ReentrancyDenied);
         }
         if callback.in_flight >= u32::from(callback.max_concurrency) {
-            if callback.thread == CallbackThread::Serialized {
-                self.serialized_in_flight = false;
-            }
             return Err(LifecycleError::Capacity);
         }
         callback.in_flight = callback
@@ -279,9 +272,6 @@ impl CallbackRegistry {
             .in_flight
             .checked_sub(1)
             .ok_or(LifecycleError::Terminal)?;
-        if callback.thread == CallbackThread::Serialized {
-            self.serialized_in_flight = false;
-        }
         Ok(())
     }
 
@@ -298,9 +288,16 @@ impl CallbackRegistry {
         Ok(())
     }
 
+    pub fn unregister_force(&mut self, token: CallbackToken) -> Result<u32, LifecycleError> {
+        self.validate_token(token)?;
+        self.callbacks
+            .remove(&token.id)
+            .map(|callback| callback.in_flight)
+            .ok_or(LifecycleError::Unknown)
+    }
+
     pub fn disconnect(&mut self, epoch: u64) {
         self.callbacks.clear();
-        self.serialized_in_flight = false;
         self.epoch = epoch;
     }
 
@@ -435,7 +432,7 @@ mod tests {
         let actor = [3; 16];
         let mut callbacks = CallbackRegistry::new(actor, 9, 2);
         let token = callbacks
-            .register(CallbackThread::Registering(44), false, 1)
+            .register(CallbackThread::Registering(44), false, 1, false)
             .unwrap();
         assert_eq!(callbacks.begin(token, 45), Err(LifecycleError::WrongThread));
         callbacks.begin(token, 44).unwrap();

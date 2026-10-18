@@ -1,8 +1,8 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
-use wvb_package::{PackageManager, PackageManifest};
+use wvb_package::{HealthReceipt, PackageManager, PackageManifest};
 
 #[derive(Parser)]
 struct Arguments {
@@ -80,9 +80,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             health_receipt,
         } => {
             let manager = PackageManager::open(&root)?;
-            let health = fs::read_to_string(&health_receipt)?;
             let value = manifest(&path)?;
-            let slot = manager.activate(&value, |_| health.trim() == "PASS")?;
+            let health: HealthReceipt = serde_json::from_slice(&fs::read(&health_receipt)?)?;
+            let expected_root =
+                fs::canonicalize(root.join("versions").join(&value.package_version))?;
+            let healthy = health.status == "PASS"
+                && health.package_version == value.package_version
+                && health.manifest_sha256 == value.sha256()?
+                && Path::new(&health.package_root) == expected_root;
+            let slot = manager.activate(&value, |_| healthy)?;
             println!("package-activate=ok version={}", slot.package_version);
         }
         Command::Rollback { root } => {

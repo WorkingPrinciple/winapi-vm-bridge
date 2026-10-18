@@ -8,7 +8,9 @@ rust-version.workspace = true
 
 [dependencies]
 sha2.workspace = true
+tempfile.workspace = true
 wvb-protocol = { path = "../wvb-protocol" }
+wvb-registry = { path = "../wvb-registry" }
 
 [lints]
 workspace = true

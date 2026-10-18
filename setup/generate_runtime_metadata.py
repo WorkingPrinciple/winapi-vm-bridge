@@ -81,12 +81,13 @@ def provenance_document(
     metadata: dict[str, Any],
     source_sha: str,
     sbom_sha256: str,
+    subjects: list[dict[str, object]],
 ) -> dict[str, Any]:
     rust_version = metadata.get("version", 1)
     return {
         "_type": "https://in-toto.io/Statement/v1",
         "predicateType": "https://slsa.dev/provenance/v1",
-        "subject": [],
+        "subject": sorted(subjects, key=lambda subject: str(subject["name"])),
         "predicate": {
             "buildDefinition": {
                 "buildType": "https://github.com/dragoshont/winapi-vm-bridge/runtime-build/v1",
@@ -127,6 +128,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--artifact",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="final unsigned artifact to bind into provenance",
+    )
     arguments = parser.parse_args()
     if len(arguments.source_sha256) != 64 or any(
         character not in "0123456789abcdef" for character in arguments.source_sha256
@@ -141,6 +149,22 @@ def main() -> int:
         ).stdout
     )
     arguments.output.mkdir(parents=True, exist_ok=True)
+    subjects = []
+    for mapping in arguments.artifact:
+        name, separator, path = mapping.partition("=")
+        if not separator or not name or not path:
+            raise ValueError(f"invalid artifact mapping: {mapping}")
+        artifact = Path(path)
+        if not artifact.is_file():
+            raise ValueError(f"artifact is not a file: {artifact}")
+        subjects.append(
+            {
+                "name": name,
+                "digest": {"sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()},
+            }
+        )
+    if not subjects:
+        raise ValueError("at least one --artifact NAME=PATH is required")
     sbom = canonical_json(spdx_document(metadata, arguments.source_sha256))
     sbom_path = arguments.output / "runtime.spdx.json"
     sbom_path.write_bytes(sbom)
@@ -149,6 +173,7 @@ def main() -> int:
             metadata,
             arguments.source_sha256,
             hashlib.sha256(sbom).hexdigest(),
+            subjects,
         )
     )
     (arguments.output / "runtime.provenance.json").write_bytes(provenance)

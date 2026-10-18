@@ -3,8 +3,10 @@
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
+pub use wvb_registry::OperationStatus;
 
 const ZERO_HASH: [u8; 32] = [0; 32];
 
@@ -13,33 +15,6 @@ pub enum StateError {
     Sql(rusqlite::Error),
     Corrupt(&'static str),
     AnchorRollback,
-}
-
-#[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStatus {
-    Queued = 1,
-    Running = 2,
-    Succeeded = 3,
-    Failed = 4,
-    Cancelled = 5,
-    Unknown = 6,
-}
-
-impl TryFrom<u16> for OperationStatus {
-    type Error = StateError;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Queued),
-            2 => Ok(Self::Running),
-            3 => Ok(Self::Succeeded),
-            4 => Ok(Self::Failed),
-            5 => Ok(Self::Cancelled),
-            6 => Ok(Self::Unknown),
-            _ => Err(StateError::Corrupt("invalid operation status")),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,6 +133,17 @@ impl Store {
         Ok(store)
     }
 
+    pub fn open_read_only(path: &Path) -> Result<Self, StateError> {
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.pragma_update(None, "foreign_keys", "ON")?;
+        let store = Self { connection };
+        if store.metadata("schema_version")? != 4 {
+            return Err(StateError::Corrupt("unsupported schema version"));
+        }
+        Ok(store)
+    }
+
     fn migrate(&self) -> Result<(), StateError> {
         self.create_schema()?;
         let mut schema_version = self.metadata("schema_version")?;
@@ -176,6 +162,7 @@ impl Store {
         if schema_version != 4 {
             return Err(StateError::Corrupt("unsupported schema version"));
         }
+        self.create_current_tables()?;
         Ok(())
     }
 
@@ -265,6 +252,14 @@ impl Store {
                 event_hash BLOB NOT NULL CHECK(length(event_hash)=32),
                 payload BLOB NOT NULL
             ) STRICT;
+            ",
+        )?;
+        Ok(())
+    }
+
+    fn create_current_tables(&self) -> Result<(), StateError> {
+        self.connection.execute_batch(
+            "
             CREATE TABLE IF NOT EXISTS bundle_admissions(
                 bundle_descriptor_hash BLOB PRIMARY KEY
                     CHECK(length(bundle_descriptor_hash)=32),
@@ -929,10 +924,27 @@ impl Store {
     pub fn reconcile_anchor(&self, anchor: AnchorState) -> Result<(), StateError> {
         let database = self.anchor_state()?;
         if anchor.database_generation > database.database_generation
+            || anchor.checkpoint_sequence > database.checkpoint_sequence
             || anchor.event_sequence > database.event_sequence
-            || anchor.event_sequence == database.event_sequence
-                && anchor.event_hash != database.event_hash
+            || anchor.key_generation > database.key_generation
         {
+            return Err(StateError::AnchorRollback);
+        }
+        if anchor.event_sequence == 0 {
+            if anchor.event_hash != ZERO_HASH {
+                return Err(StateError::AnchorRollback);
+            }
+            return Ok(());
+        }
+        let anchored_hash = self
+            .connection
+            .query_row(
+                "SELECT event_hash FROM events WHERE sequence=?1",
+                [sql_i64(anchor.event_sequence)?],
+                |row| fixed_array_sql::<32>(row.get(0)?),
+            )
+            .optional()?;
+        if anchored_hash != Some(anchor.event_hash) {
             return Err(StateError::AnchorRollback);
         }
         Ok(())
@@ -948,13 +960,19 @@ impl Store {
 }
 
 fn event_hash(previous: [u8; 32], sequence: u64, kind: &str, payload: &[u8]) -> [u8; 32] {
+    #[derive(Serialize)]
+    struct CanonicalEvent<'a> {
+        kind: &'a str,
+        payload: &'a [u8],
+    }
+
+    let canonical = serde_jcs::to_vec(&CanonicalEvent { kind, payload })
+        .expect("serializing an audit event cannot fail");
     let mut digest = Sha256::new();
+    digest.update(b"WVB-AUDIT-V1");
     digest.update(previous);
-    digest.update(sequence.to_le_bytes());
-    digest.update((kind.len() as u64).to_le_bytes());
-    digest.update(kind.as_bytes());
-    digest.update((payload.len() as u64).to_le_bytes());
-    digest.update(payload);
+    digest.update(sequence.to_be_bytes());
+    digest.update(canonical);
     digest.finalize().into()
 }
 
@@ -999,16 +1017,39 @@ fn validate_operation(
             (previous, operation.status),
             (
                 OperationStatus::Queued,
-                OperationStatus::Running | OperationStatus::Cancelled
+                OperationStatus::Waiting
+                    | OperationStatus::Running
+                    | OperationStatus::Canceled
+                    | OperationStatus::Expired
+            ) | (
+                OperationStatus::Waiting | OperationStatus::Blocked,
+                OperationStatus::Waiting
+                    | OperationStatus::Running
+                    | OperationStatus::Blocked
+                    | OperationStatus::Canceling
+                    | OperationStatus::Canceled
+                    | OperationStatus::Expired
             ) | (
                 OperationStatus::Running,
-                OperationStatus::Succeeded
+                OperationStatus::Blocked
+                    | OperationStatus::Canceling
+                    | OperationStatus::Canceled
+                    | OperationStatus::Succeeded
                     | OperationStatus::Failed
-                    | OperationStatus::Cancelled
+                    | OperationStatus::Partial
+                    | OperationStatus::Unknown
+            ) | (
+                OperationStatus::Canceling,
+                OperationStatus::Canceled
+                    | OperationStatus::Succeeded
+                    | OperationStatus::Failed
                     | OperationStatus::Unknown
             ) | (
                 OperationStatus::Unknown,
-                OperationStatus::Succeeded | OperationStatus::Failed
+                OperationStatus::Succeeded
+                    | OperationStatus::Failed
+                    | OperationStatus::Partial
+                    | OperationStatus::Canceled
             )
         );
         if !allowed {
@@ -1024,7 +1065,10 @@ fn validate_operation(
     }
     match operation.status {
         OperationStatus::Queued => {}
-        OperationStatus::Running => {
+        OperationStatus::Waiting
+        | OperationStatus::Running
+        | OperationStatus::Blocked
+        | OperationStatus::Canceling => {
             if operation.started_unix_ms.is_none()
                 || operation.completed_unix_ms.is_some()
                 || operation.terminal_receipt_id.is_some()
@@ -1034,7 +1078,9 @@ fn validate_operation(
         }
         OperationStatus::Succeeded
         | OperationStatus::Failed
-        | OperationStatus::Cancelled
+        | OperationStatus::Partial
+        | OperationStatus::Expired
+        | OperationStatus::Canceled
         | OperationStatus::Unknown => {
             if operation.started_unix_ms.is_none()
                 || operation.completed_unix_ms.is_none()
@@ -1169,6 +1215,48 @@ mod tests {
         };
         assert!(matches!(
             store.reconcile_anchor(future),
+            Err(StateError::AnchorRollback)
+        ));
+    }
+
+    #[test]
+    fn audit_hash_matches_domain_separated_jcs_golden() {
+        assert_eq!(
+            event_hash(ZERO_HASH, 1, "created", b"one"),
+            [
+                0x96, 0xd5, 0x0d, 0xb6, 0x02, 0x03, 0x3b, 0x2d, 0x06, 0xbd, 0x2d, 0x78, 0x85, 0xf2,
+                0x0f, 0x4a, 0x2c, 0xe3, 0xee, 0x82, 0x06, 0xc7, 0xb0, 0x26, 0xba, 0x79, 0x47, 0x51,
+                0xe5, 0x11, 0x5f, 0x37,
+            ]
+        );
+    }
+
+    #[test]
+    fn anchor_accepts_only_an_identical_anchored_prefix() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("prefix.db");
+        let mut store = Store::open(&path).unwrap();
+        store.append_event("created", b"one").unwrap();
+        let anchor = store.anchor_state().unwrap();
+        store.append_event("advanced", b"two").unwrap();
+        store.reconcile_anchor(anchor).unwrap();
+        store
+            .connection
+            .execute(
+                "UPDATE events SET event_hash=?2 WHERE sequence=?1",
+                params![1_i64, [9_u8; 32].as_slice()],
+            )
+            .unwrap();
+        assert!(matches!(
+            store.reconcile_anchor(anchor),
+            Err(StateError::AnchorRollback)
+        ));
+        let future_key = AnchorState {
+            key_generation: anchor.key_generation + 1,
+            ..anchor
+        };
+        assert!(matches!(
+            store.reconcile_anchor(future_key),
             Err(StateError::AnchorRollback)
         ));
     }
@@ -1379,7 +1467,7 @@ mod tests {
                 .transition_operation(OperationStatus::Running, &operation, b"succeeded")
                 .unwrap();
             let mut cancelled = operation.clone();
-            cancelled.status = OperationStatus::Cancelled;
+            cancelled.status = OperationStatus::Canceled;
             assert!(
                 store
                     .transition_operation(
@@ -1399,6 +1487,86 @@ mod tests {
             store.operation(operation.operation_id).unwrap(),
             Some(operation)
         );
+        store.verify_chain().unwrap();
+    }
+
+    #[test]
+    fn schema_two_database_migrates_without_losing_actor_or_grant() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("schema-two.db");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "
+                PRAGMA foreign_keys=ON;
+                CREATE TABLE metadata(key TEXT PRIMARY KEY,value INTEGER NOT NULL) STRICT;
+                INSERT INTO metadata(key,value) VALUES
+                    ('schema_version',2),('database_generation',1),
+                    ('checkpoint_sequence',0),('key_generation',1);
+                CREATE TABLE events(
+                    sequence INTEGER PRIMARY KEY,kind TEXT NOT NULL,payload BLOB NOT NULL,
+                    previous_hash BLOB NOT NULL CHECK(length(previous_hash)=32),
+                    event_hash BLOB NOT NULL UNIQUE CHECK(length(event_hash)=32)
+                ) STRICT;
+                CREATE TABLE actors(
+                    actor_id BLOB PRIMARY KEY CHECK(length(actor_id)=16),
+                    public_key BLOB NOT NULL UNIQUE CHECK(length(public_key)=32),
+                    label TEXT NOT NULL,status INTEGER NOT NULL,
+                    created_event INTEGER NOT NULL REFERENCES events(sequence),
+                    revoked_event INTEGER REFERENCES events(sequence)
+                ) STRICT;
+                CREATE TABLE grants(
+                    actor_id BLOB NOT NULL REFERENCES actors(actor_id),role INTEGER NOT NULL,
+                    adapter_hash BLOB,operation_id INTEGER,expires_unix_ms INTEGER,
+                    created_event INTEGER NOT NULL REFERENCES events(sequence),
+                    revoked_event INTEGER REFERENCES events(sequence)
+                ) STRICT;
+                CREATE UNIQUE INDEX grants_normalized_unique ON grants(
+                    actor_id,role,IFNULL(hex(adapter_hash),''),IFNULL(operation_id,-1)
+                );
+                CREATE TABLE receipts(
+                    receipt_id BLOB PRIMARY KEY CHECK(length(receipt_id)=16),
+                    actor_id BLOB REFERENCES actors(actor_id),request_hash BLOB,
+                    terminal_status INTEGER NOT NULL,
+                    event_sequence INTEGER NOT NULL REFERENCES events(sequence),
+                    event_hash BLOB NOT NULL CHECK(length(event_hash)=32),
+                    payload BLOB NOT NULL
+                ) STRICT;
+                ",
+            )
+            .unwrap();
+        let hash = event_hash(ZERO_HASH, 1, "pair-committed", b"pair");
+        connection
+            .execute(
+                "INSERT INTO events VALUES(?1,?2,?3,?4,?5)",
+                params![
+                    1_i64,
+                    "pair-committed",
+                    b"pair",
+                    ZERO_HASH.as_slice(),
+                    hash.as_slice()
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO actors VALUES(?1,?2,?3,1,1,NULL)",
+                params![[1_u8; 16].as_slice(), [2_u8; 32].as_slice(), "operator"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO grants VALUES(?1,1,?2,7,NULL,1,NULL)",
+                params![[1_u8; 16].as_slice(), [3_u8; 32].as_slice()],
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.actors().unwrap().len(), 1);
+        assert_eq!(store.active_grants().unwrap().len(), 1);
+        assert!(store.active_bundle_admissions().unwrap().is_empty());
+        assert!(store.operation([8; 16]).unwrap().is_none());
         store.verify_chain().unwrap();
     }
 }

@@ -37,6 +37,14 @@ pub struct ActiveSlot {
     pub manifest_sha256: [u8; 32],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthReceipt {
+    pub status: String,
+    pub package_version: String,
+    pub manifest_sha256: [u8; 32],
+    pub package_root: String,
+}
+
 #[derive(Debug)]
 pub enum PackageError {
     Integrity(IntegrityError),
@@ -175,6 +183,7 @@ impl PackageManager {
         if !version_path.is_dir() {
             return Err(PackageError::NotInstalled);
         }
+        verify_staged_manifest(&version_path, manifest)?;
         if !health_check(&version_path) {
             return Err(PackageError::HealthCheckFailed);
         }
@@ -206,6 +215,11 @@ impl PackageManager {
         if !prior_path.is_dir() {
             return Err(PackageError::RollbackUnavailable);
         }
+        let prior_manifest = read_staged_manifest(&prior_path)?;
+        if prior_manifest.sha256()? != prior.manifest_sha256 {
+            return Err(PackageError::RollbackUnavailable);
+        }
+        verify_staged_manifest(&prior_path, &prior_manifest)?;
         let displaced = self.root.join("active.displaced");
         if displaced.exists() {
             fs::remove_file(&displaced)?;
@@ -230,10 +244,7 @@ impl PackageManager {
     }
 
     pub fn uninstall_preflight(&self, package_version: &str) -> Result<Vec<PathBuf>, PackageError> {
-        let version = self.root.join("versions").join(package_version);
-        if !version.is_dir() {
-            return Err(PackageError::NotInstalled);
-        }
+        let version = controlled_version_path(&self.root, package_version)?;
         let mut paths = fs::read_dir(&version)?
             .map(|entry| entry.map(|entry| entry.path()))
             .collect::<Result<Vec<_>, _>>()?;
@@ -242,6 +253,7 @@ impl PackageManager {
     }
 
     pub fn uninstall(&self, package_version: &str) -> Result<(), PackageError> {
+        validate_version(package_version)?;
         if self
             .active()?
             .is_some_and(|slot| slot.package_version == package_version)
@@ -251,7 +263,7 @@ impl PackageManager {
             ));
         }
         let versions = self.root.join("versions");
-        let version = versions.join(package_version);
+        let version = controlled_version_path(&self.root, package_version)?;
         remove_controlled_tree(&versions, &version)
     }
 }
@@ -261,23 +273,40 @@ fn decode_slot(path: &Path) -> Result<ActiveSlot, PackageError> {
         .map_err(|error| PackageError::Canonicalization(error.to_string()))
 }
 
+fn read_staged_manifest(path: &Path) -> Result<PackageManifest, PackageError> {
+    serde_json::from_slice(&fs::read(path.join("manifest.jcs"))?)
+        .map_err(|error| PackageError::Canonicalization(error.to_string()))
+}
+
+fn verify_staged_manifest(
+    version_path: &Path,
+    expected: &PackageManifest,
+) -> Result<(), PackageError> {
+    let observed = read_staged_manifest(version_path)?;
+    if observed.sha256()? != expected.sha256()? {
+        return Err(PackageError::InvalidManifest(
+            "staged manifest identity mismatch",
+        ));
+    }
+    observed.verify_source(version_path)
+}
+
 fn remove_controlled_tree(root: &Path, path: &Path) -> Result<(), PackageError> {
     let root = canonical_root(root)?;
-    let parent = path
-        .parent()
-        .ok_or(PackageError::InvalidManifest("invalid package path"))?;
-    if canonical_root(parent)? != root || path == root {
+    if !path.exists() {
+        return Err(PackageError::NotInstalled);
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(PackageError::InvalidManifest(
+            "package path is not a directory",
+        ));
+    }
+    let canonical = fs::canonicalize(path)?;
+    if canonical == root || canonical.parent() != Some(root.as_path()) {
         return Err(PackageError::InvalidManifest("package path escaped root"));
     }
-    if path.exists() {
-        let metadata = fs::symlink_metadata(path)?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(PackageError::InvalidManifest(
-                "package path is not a directory",
-            ));
-        }
-        fs::remove_dir_all(path)?;
-    }
+    fs::remove_dir_all(canonical)?;
     Ok(())
 }
 
@@ -299,9 +328,48 @@ fn set_executable(_path: &Path, _executable: bool) -> Result<(), PackageError> {
 fn valid_version(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
+        && value != "."
+        && value != ".."
+        && !value.contains("..")
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && value
+            .bytes()
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+}
+
+fn validate_version(value: &str) -> Result<(), PackageError> {
+    if valid_version(value) {
+        Ok(())
+    } else {
+        Err(PackageError::InvalidManifest("invalid package version"))
+    }
+}
+
+fn controlled_version_path(root: &Path, version: &str) -> Result<PathBuf, PackageError> {
+    validate_version(version)?;
+    let versions = canonical_root(&root.join("versions"))?;
+    let path = versions.join(version);
+    if !path.exists() {
+        return Err(PackageError::NotInstalled);
+    }
+    let metadata = fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(PackageError::InvalidManifest(
+            "package version is not a controlled directory",
+        ));
+    }
+    let canonical = fs::canonicalize(path)?;
+    if canonical.parent() != Some(versions.as_path()) {
+        return Err(PackageError::InvalidManifest("package path escaped root"));
+    }
+    Ok(canonical)
 }
 
 fn short_hash(value: [u8; 32]) -> String {
@@ -393,6 +461,69 @@ mod tests {
         assert!(matches!(
             value.validate(),
             Err(PackageError::DuplicatePath(_))
+        ));
+    }
+
+    #[test]
+    fn uninstall_rejects_every_version_escape() {
+        let install = tempdir().unwrap();
+        let manager = PackageManager::open(install.path()).unwrap();
+        for version in [
+            ".",
+            "..",
+            "../runtime",
+            "a/b",
+            "a\\b",
+            "/absolute",
+            "C:drive",
+        ] {
+            assert!(matches!(
+                manager.uninstall_preflight(version),
+                Err(PackageError::InvalidManifest("invalid package version"))
+            ));
+            assert!(matches!(
+                manager.uninstall(version),
+                Err(PackageError::InvalidManifest("invalid package version"))
+            ));
+        }
+        assert!(install.path().is_dir());
+    }
+
+    #[test]
+    fn activation_rejects_same_version_with_different_manifest() {
+        let install = tempdir().unwrap();
+        let manager = PackageManager::open(install.path()).unwrap();
+        let source = source(b"first");
+        let first = manifest("1.0.0", sha256_bytes(b"first"));
+        manager.stage(source.path(), &first).unwrap();
+        let mut different = first.clone();
+        different.source_sha256 = [9; 32];
+        assert!(matches!(
+            manager.activate(&different, |_| true),
+            Err(PackageError::InvalidManifest(
+                "staged manifest identity mismatch"
+            ))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_preflight_rejects_symlinked_version() {
+        use std::os::unix::fs::symlink;
+
+        let install = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let manager = PackageManager::open(install.path()).unwrap();
+        symlink(
+            outside.path(),
+            install.path().join("versions").join("1.0.0"),
+        )
+        .unwrap();
+        assert!(matches!(
+            manager.uninstall_preflight("1.0.0"),
+            Err(PackageError::InvalidManifest(
+                "package version is not a controlled directory"
+            ))
         ));
     }
 }

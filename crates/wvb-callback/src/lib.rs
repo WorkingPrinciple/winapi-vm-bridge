@@ -6,6 +6,7 @@ use wvb_lifecycle::{ActorId, CallbackRegistry, CallbackThread, CallbackToken, Li
 use wvb_protocol::{
     MessageType, PackedDecoder, PackedEncoder, ProtocolError, WireType, top_level_schema_id,
 };
+pub use wvb_registry::{CallbackExecutor, CallbackOrdering};
 
 const REQUIRED: u8 = 0x01;
 
@@ -14,10 +15,10 @@ pub struct CallbackRegister {
     pub callback_id: [u8; 16],
     pub contract_hash: [u8; 32],
     pub lease_budget_ms: u64,
-    pub ordering: u16,
+    pub ordering: CallbackOrdering,
     pub max_concurrency: u16,
     pub reentrant: bool,
-    pub executor: u16,
+    pub executor: CallbackExecutor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,21 +92,23 @@ impl CallbackService {
         if request.contract_hash == [0; 32]
             || request.lease_budget_ms == 0
             || request.max_concurrency == 0
-            || !matches!(request.ordering, 1..=3)
-            || !matches!(request.executor, 1..=3)
+            || request.ordering == CallbackOrdering::Serial && request.max_concurrency != 1
             || self.callbacks.contains_key(&request.callback_id)
         {
             return Err(CallbackError::Invalid);
         }
         let thread = match request.executor {
-            1 => CallbackThread::Any,
-            2 => CallbackThread::Registering(registering_thread),
-            3 => CallbackThread::Serialized,
-            _ => return Err(CallbackError::Invalid),
+            CallbackExecutor::Worker => CallbackThread::Any,
+            CallbackExecutor::Sta
+            | CallbackExecutor::CallerRendezvous
+            | CallbackExecutor::EventLoop => CallbackThread::Registering(registering_thread),
         };
-        let token = self
-            .registry
-            .register(thread, request.reentrant, request.max_concurrency)?;
+        let token = self.registry.register(
+            thread,
+            request.reentrant,
+            request.max_concurrency,
+            request.ordering == CallbackOrdering::Serial,
+        )?;
         let expires_unix_ms = now_unix_ms
             .checked_add(request.lease_budget_ms)
             .ok_or(CallbackError::Invalid)?;
@@ -162,7 +165,12 @@ impl CallbackService {
             .callbacks
             .get(&request.callback_id)
             .ok_or(CallbackError::Unknown)?;
-        self.registry.unregister(callback.token)?;
+        if request.drain {
+            self.registry.unregister(callback.token)?;
+        } else {
+            self.registry.unregister_force(callback.token)?;
+            self.invocations.retain(|_, token| *token != callback.token);
+        }
         self.callbacks.remove(&request.callback_id);
         Ok(())
     }
@@ -218,7 +226,12 @@ impl CallbackMessage {
                         REQUIRED,
                         value.lease_budget_ms.to_le_bytes(),
                     )?
-                    .field(4, WireType::U16, REQUIRED, value.ordering.to_le_bytes())?
+                    .field(
+                        4,
+                        WireType::U16,
+                        REQUIRED,
+                        u16::from(value.ordering).to_le_bytes(),
+                    )?
                     .field(
                         5,
                         WireType::U16,
@@ -226,7 +239,12 @@ impl CallbackMessage {
                         value.max_concurrency.to_le_bytes(),
                     )?
                     .field(6, WireType::Bool, REQUIRED, [u8::from(value.reentrant)])?
-                    .field(7, WireType::U16, REQUIRED, value.executor.to_le_bytes())?
+                    .field(
+                        7,
+                        WireType::U16,
+                        REQUIRED,
+                        u16::from(value.executor).to_le_bytes(),
+                    )?
                     .encode()?,
             )),
             Self::Invoke(value) => {
@@ -277,10 +295,12 @@ impl CallbackMessage {
                 callback_id: uuid(&decoder, 1)?,
                 contract_hash: hash(&decoder, 2)?,
                 lease_budget_ms: u64_value(&decoder, 3)?,
-                ordering: u16_value(&decoder, 4)?,
+                ordering: CallbackOrdering::try_from(u16_value(&decoder, 4)?)
+                    .map_err(|_| CallbackError::Protocol)?,
                 max_concurrency: u16_value(&decoder, 5)?,
                 reentrant: bool_value(&decoder, 6)?,
-                executor: u16_value(&decoder, 7)?,
+                executor: CallbackExecutor::try_from(u16_value(&decoder, 7)?)
+                    .map_err(|_| CallbackError::Protocol)?,
             })),
             MessageType::CallbackInvoke => Ok(Self::Invoke(CallbackInvoke {
                 callback_id: uuid(&decoder, 1)?,
@@ -391,10 +411,10 @@ mod tests {
             callback_id: [1; 16],
             contract_hash: [2; 32],
             lease_budget_ms: 1_000,
-            ordering: 1,
+            ordering: CallbackOrdering::Parallel,
             max_concurrency: 2,
             reentrant: true,
-            executor: 2,
+            executor: CallbackExecutor::Sta,
         }
     }
 
@@ -488,6 +508,45 @@ mod tests {
         assert_eq!(
             service.begin_invoke(registration.contract_hash, &invoke, 1_010, 44),
             Err(CallbackError::Expired)
+        );
+    }
+
+    #[test]
+    fn serial_ordering_and_nondraining_unregister_are_enforced() {
+        let mut service = CallbackService::new([9; 16], 4, 2, 1024);
+        let mut registration = registration();
+        registration.ordering = CallbackOrdering::Serial;
+        registration.max_concurrency = 1;
+        registration.executor = CallbackExecutor::EventLoop;
+        service.register(&registration, 10, 44).unwrap();
+        let first = CallbackInvoke {
+            callback_id: registration.callback_id,
+            invocation_id: [3; 16],
+            payload_schema_id: 7,
+            parent_call_id: None,
+            payload: Vec::new(),
+        };
+        let second = CallbackInvoke {
+            invocation_id: [4; 16],
+            ..first.clone()
+        };
+        service
+            .begin_invoke(registration.contract_hash, &first, 11, 44)
+            .unwrap();
+        assert_eq!(
+            service.begin_invoke(registration.contract_hash, &second, 11, 44),
+            Err(CallbackError::Lifecycle(LifecycleError::Busy))
+        );
+        service
+            .unregister(CallbackUnregister {
+                callback_id: registration.callback_id,
+                reason: 1,
+                drain: false,
+            })
+            .unwrap();
+        assert_eq!(
+            service.finish_invoke(first.invocation_id),
+            Err(CallbackError::Unknown)
         );
     }
 }

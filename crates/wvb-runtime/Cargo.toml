@@ -16,6 +16,7 @@ wvb-crypto = { path = "../wvb-crypto" }
 wvb-session = { path = "../wvb-session" }
 wvb-state = { path = "../wvb-state" }
 wvb-operations = { path = "../wvb-operations" }
+wvb-package = { path = "../wvb-package" }
 wvb-transport = { path = "../wvb-transport" }
 
 [dev-dependencies]

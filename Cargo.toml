@@ -22,6 +22,7 @@ members = [
   "crates/wvb-operations",
   "crates/wvb-package",
   "crates/wvb-protocol",
+  "crates/wvb-registry",
   "crates/wvb-runtime",
   "crates/wvb-session",
   "crates/wvb-state",

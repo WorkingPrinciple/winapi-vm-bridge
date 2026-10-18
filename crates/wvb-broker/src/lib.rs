@@ -1,6 +1,7 @@
 //! Concurrent canonical broker session driver.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -62,7 +63,7 @@ pub trait TypedDispatchModule: Send + Sync + 'static {
 }
 
 pub trait TransferSink: Send + Sync + 'static {
-    fn completed(&self, receipt: &TransferReceipt, bytes: &[u8]) -> Result<Vec<u8>, String>;
+    fn completed(&self, receipt: &TransferReceipt, path: &Path) -> Result<Vec<u8>, String>;
 
     fn cancelled(&self, _receipt: &TransferReceipt) -> Result<Option<Vec<u8>>, String> {
         Ok(None)
@@ -350,14 +351,14 @@ where
             }
             TransferMessage::End(end) => {
                 verify_transfer_terminal(&mut streams, &envelope, end.transfer_id)?;
-                let (bytes, receipt) = registry
+                let completed = registry
                     .finish(actor_id, &end)
                     .map_err(|error| BrokerError::Handler(format!("transfer end: {error}")))?;
                 let receipt_bytes = sink
-                    .completed(&receipt, &bytes)
+                    .completed(&completed.receipt, completed.path())
                     .map_err(BrokerError::Handler)?;
                 Some(TransferMessage::Receipt(TransferReceiptMessage {
-                    transfer_id: receipt.transfer_id,
+                    transfer_id: completed.receipt.transfer_id,
                     receipt: receipt_bytes,
                 }))
             }
@@ -619,11 +620,12 @@ mod tests {
     }
 
     impl TransferSink for CaptureTransfer {
-        fn completed(&self, _receipt: &TransferReceipt, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        fn completed(&self, _receipt: &TransferReceipt, path: &Path) -> Result<Vec<u8>, String> {
             *self
                 .0
                 .lock()
-                .map_err(|_| String::from("capture poisoned"))? = bytes.to_vec();
+                .map_err(|_| String::from("capture poisoned"))? =
+                std::fs::read(path).map_err(|error| error.to_string())?;
             Ok(b"runtime-receipt".to_vec())
         }
     }
@@ -855,7 +857,7 @@ mod tests {
         let messages = [
             TransferMessage::Begin(TransferBegin {
                 transfer_id,
-                kind: TransferKind::RequestInput,
+                kind: TransferKind::CallInput,
                 parent_message_id: None,
                 parent_operation_id: None,
                 declared_length: body.len(),

@@ -59,6 +59,7 @@ case "$operation" in
       echo "staged runtime is missing: $runtime" >&2
       exit 66
     }
+    "$runtime" init-state --state "$install_root/state.db"
     "$runtime" doctor \
       --state "$install_root/state.db" \
       --package-root "$install_root/versions/$(python3 -c \

@@ -30,6 +30,7 @@ class RuntimeMetadataTests(unittest.TestCase):
             metadata,
             source,
             hashlib.sha256(first).hexdigest(),
+            [{"name": "runtime.zip", "digest": {"sha256": "b" * 64}}],
         )
         self.assertEqual(provenance["signatures"], [])
         self.assertEqual(
@@ -38,6 +39,7 @@ class RuntimeMetadataTests(unittest.TestCase):
             ],
             source,
         )
+        self.assertEqual(provenance["subject"][0]["name"], "runtime.zip")
 
 
 if __name__ == "__main__":

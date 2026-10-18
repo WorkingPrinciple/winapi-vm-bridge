@@ -14,12 +14,40 @@ cargo test -q -p wvb-admission -p wvb-callback -p wvb-control \
   -p wvb-integrity -p wvb-operations -p wvb-package -p wvb-state \
   -p wvb-transfer -p wvb-exe
 mkdir -p "$tmp/runtime-package"
-printf '{}\n' > "$tmp/runtime-package/manifest.jcs"
+mkdir -p "$tmp/runtime-package/bin"
+printf 'runtime\n' > "$tmp/runtime-package/bin/wvb"
+python3 - "$tmp/runtime-package/manifest.jcs" "$tmp/runtime-package/bin/wvb" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+digest = list(hashlib.sha256(Path(sys.argv[2]).read_bytes()).digest())
+manifest = {
+    "identifier": "winapi-vm-bridge.runtime-package.v1",
+    "major": 1,
+    "package_version": "0.2.0-test",
+    "source_sha256": [1] * 32,
+    "sbom_sha256": [2] * 32,
+    "files": [{
+        "relative_path": "bin/wvb",
+        "sha256": digest,
+        "executable": False,
+    }],
+}
+Path(sys.argv[1]).write_text(
+    json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+    encoding="utf-8",
+)
+PY
+cargo run -q -p wvb-runtime -- init-state \
+  --state "$tmp/runtime-state.db" >/dev/null
 cargo run -q -p wvb-runtime -- doctor \
   --state "$tmp/runtime-state.db" \
   --package-root "$tmp/runtime-package" \
   --receipt "$tmp/runtime-health.txt" >/dev/null
-grep -q '^PASS$' "$tmp/runtime-health.txt"
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["status"]=="PASS"' \
+  "$tmp/runtime-health.txt"
 ./bin/winapi-vm-bridge generate examples/example-math/adapter.json --out "$tmp"
 test -f "$tmp/example-math/IMPLEMENTATION_TASK.md"
 ./bin/winapi-vm-bridge inspect \
@@ -110,6 +138,13 @@ python3 -c 'compile(open("setup/run_utm_deploy.py", encoding="utf-8").read(), "s
 python3 -c 'compile(open("setup/run_utm_managed_e2e.py", encoding="utf-8").read(), "setup/run_utm_managed_e2e.py", "exec")'
 python3 -c 'compile(open("setup/run_utm_acceptance.py", encoding="utf-8").read(), "setup/run_utm_acceptance.py", "exec")'
 python3 -c 'compile(open("setup/generate_runtime_metadata.py", encoding="utf-8").read(), "setup/generate_runtime_metadata.py", "exec")'
+source_sha=$(shasum -a 256 Cargo.lock | cut -d' ' -f1)
+python3 setup/generate_runtime_metadata.py \
+  --source-sha256 "$source_sha" \
+  --artifact Cargo.lock=Cargo.lock \
+  --output "$tmp/runtime-metadata" >/dev/null
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["subject"][0]["name"]=="Cargo.lock"' \
+  "$tmp/runtime-metadata/runtime.provenance.json"
 python3 -c 'compile(open("setup/run_topology_benchmark.py", encoding="utf-8").read(), "setup/run_topology_benchmark.py", "exec")'
 test -x native/managed-host/run-managed-roundtrip.sh
 test -x setup/provision_windows_dotnet_runtime.py
@@ -122,6 +157,7 @@ test -x setup/run_topology_benchmark.py
 test -x setup/wvb-bootstrap-macos
 grep -q 'WVB_SIGNATURE_VERIFIER is required' setup/wvb-bootstrap-macos
 grep -q 'WVB_SIGNATURE_VERIFIER is required' setup/wvb-bootstrap-windows.ps1
+grep -q 'function Invoke-Native' setup/wvb-bootstrap-windows.ps1
 sh -n setup/wvb-bootstrap-macos
 grep -q 'runtime and execution plane' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
