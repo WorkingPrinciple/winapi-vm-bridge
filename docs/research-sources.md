@@ -37,6 +37,7 @@ thresholds. Performance must be measured on the actual Mac/UTM/Windows topology.
 | Rust bindgen | https://rust-lang.github.io/rust-bindgen/ | Mechanical signature/layout generation and its limits |
 | SWIG | https://www.swig.org/Doc4.3/ | Binding generation precedent; ownership/lifetime still needs policy |
 | Wine unixlib | https://github.com/wine-mirror/wine/blob/master/include/wine/unixlib.h | Efficient local PE→Unix call pattern; not a cross-VM transport |
+| Wine unixlib source contract | https://raw.githubusercontent.com/wine-mirror/wine/master/include/wine/unixlib.h | Supported PE side uses loader-provided `__wine_unixlib_handle`/`WINE_UNIX_CALL`; do not substitute the failed private by-name memory-information-class route |
 
 ## Security and broker design
 

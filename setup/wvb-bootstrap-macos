@@ -1,0 +1,105 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  echo "usage: wvb-bootstrap-macos <setup|update|rollback|uninstall|doctor> [package-dir]" >&2
+  exit 64
+}
+
+operation=${1:-}
+package_dir=${2:-}
+[ -n "$operation" ] || usage
+
+install_root=${WVB_INSTALL_ROOT:-"$HOME/Library/Application Support/WinApiVmBridge/runtime"}
+
+verify_release() {
+  manifest=$1
+  if [ "${WVB_ALLOW_UNSIGNED:-0}" = "1" ]; then
+    echo "warning: unsigned development package explicitly allowed" >&2
+    return
+  fi
+  verifier=${WVB_SIGNATURE_VERIFIER:-}
+  [ -n "$verifier" ] || {
+    echo "WVB_SIGNATURE_VERIFIER is required for release packages" >&2
+    exit 65
+  }
+  "$verifier" "$manifest"
+}
+
+package_cli() {
+  cli="$package_dir/bin/wvb-package"
+  [ -x "$cli" ] || {
+    echo "package lifecycle binary is missing: $cli" >&2
+    exit 66
+  }
+  printf '%s\n' "$cli"
+}
+
+case "$operation" in
+  setup|update)
+    [ -d "$package_dir" ] || usage
+    manifest="$package_dir/runtime-package.json"
+    [ -f "$manifest" ] || {
+      echo "runtime package manifest is missing" >&2
+      exit 66
+    }
+    verify_release "$manifest"
+    cli=$(package_cli)
+    "$cli" verify --source "$package_dir/payload" --manifest "$manifest"
+    "$cli" stage \
+      --root "$install_root" \
+      --source "$package_dir/payload" \
+      --manifest "$manifest"
+    health=$(mktemp)
+    trap 'rm -f "$health"' EXIT
+    runtime="$install_root/versions/$(python3 -c \
+      'import json,sys; print(json.load(open(sys.argv[1]))["package_version"])' \
+      "$manifest")/bin/wvb-runtime"
+    [ -x "$runtime" ] || {
+      echo "staged runtime is missing: $runtime" >&2
+      exit 66
+    }
+    "$runtime" doctor \
+      --state "$install_root/state.db" \
+      --package-root "$install_root/versions/$(python3 -c \
+        'import json,sys; print(json.load(open(sys.argv[1]))["package_version"])' \
+        "$manifest")" \
+      --receipt "$health"
+    "$cli" activate \
+      --root "$install_root" \
+      --manifest "$manifest" \
+      --health-receipt "$health"
+    ;;
+  rollback)
+    [ -n "$package_dir" ] || usage
+    package_dir=$package_dir
+    "$(package_cli)" rollback --root "$install_root"
+    ;;
+  uninstall)
+    [ -n "$package_dir" ] || usage
+    version=$package_dir
+    cli=${WVB_PACKAGE_CLI:-"$install_root/bin/wvb-package"}
+    "$cli" uninstall-preflight --root "$install_root" --version "$version"
+    [ "${WVB_CONFIRM_UNINSTALL:-0}" = "1" ] || {
+      echo "set WVB_CONFIRM_UNINSTALL=1 after reviewing the preflight" >&2
+      exit 67
+    }
+    "$cli" uninstall --root "$install_root" --version "$version"
+    ;;
+  doctor)
+    active="$install_root/active.jcs"
+    [ -f "$active" ] || {
+      echo "runtime is not active" >&2
+      exit 68
+    }
+    version=$(python3 -c \
+      'import json,sys; print(json.load(open(sys.argv[1]))["package_version"])' \
+      "$active")
+    "$install_root/versions/$version/bin/wvb-runtime" doctor \
+      --state "$install_root/state.db" \
+      --package-root "$install_root/versions/$version"
+    ;;
+  *)
+    usage
+    ;;
+esac

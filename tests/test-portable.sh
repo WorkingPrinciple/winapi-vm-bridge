@@ -8,10 +8,17 @@ python3 -m unittest \
   tests.test_runtime_acceptance \
   tests.test_runtime_metadata \
   tests.test_topology_benchmark
-cargo test -q -p wvb-admission -p wvb-integrity -p wvb-operations \
-  -p wvb-package -p wvb-state -p wvb-transfer -p wvb-exe
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+cargo test -q -p wvb-admission -p wvb-integrity -p wvb-operations \
+  -p wvb-package -p wvb-state -p wvb-transfer -p wvb-exe
+mkdir -p "$tmp/runtime-package"
+printf '{}\n' > "$tmp/runtime-package/manifest.jcs"
+cargo run -q -p wvb-runtime -- doctor \
+  --state "$tmp/runtime-state.db" \
+  --package-root "$tmp/runtime-package" \
+  --receipt "$tmp/runtime-health.txt" >/dev/null
+grep -q '^PASS$' "$tmp/runtime-health.txt"
 ./bin/winapi-vm-bridge generate examples/example-math/adapter.json --out "$tmp"
 test -f "$tmp/example-math/IMPLEMENTATION_TASK.md"
 ./bin/winapi-vm-bridge inspect \
@@ -111,6 +118,10 @@ test -x setup/run_utm_managed_e2e.py
 test -x setup/run_utm_acceptance.py
 test -x setup/generate_runtime_metadata.py
 test -x setup/run_topology_benchmark.py
+test -x setup/wvb-bootstrap-macos
+grep -q 'WVB_SIGNATURE_VERIFIER is required' setup/wvb-bootstrap-macos
+grep -q 'WVB_SIGNATURE_VERIFIER is required' setup/wvb-bootstrap-windows.ps1
+sh -n setup/wvb-bootstrap-macos
 grep -q 'runtime and execution plane' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
 if grep -R -E '(xuid|gamertag|token|signature).*[=:][[:space:]]*[0-9A-Za-z+/]{20,}' \

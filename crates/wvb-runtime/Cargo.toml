@@ -7,11 +7,15 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+clap.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 wvb-call = { path = "../wvb-call" }
 wvb-client = { path = "../wvb-client" }
 wvb-crypto = { path = "../wvb-crypto" }
 wvb-session = { path = "../wvb-session" }
+wvb-state = { path = "../wvb-state" }
+wvb-operations = { path = "../wvb-operations" }
 wvb-transport = { path = "../wvb-transport" }
 
 [dev-dependencies]

@@ -1139,6 +1139,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wvb-callback"
+version = "0.2.0"
+dependencies = [
+ "wvb-lifecycle",
+ "wvb-protocol",
+]
+
+[[package]]
 name = "wvb-client"
 version = "0.2.0"
 dependencies = [
@@ -1253,6 +1261,7 @@ version = "0.2.0"
 name = "wvb-package"
 version = "0.2.0"
 dependencies = [
+ "clap",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -1269,12 +1278,16 @@ name = "wvb-runtime"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "clap",
+ "serde_json",
  "tokio",
  "wvb-broker",
  "wvb-call",
  "wvb-client",
  "wvb-crypto",
+ "wvb-operations",
  "wvb-session",
+ "wvb-state",
  "wvb-transport",
 ]
 

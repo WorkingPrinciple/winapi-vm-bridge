@@ -5,6 +5,7 @@ members = [
   "crates/wvb-authz",
   "crates/wvb-broker",
   "crates/wvb-call",
+  "crates/wvb-callback",
   "crates/wvb-client",
   "crates/wvb-client-ffi",
   "crates/wvb-crypto",

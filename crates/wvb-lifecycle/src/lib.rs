@@ -178,6 +178,7 @@ pub struct CallbackToken {
 struct Callback {
     thread: CallbackThread,
     allow_reentrant: bool,
+    max_concurrency: u16,
     in_flight: u32,
 }
 
@@ -208,8 +209,9 @@ impl CallbackRegistry {
         &mut self,
         thread: CallbackThread,
         allow_reentrant: bool,
+        max_concurrency: u16,
     ) -> Result<CallbackToken, LifecycleError> {
-        if self.callbacks.len() >= self.maximum {
+        if self.callbacks.len() >= self.maximum || max_concurrency == 0 {
             return Err(LifecycleError::Capacity);
         }
         let id = self.next_id;
@@ -222,6 +224,7 @@ impl CallbackRegistry {
             Callback {
                 thread,
                 allow_reentrant,
+                max_concurrency,
                 in_flight: 0,
             },
         );
@@ -252,6 +255,12 @@ impl CallbackRegistry {
                 self.serialized_in_flight = false;
             }
             return Err(LifecycleError::ReentrancyDenied);
+        }
+        if callback.in_flight >= u32::from(callback.max_concurrency) {
+            if callback.thread == CallbackThread::Serialized {
+                self.serialized_in_flight = false;
+            }
+            return Err(LifecycleError::Capacity);
         }
         callback.in_flight = callback
             .in_flight
@@ -426,7 +435,7 @@ mod tests {
         let actor = [3; 16];
         let mut callbacks = CallbackRegistry::new(actor, 9, 2);
         let token = callbacks
-            .register(CallbackThread::Registering(44), false)
+            .register(CallbackThread::Registering(44), false, 1)
             .unwrap();
         assert_eq!(callbacks.begin(token, 45), Err(LifecycleError::WrongThread));
         callbacks.begin(token, 44).unwrap();

@@ -1,0 +1,14 @@
+[package]
+name = "wvb-callback"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+wvb-lifecycle = { path = "../wvb-lifecycle" }
+wvb-protocol = { path = "../wvb-protocol" }
+
+[lints]
+workspace = true
