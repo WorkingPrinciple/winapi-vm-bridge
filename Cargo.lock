@@ -1174,6 +1174,16 @@ name = "wvb-protocol"
 version = "0.2.0"
 
 [[package]]
+name = "wvb-session"
+version = "0.2.0"
+dependencies = [
+ "tokio",
+ "wvb-crypto",
+ "wvb-protocol",
+ "wvb-transport",
+]
+
+[[package]]
 name = "wvb-state"
 version = "0.2.0"
 dependencies = [

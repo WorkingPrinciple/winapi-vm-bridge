@@ -304,6 +304,19 @@ where
         }
     }
 
+    pub fn activate_epoch(&mut self, epoch: u64) -> Result<(), TransportError> {
+        if self.connection_epoch != 0 || epoch == 0 {
+            return Err(TransportError::Bootstrap);
+        }
+        self.connection_epoch = epoch;
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn connection_epoch(&self) -> u64 {
+        self.connection_epoch
+    }
+
     pub async fn close(mut self) -> Result<(), TransportError> {
         self.io.shutdown().await?;
         Ok(())
