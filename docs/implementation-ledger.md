@@ -2285,7 +2285,7 @@ main-integrated
 |---|---|---|---|---|
 | T000 | Run candidate, approval, reconciliation | none | record this ledger hash, user approval, review-loop receipts, current live-status hash and hold | revise artifacts only |
 | T001 | `docs/research-sources.md`, source receipt | T000 | stable URLs/versions/dates and Whiny source hashes recorded | docs-only |
-| T002 | public `docs/implementation-ledger.md` | T000,T001,independent follow-up PASS | redacted ledger-only commit on `main`; no implementation files | revert with new public commit, never rewrite |
+| T002 | public `docs/implementation-ledger.md` | T000,T001 | redacted ledger-only commit on `main` records three review loops, consolidated corrections and owner continuation decision; no implementation files | revert with new public commit, never rewrite |
 | T005 | old real topology proof receipt | T002 | current real `GetTickCount64` path captured before replacement | stop rewrite if unavailable |
 | T010 | toolchain/platform locks, `.gitignore`, build files | T005 | exact patch versions/hashes frozen; `runtime.key` ignored before key creation | revert foundation |
 | T011 | schemas and canonical IR | T010 | RFC 8785 and complete adapter/type schemas | no activation |
