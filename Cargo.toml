@@ -12,6 +12,7 @@ members = [
   "crates/wvb-lifecycle",
   "crates/wvb-marshal",
   "crates/wvb-protocol",
+  "crates/wvb-runtime",
   "crates/wvb-session",
   "crates/wvb-state",
   "crates/wvb-transport",

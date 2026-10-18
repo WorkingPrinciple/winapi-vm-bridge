@@ -1184,6 +1184,20 @@ name = "wvb-protocol"
 version = "0.2.0"
 
 [[package]]
+name = "wvb-runtime"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "tokio",
+ "wvb-broker",
+ "wvb-call",
+ "wvb-client",
+ "wvb-crypto",
+ "wvb-session",
+ "wvb-transport",
+]
+
+[[package]]
 name = "wvb-session"
 version = "0.2.0"
 dependencies = [

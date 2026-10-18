@@ -1,0 +1,22 @@
+[package]
+name = "wvb-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+wvb-call = { path = "../wvb-call" }
+wvb-client = { path = "../wvb-client" }
+wvb-crypto = { path = "../wvb-crypto" }
+wvb-session = { path = "../wvb-session" }
+wvb-transport = { path = "../wvb-transport" }
+
+[dev-dependencies]
+async-trait.workspace = true
+wvb-broker = { path = "../wvb-broker" }
+
+[lints]
+workspace = true
