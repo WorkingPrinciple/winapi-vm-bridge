@@ -1106,6 +1106,7 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "tokio",
+ "wvb-call",
  "wvb-client",
  "wvb-crypto",
  "wvb-protocol",
@@ -1125,6 +1126,7 @@ name = "wvb-client"
 version = "0.2.0"
 dependencies = [
  "tokio",
+ "wvb-call",
  "wvb-protocol",
  "wvb-transport",
 ]

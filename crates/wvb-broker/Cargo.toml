@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 async-trait.workspace = true
 tokio.workspace = true
+wvb-call = { path = "../wvb-call" }
 wvb-protocol = { path = "../wvb-protocol" }
 wvb-transport = { path = "../wvb-transport" }
 
@@ -18,4 +19,3 @@ wvb-crypto = { path = "../wvb-crypto" }
 
 [lints]
 workspace = true
-

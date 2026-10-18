@@ -8,9 +8,9 @@ rust-version.workspace = true
 
 [dependencies]
 tokio.workspace = true
+wvb-call = { path = "../wvb-call" }
 wvb-protocol = { path = "../wvb-protocol" }
 wvb-transport = { path = "../wvb-transport" }
 
 [lints]
 workspace = true
-

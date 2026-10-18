@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot};
-use wvb_protocol::{Envelope, EnvelopeFlags};
+use wvb_call::{CallRequest, CallResult, ResultAssembler};
+use wvb_protocol::{Envelope, EnvelopeFlags, MessageType};
 use wvb_transport::{SecureConnection, TransportError};
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ pub enum ClientError {
     Transport(TransportError),
     Timeout,
     StreamExhausted,
+    Protocol,
 }
 
 impl std::fmt::Display for ClientError {
@@ -41,9 +43,24 @@ pub struct Response {
 }
 
 struct Command {
-    envelope: Envelope,
-    payload: Vec<u8>,
-    response: oneshot::Sender<Result<Response, ClientError>>,
+    frames: Vec<(Envelope, Vec<u8>)>,
+    completion: CompletionKind,
+    response: oneshot::Sender<Result<Completion, ClientError>>,
+}
+
+enum CompletionKind {
+    Single([u8; 16]),
+    Call(u32),
+}
+
+enum Completion {
+    Single(Response),
+    Call(CallResult),
+}
+
+struct PendingCall {
+    assembler: ResultAssembler,
+    response: oneshot::Sender<Result<Completion, ClientError>>,
 }
 
 #[derive(Clone)]
@@ -105,8 +122,8 @@ impl Client {
         let (sender, receiver) = oneshot::channel();
         self.commands
             .send(Command {
-                envelope,
-                payload,
+                frames: vec![(envelope, payload)],
+                completion: CompletionKind::Single(message_id),
                 response: sender,
             })
             .await
@@ -115,6 +132,70 @@ impl Client {
             .await
             .map_err(|_| ClientError::Timeout)?
             .map_err(|_| ClientError::DriverClosed)?
+            .and_then(|completion| match completion {
+                Completion::Single(response) => Ok(response),
+                Completion::Call(_) => Err(ClientError::Protocol),
+            })
+    }
+
+    pub async fn call(
+        &self,
+        request: &CallRequest,
+        timeout: Duration,
+    ) -> Result<CallResult, ClientError> {
+        let stream_id = self.stream_counter.fetch_add(2, Ordering::Relaxed);
+        if stream_id == 0 || stream_id.is_multiple_of(2) {
+            return Err(ClientError::StreamExhausted);
+        }
+        let messages = request.messages().map_err(|_| ClientError::Protocol)?;
+        let message_count =
+            u32::try_from(messages.len()).map_err(|_| ClientError::StreamExhausted)?;
+        let remaining_budget_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+        let frames = messages
+            .into_iter()
+            .enumerate()
+            .map(|(index, message)| {
+                let payload_length = u32::try_from(message.payload.len())
+                    .map_err(|_| ClientError::StreamExhausted)?;
+                let mut flags = EnvelopeFlags::REQUEST;
+                if u32::try_from(index + 1).ok() == Some(message_count) {
+                    flags = flags | EnvelopeFlags::END_STREAM;
+                }
+                Ok((
+                    Envelope {
+                        minor: 0,
+                        message_type: message.message_type as u16,
+                        flags,
+                        connection_epoch: self.connection_epoch,
+                        stream_id,
+                        stream_sequence: u32::try_from(index)
+                            .map_err(|_| ClientError::StreamExhausted)?,
+                        message_id: self.next_message_id(),
+                        correlation_id: [0; 16],
+                        remaining_budget_ms,
+                        payload_length,
+                    },
+                    message.payload,
+                ))
+            })
+            .collect::<Result<Vec<_>, ClientError>>()?;
+        let (sender, receiver) = oneshot::channel();
+        self.commands
+            .send(Command {
+                frames,
+                completion: CompletionKind::Call(stream_id),
+                response: sender,
+            })
+            .await
+            .map_err(|_| ClientError::DriverClosed)?;
+        tokio::time::timeout(timeout, receiver)
+            .await
+            .map_err(|_| ClientError::Timeout)?
+            .map_err(|_| ClientError::DriverClosed)?
+            .and_then(|completion| match completion {
+                Completion::Call(result) => Ok(result),
+                Completion::Single(_) => Err(ClientError::Protocol),
+            })
     }
 
     fn next_message_id(&self) -> [u8; 16] {
@@ -134,23 +215,60 @@ async fn driver<S>(mut connection: SecureConnection<S>, mut commands: mpsc::Rece
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut pending = BTreeMap::<[u8; 16], oneshot::Sender<Result<Response, ClientError>>>::new();
+    let mut pending_single =
+        BTreeMap::<[u8; 16], oneshot::Sender<Result<Completion, ClientError>>>::new();
+    let mut pending_calls = BTreeMap::<u32, PendingCall>::new();
     loop {
         tokio::select! {
             command = commands.recv() => {
                 let Some(command) = command else { break; };
-                let message_id = command.envelope.message_id;
-                if connection.send(&command.envelope, &command.payload).await.is_err() {
+                let mut failed = false;
+                for (envelope, payload) in command.frames {
+                    if connection.send(&envelope, &payload).await.is_err() {
+                        failed = true;
+                        break;
+                    }
+                }
+                if failed {
                     let _ = command.response.send(Err(ClientError::DriverClosed));
                     break;
                 }
-                pending.insert(message_id, command.response);
+                match command.completion {
+                    CompletionKind::Single(message_id) => {
+                        pending_single.insert(message_id, command.response);
+                    }
+                    CompletionKind::Call(stream_id) => {
+                        pending_calls.insert(stream_id, PendingCall {
+                            assembler: ResultAssembler::default(),
+                            response: command.response,
+                        });
+                    }
+                }
             }
-            received = connection.receive(), if !pending.is_empty() => {
+            received = connection.receive(), if !pending_single.is_empty() || !pending_calls.is_empty() => {
                 match received {
                     Ok((envelope, payload)) => {
-                        if let Some(sender) = pending.remove(&envelope.correlation_id) {
-                            let _ = sender.send(Ok(Response { envelope, payload }));
+                        if let Some(sender) = pending_single.remove(&envelope.correlation_id) {
+                            let _ = sender.send(Ok(Completion::Single(Response { envelope, payload })));
+                        } else if let Some(pending) = pending_calls.get_mut(&envelope.stream_id) {
+                            let result = MessageType::try_from(envelope.message_type)
+                                .map_err(|_| ClientError::Protocol)
+                                .and_then(|message_type| pending.assembler
+                                    .push(message_type, &payload)
+                                    .map_err(|_| ClientError::Protocol));
+                            match result {
+                                Ok(Some(result)) => {
+                                    if let Some(pending) = pending_calls.remove(&envelope.stream_id) {
+                                        let _ = pending.response.send(Ok(Completion::Call(result)));
+                                    }
+                                }
+                                Ok(None) => {}
+                                Err(error) => {
+                                    if let Some(pending) = pending_calls.remove(&envelope.stream_id) {
+                                        let _ = pending.response.send(Err(error));
+                                    }
+                                }
+                            }
                         }
                     }
                     Err(_) => break,
@@ -158,7 +276,10 @@ where
             }
         }
     }
-    for (_, sender) in pending {
+    for (_, sender) in pending_single {
         let _ = sender.send(Err(ClientError::DriverClosed));
+    }
+    for (_, pending) in pending_calls {
+        let _ = pending.response.send(Err(ClientError::DriverClosed));
     }
 }
