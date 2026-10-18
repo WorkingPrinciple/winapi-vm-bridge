@@ -100,12 +100,6 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
             copy_file(source, payload / "bin" / source.name, True)
             if binary == "wvb-package":
                 copy_file(source, lifecycle / source.name, True)
-        bootstrap = (
-            Path("setup/wvb-bootstrap-macos")
-            if platform == "macos"
-            else Path("setup/wvb-bootstrap-windows.ps1")
-        )
-        copy_file(bootstrap, package / bootstrap.name, platform == "macos")
         shutil.copytree(
             "external/whiny/v0.3.0",
             payload / "share/whiny/v0.3.0",

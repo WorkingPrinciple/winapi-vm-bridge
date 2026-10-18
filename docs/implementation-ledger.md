@@ -2105,6 +2105,13 @@ Acceptance requires no manual file copy, service editing, firewall editing, conf
 
 The wrappers are convenience orchestrators over the same receipted package operations, not alternate installers or protocols.
 
+The bootstrap is not package content and cannot authenticate itself. Production
+distribution signs/notarizes the bootstrap separately through the platform
+channel. Only that trusted external launcher verifies `release-manifest.json`;
+the envelope then covers every package-supplied executable before execution.
+Unsigned archives are development/review artifacts and intentionally contain
+no bootstrap binary.
+
 ## 16.6 Platform/toolchain matrix
 
 Product classes are frozen now:
@@ -2443,7 +2450,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R081 | Update, rollback and uninstall | VM Bridge | `R080`, `R062` | inactive staging, health-gated activation, snapshot restoration, impact preflight | deterministic package core complete; platform installers pending |
 | R090 | Resilience, fuzzing, replay and resource bounds | VM Bridge | all runtime handlers | deterministic negative suites, fuzz/sanitizer budgets, disk/DB/keystore/worker crash | replay/rate/resource negatives and deterministic malformed transfer/process corpora complete; sanitizer/chaos campaign pending |
 | R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | process-local benchmark harness complete; real topology hold |
-| R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | reproducible unsigned macOS tar `76a0be59…8068` and Windows tar `74fa4568…d246` complete with embedded SPDX, authenticated release envelopes and artifact-bound provenance; signing remains external |
+| R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | reproducible unsigned macOS tar `fcc69360…cca3` and Windows tar `120075de…cf94` complete with embedded SPDX, authenticated release envelopes and artifact-bound provenance; separately authenticated bootstraps and signing remain external |
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | target UUID verified and snapshot created; blocked because QEMU guest agent is unavailable |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | deterministic packages and lifecycle controls ready; live Windows clean-machine run blocked on guest-agent/login control |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |

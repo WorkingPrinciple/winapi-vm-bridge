@@ -87,6 +87,9 @@ deterministic CrossOver Job Object oracle. It also builds byte-reproducible
 unsigned macOS and Windows runtime archives with embedded SPDX and external
 artifact-bound provenance.
 
+Bootstrap launchers are separate platform-authenticated distribution artifacts;
+they are deliberately not embedded in the unsigned archive they verify.
+
 ## Build and test
 
 ```bash

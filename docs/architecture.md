@@ -139,6 +139,11 @@ SBOM and file hashes. Installation uses inactive version slots:
 Authenticode and notarization are separate external receipts. No signing secret
 is stored in the repository or materialized by the runtime.
 
+Bootstrap launchers are distributed and authenticated separately from runtime
+archives. They are not embedded in the package they verify, avoiding a
+self-authentication trust loop. The trusted launcher verifies the release
+envelope before executing the envelope-bound lifecycle binary.
+
 ## Topology acceptance
 
 The canonical topology remains Wine on macOS calling the Windows VM broker over
