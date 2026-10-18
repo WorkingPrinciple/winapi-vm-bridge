@@ -79,12 +79,19 @@ app.exe ← shim.dll ← private RPC ← Windows broker ← vendor.dll
 
 ```bash
 winapi-vm-bridge init vendor.library
+winapi-vm-bridge inspect --header vendor.h --dll vendor.dll --out inspection.json
 winapi-vm-bridge generate adapter.json --out generated
 cat generated/vendor-library/IMPLEMENTATION_TASK.md
 ```
 
 The generated task is designed for either a developer or a coding agent. It
 includes the contract, unresolved marshalling work, tests, and stop conditions.
+
+When headers, symbols, IDL/type libraries, or authorized runtime traces are
+available, the SDK can inspect both sides and generate more of the marshalling
+contract. It still flags unresolved ownership, callbacks, COM, handles, and
+async lifecycles for explicit review rather than guessing. See
+[adapter inference](docs/adapter-inference.md).
 
 ## Where it fits
 

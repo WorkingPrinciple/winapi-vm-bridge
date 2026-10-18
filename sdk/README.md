@@ -5,6 +5,7 @@ adapter patch. It deliberately does not guess pointer ownership or callback
 behavior.
 
 ```bash
+winapi-vm-bridge inspect --header vendor.h --dll vendor.dll --out inspection.json
 python3 sdk/generate.py examples/example-math/adapter.json --out generated
 python3 -m unittest tests.test_sdk
 ```
@@ -20,6 +21,11 @@ Generated output:
 Scalar-only functions are marked `generated`; pointer, callback, COM, handle,
 shared-memory, and async types are marked `customMarshallerRequired`. A human
 or coding agent implements only those explicit gaps and adds parity tests.
+
+`inspect` uses Clang AST metadata and DLL hashing to create an evidence file.
+Future dynamic probes can refine unresolved direction, length, lifetime,
+callback, handle, and async annotations from authorized observations on both
+Windows and Wine.
 
 ## Workflow
 
@@ -39,4 +45,3 @@ or coding agent implements only those explicit gaps and adds parity tests.
 4. Give `generated/IMPLEMENTATION_TASK.md` to a coding agent.
 5. Require local mock parity and a real application operation before claiming
    support.
-

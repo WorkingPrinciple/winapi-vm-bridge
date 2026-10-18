@@ -8,6 +8,10 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 ./bin/winapi-vm-bridge generate examples/example-math/adapter.json --out "$tmp"
 test -f "$tmp/example-math/IMPLEMENTATION_TASK.md"
+./bin/winapi-vm-bridge inspect \
+  --header examples/inspection/vendor.h \
+  --out "$tmp/inspection.json"
+grep -q '"requiresTraceOrAnnotation"' "$tmp/inspection.json"
 grep -q 'DLL that exists in Windows' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
 if grep -R -E '(xuid|gamertag|token|signature).*[=:][[:space:]]*[0-9A-Za-z+/]{20,}' \

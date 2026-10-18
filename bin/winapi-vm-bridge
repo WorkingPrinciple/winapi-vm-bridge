@@ -12,6 +12,10 @@ if [ "${1:-}" = generate ] && [ -n "${2:-}" ]; then
   shift
   exec python3 "$root/sdk/generate.py" "$@"
 fi
+if [ "${1:-}" = inspect ]; then
+  shift
+  exec python3 "$root/sdk/abi_inspect.py" "$@"
+fi
 if [ "${1:-}" = adapters ]; then
   printf '{"adapters":["core","windows.kernel32"],"note":"Install generated manifests to add Windows DLL adapters."}\n'
   exit 0
@@ -22,6 +26,7 @@ fi
 cat >&2 <<'EOF'
 Usage:
   winapi-vm-bridge init vendor.library [adapter.json]
+  winapi-vm-bridge inspect --header vendor.h --dll vendor.dll --out inspection.json
   winapi-vm-bridge generate adapter.json --out generated
   winapi-vm-bridge call core.ping --json
   winapi-vm-bridge call windows.kernel32.GetTickCount64 --json

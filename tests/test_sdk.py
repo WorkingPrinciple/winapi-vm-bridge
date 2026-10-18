@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from sdk.generate import generate, validate
+from sdk.abi_inspect import inspect_header
 from winapi_vm_bridge.client import call
 from winapi_vm_bridge.server import invoke, serve
 import secrets
@@ -57,6 +58,20 @@ class GeneratorTests(unittest.TestCase):
             self.assertGreater(result["result"], 0)
         else:
             self.assertIn("requires Windows", result["error"])
+
+    def test_header_inspection_flags_complex_types(self):
+        functions = inspect_header(Path("examples/inspection/vendor.h"), "clang")
+        by_name = {function["name"]: function for function in functions}
+        self.assertTrue(by_name["VendorAdd"]["returnAnalysis"]["generated"])
+        self.assertTrue(all(
+            parameter["analysis"]["generated"]
+            for parameter in by_name["VendorAdd"]["parameters"]))
+        self.assertTrue(any(
+            not parameter["analysis"]["generated"]
+            for parameter in by_name["VendorQuery"]["parameters"]))
+        self.assertTrue(any(
+            parameter["analysis"]["kind"] == "callback-or-function"
+            for parameter in by_name["VendorBegin"]["parameters"]))
 
     def test_unbounded_buffer_rejected(self):
         data = json.loads(Path("examples/example-math/adapter.json").read_text())
