@@ -9,15 +9,42 @@ or Xodus announcement. No Reddit post has been published from this work.
 
 Short reusable introduction:
 
-> I built a small generic bridge for calling an adapted Windows DLL from an app
-> running under Wine on macOS. The app stays on the Mac; selected calls go to
-> the real DLL inside a Windows VM and the native result comes back. The public
-> repo includes the paired private transport, three-command setup, adapter
-> schema/generator, diagrams, tests, and an AI-ready implementation task:
+> I built a small bridge for a concrete problem: an app under Wine needs
+> `vendor.dll`, but that DLL only works in Windows.
+>
+> The Mac gets a generated proxy `vendor.dll`. Calls go through a paired private
+> RPC link to the real DLL inside a Windows VM, then the native result comes
+> back to the app.
+>
+> Try the core round trip:
+>
+> ```powershell
+> irm https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-windows.ps1 | iex
+> ```
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-mac.sh | bash
+> winapi-vm-bridge call core.ping --json
+> ```
+>
+> The public repo includes the paired transport, adapter schema/generator,
+> diagrams, tests, and an AI-ready implementation task:
 > https://github.com/dragoshont/winapi-vm-bridge
 >
-> It is not magic arbitrary-DLL remoting. Simple C ABIs are straightforward;
-> pointers, callbacks, COM, handles, and async APIs need explicit marshalling.
+> Good candidates are coarse request/result APIs:
+>
+> - account and public-profile calls;
+> - store, catalogue, entitlement, and licensing checks;
+> - achievements, presence, and cloud-save operations;
+> - Windows-only HTTP/signing SDK clients;
+> - proprietary codecs, file conversion, and document processing;
+> - scientific, industrial, or device-management SDK queries that do not need a
+>   kernel driver.
+>
+> The core ping works today. Each real DLL still needs a documented ABI and an
+> adapter. Simple C functions are straightforward; pointers, callbacks, COM,
+> handles, and async APIs need explicit marshalling. Kernel drivers, anti-cheat,
+> and per-frame graphics are the wrong fit.
 
 Only post this where it directly answers the thread. Adjust it to the user's
 problem and avoid cross-posting identical promotional text.

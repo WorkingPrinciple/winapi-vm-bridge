@@ -57,6 +57,18 @@ cat generated/vendor-library/IMPLEMENTATION_TASK.md
 The generated task is designed for either a developer or a coding agent. It
 includes the contract, unresolved marshalling work, tests, and stop conditions.
 
+## Where it fits
+
+Best for coarse request/result calls:
+
+- account and public-profile APIs;
+- store, catalogue, entitlement, and licensing checks;
+- achievements, presence, and cloud saves;
+- Windows-only HTTP/signing SDK clients;
+- proprietary codecs, conversion, and document processing;
+- scientific, industrial, and device-management SDK queries that do not need a
+  kernel driver.
+
 ### Works well
 
 - scalar arguments and fixed-layout structs;
