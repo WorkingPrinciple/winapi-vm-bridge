@@ -23,6 +23,10 @@ Pairing belongs to the Mac ↔ VM transport, not an individual adapter. All
 installed DLL adapters share the same paired connection. Re-pair only for a new
 machine/VM pair, a rebuild/reset, or capability rotation.
 
+Mac setup verifies an existing stored capability with `core.ping`. It reuses a
+working pairing, asks for a replacement only when the broker rejects it, and
+does not overwrite pairing state when the VM is simply unreachable.
+
 ## Generic DLL model
 
 The broker never accepts an arbitrary DLL path or export from an untrusted

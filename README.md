@@ -25,6 +25,10 @@ irm https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-win
 curl -fsSL https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-mac.sh | bash
 ```
 
+Mac setup verifies an existing pairing first. If it still works, setup reuses it
+without prompting. A new code is requested only when no pairing exists or the
+broker rejects the stored one.
+
 **Call a real Windows DLL**
 
 ```bash
@@ -40,8 +44,8 @@ the Windows VM and returns its native unsigned 64-bit result to the Mac.
 Pair the **Mac and Windows VM once**, not once per DLL.
 
 The Windows setup creates one random capability. The Mac setup stores it with
-restricted permissions. Every installed DLL adapter uses that same private
-transport.
+restricted permissions and verifies it against the broker. Every installed DLL
+adapter uses that same private transport.
 
 Pair again only when:
 
