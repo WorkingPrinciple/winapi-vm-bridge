@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/wvb-authz",
   "crates/wvb-broker",
+  "crates/wvb-call",
   "crates/wvb-client",
   "crates/wvb-crypto",
   "crates/wvb-generate",

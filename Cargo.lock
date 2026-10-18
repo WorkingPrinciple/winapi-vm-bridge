@@ -1113,6 +1113,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wvb-call"
+version = "0.2.0"
+dependencies = [
+ "sha2",
+ "wvb-protocol",
+]
+
+[[package]]
 name = "wvb-client"
 version = "0.2.0"
 dependencies = [
