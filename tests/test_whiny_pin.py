@@ -28,6 +28,23 @@ class WhinyPinTests(unittest.TestCase):
                     f"{name} {field}",
                 )
 
+    def test_execution_admissions_match_loadable_files(self):
+        root = Path("runtime-artifacts/whiny-v0.3.0")
+        for name in ["native-scalar", "managed-scalar"]:
+            directory = root / name
+            admission_bytes = (directory / "execution-admission.json").read_bytes()
+            admission = json.loads(admission_bytes)
+            build_receipt = directory / "build-receipt.json"
+            self.assertEqual(
+                hashlib.sha256(build_receipt.read_bytes()).hexdigest(),
+                admission["buildReceiptSha256"],
+            )
+            for entry in admission["files"]:
+                self.assertEqual(
+                    hashlib.sha256((directory / entry["path"]).read_bytes()).hexdigest(),
+                    entry["sha256"],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

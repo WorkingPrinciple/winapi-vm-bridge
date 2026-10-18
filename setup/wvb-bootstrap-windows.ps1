@@ -35,14 +35,42 @@ function Package-Cli([string]$PackageDirectory) {
     return $cli
 }
 
+function Verify-Envelope([string]$PackageDirectory, [string]$Manifest) {
+    $root = (Resolve-Path -LiteralPath $PackageDirectory).Path
+    $document = Get-Content -Raw -LiteralPath $Manifest | ConvertFrom-Json
+    if ($document.schema -ne 'winapi-vm-bridge.release-envelope.v1') {
+        throw 'Invalid release envelope.'
+    }
+    foreach ($entry in $document.files) {
+        $relative = [string]$entry.path
+        if ([IO.Path]::IsPathRooted($relative) -or
+            $relative.Contains('\') -or
+            $relative.Split('/') -contains '..' -or
+            $relative.Split('/') -contains '.') {
+            throw "Invalid release path: $relative"
+        }
+        $path = Join-Path $root ($relative.Replace('/', '\'))
+        $resolved = (Resolve-Path -LiteralPath $path).Path
+        if (-not $resolved.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Release path escaped: $relative"
+        }
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $resolved).Hash.ToLowerInvariant()
+        if ($actual -ne $entry.sha256) {
+            throw "Release hash mismatch: $relative"
+        }
+    }
+}
+
 switch ($Operation) {
     { $_ -in @('setup', 'update') } {
         if (-not $PackageOrVersion) {
             throw 'A package directory is required.'
         }
+        $releaseManifest = Join-Path $PackageOrVersion 'release-manifest.json'
         $manifest = Join-Path $PackageOrVersion 'runtime-package.json'
         $payload = Join-Path $PackageOrVersion 'payload'
-        Verify-Release $manifest
+        Verify-Release $releaseManifest
+        Verify-Envelope $PackageOrVersion $releaseManifest
         $cli = Package-Cli $PackageOrVersion
         Invoke-Native $cli @('verify', '--source', $payload, '--manifest', $manifest)
         Invoke-Native $cli @(

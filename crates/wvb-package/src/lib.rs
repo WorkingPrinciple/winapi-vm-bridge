@@ -45,6 +45,12 @@ pub struct HealthReceipt {
     pub package_root: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ActivationJournal {
+    prior_active: Option<ActiveSlot>,
+    next_active: ActiveSlot,
+}
+
 #[derive(Debug)]
 pub enum PackageError {
     Integrity(IntegrityError),
@@ -132,7 +138,9 @@ impl PackageManager {
         let versions = root.join("versions");
         fs::create_dir_all(&versions)?;
         canonical_root(&versions)?;
-        Ok(Self { root })
+        let manager = Self { root };
+        manager.recover_activation()?;
+        Ok(manager)
     }
 
     pub fn stage(
@@ -197,10 +205,23 @@ impl PackageManager {
         fs::write(&pending, bytes)?;
         let active = self.root.join("active.jcs");
         let previous = self.root.join("previous.jcs");
+        let journal = ActivationJournal {
+            prior_active: self.active()?,
+            next_active: slot.clone(),
+        };
+        fs::write(
+            self.root.join("activation.journal"),
+            serde_jcs::to_vec(&journal)
+                .map_err(|error| PackageError::Canonicalization(error.to_string()))?,
+        )?;
+        if previous.exists() {
+            fs::remove_file(&previous)?;
+        }
         if active.exists() {
             fs::rename(&active, &previous)?;
         }
         fs::rename(pending, active)?;
+        fs::remove_file(self.root.join("activation.journal"))?;
         Ok(slot)
     }
 
@@ -266,6 +287,42 @@ impl PackageManager {
         let version = controlled_version_path(&self.root, package_version)?;
         remove_controlled_tree(&versions, &version)
     }
+
+    fn recover_activation(&self) -> Result<(), PackageError> {
+        let journal_path = self.root.join("activation.journal");
+        if !journal_path.is_file() {
+            return Ok(());
+        }
+        let journal: ActivationJournal = serde_json::from_slice(&fs::read(&journal_path)?)
+            .map_err(|error| PackageError::Canonicalization(error.to_string()))?;
+        write_slot(&self.root.join("active.jcs"), &journal.next_active)?;
+        let previous = self.root.join("previous.jcs");
+        if let Some(prior) = journal.prior_active {
+            write_slot(&previous, &prior)?;
+        } else if previous.exists() {
+            fs::remove_file(previous)?;
+        }
+        let pending = self.root.join("active.pending");
+        if pending.exists() {
+            fs::remove_file(pending)?;
+        }
+        fs::remove_file(journal_path)?;
+        Ok(())
+    }
+}
+
+fn write_slot(path: &Path, slot: &ActiveSlot) -> Result<(), PackageError> {
+    let temporary = path.with_extension("pending-slot");
+    fs::write(
+        &temporary,
+        serde_jcs::to_vec(slot)
+            .map_err(|error| PackageError::Canonicalization(error.to_string()))?,
+    )?;
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    fs::rename(temporary, path)?;
+    Ok(())
 }
 
 fn decode_slot(path: &Path) -> Result<ActiveSlot, PackageError> {
@@ -524,6 +581,40 @@ mod tests {
             Err(PackageError::RollbackUnavailable)
         ));
         assert!(install.path().join("versions").is_dir());
+    }
+
+    #[test]
+    fn open_completes_interrupted_activation_journal() {
+        let install = tempdir().unwrap();
+        let manager = PackageManager::open(install.path()).unwrap();
+        let first_source = source(b"first");
+        let first = manifest("1.0.0", sha256_bytes(b"first"));
+        manager.stage(first_source.path(), &first).unwrap();
+        let first_slot = manager.activate(&first, |_| true).unwrap();
+        let second_source = source(b"second");
+        let second = manifest("1.1.0", sha256_bytes(b"second"));
+        manager.stage(second_source.path(), &second).unwrap();
+        let second_slot = ActiveSlot {
+            package_version: second.package_version.clone(),
+            manifest_sha256: second.sha256().unwrap(),
+        };
+        fs::write(
+            install.path().join("activation.journal"),
+            serde_jcs::to_vec(&ActivationJournal {
+                prior_active: Some(first_slot.clone()),
+                next_active: second_slot.clone(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        fs::remove_file(install.path().join("active.jcs")).unwrap();
+        let recovered = PackageManager::open(install.path()).unwrap();
+        assert_eq!(recovered.active().unwrap(), Some(second_slot));
+        assert_eq!(
+            decode_slot(&install.path().join("previous.jcs")).unwrap(),
+            first_slot
+        );
+        assert!(!install.path().join("activation.journal").exists());
     }
 
     #[cfg(unix)]

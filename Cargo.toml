@@ -18,6 +18,7 @@ members = [
   "crates/wvb-marshal",
   "crates/wvb-native-host",
   "crates/wvb-operations",
+  "crates/wvb-owner",
   "crates/wvb-package",
   "crates/wvb-protocol",
   "crates/wvb-registry",

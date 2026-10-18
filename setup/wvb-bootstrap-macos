@@ -35,15 +35,46 @@ package_cli() {
   printf '%s\n' "$cli"
 }
 
+verify_envelope() {
+  root=$1
+  manifest=$2
+  python3 - "$root" "$manifest" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path, PurePosixPath
+
+root = Path(sys.argv[1]).resolve()
+document = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+if document.get("schema") != "winapi-vm-bridge.release-envelope.v1":
+    raise SystemExit("invalid release envelope")
+for entry in document.get("files", []):
+    relative = PurePosixPath(entry["path"])
+    if relative.is_absolute() or ".." in relative.parts or "." in relative.parts:
+        raise SystemExit(f"invalid release path: {relative}")
+    path = (root / Path(*relative.parts)).resolve()
+    if root not in path.parents or not path.is_file():
+        raise SystemExit(f"release path escaped: {relative}")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+        raise SystemExit(f"release hash mismatch: {relative}")
+PY
+}
+
 case "$operation" in
   setup|update)
     [ -d "$package_dir" ] || usage
+    release_manifest="$package_dir/release-manifest.json"
     manifest="$package_dir/runtime-package.json"
     [ -f "$manifest" ] || {
       echo "runtime package manifest is missing" >&2
       exit 66
     }
-    verify_release "$manifest"
+    [ -f "$release_manifest" ] || {
+      echo "release envelope is missing" >&2
+      exit 66
+    }
+    verify_release "$release_manifest"
+    verify_envelope "$package_dir" "$release_manifest"
     cli=$(package_cli)
     "$cli" verify --source "$package_dir/payload" --manifest "$manifest"
     "$cli" stage \

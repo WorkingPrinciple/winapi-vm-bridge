@@ -111,6 +111,10 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
             payload / "share/whiny/v0.3.0",
             ignore=shutil.ignore_patterns("bin", "obj"),
         )
+        shutil.copytree(
+            "runtime-artifacts/whiny-v0.3.0",
+            payload / "share/runtime-artifacts/whiny-v0.3.0",
+        )
 
         sbom = canonical_json(spdx_document(metadata, source_sha256))
         sbom_path = payload / "share/runtime.spdx.json"
@@ -138,6 +142,25 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
         }
         manifest_path = package / "runtime-package.json"
         manifest_path.write_bytes(canonical_json(manifest))
+        release_files = []
+        for path in sorted(package.rglob("*"), key=lambda value: value.as_posix()):
+            if path.is_file():
+                release_files.append(
+                    {
+                        "path": path.relative_to(package).as_posix(),
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    }
+                )
+        (package / "release-manifest.json").write_bytes(
+            canonical_json(
+                {
+                    "schema": "winapi-vm-bridge.release-envelope.v1",
+                    "platform": platform,
+                    "version": version,
+                    "files": release_files,
+                }
+            )
+        )
         subprocess.run(
             [
                 str(Path("target/release/wvb-package")),
@@ -160,6 +183,11 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
         source_sha256,
         hashlib.sha256(sbom).hexdigest(),
         [{"name": archive_path.name, "digest": {"sha256": sha256(archive_path)}}],
+        [
+            "cargo build --release --locked -p wvb-package",
+            " ".join(command),
+            "wvb-package verify --source payload --manifest runtime-package.json",
+        ],
     )
     provenance_path = archive_path.with_suffix(".provenance.json")
     provenance_path.write_bytes(canonical_json(provenance))

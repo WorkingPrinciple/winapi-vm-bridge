@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/../../.." && pwd)
-bundle="$root/external/whiny/v0.3.0/frozen-bundles/native-scalar"
+bundle="$root/runtime-artifacts/whiny-v0.3.0/native-scalar"
 out="$root/out/whiny-native-scalar"
 rm -rf "$out"
 
@@ -9,11 +9,7 @@ build_one() {
   destination=$1
   mkdir -p "$destination/target"
   cp "$bundle/target/native_math.dll" "$destination/target/native_math.dll"
-  x86_64-w64-mingw32-g++ \
-    -std=c++20 -Wall -Wextra -Werror -O2 -static \
-    -Wl,--no-insert-timestamp,--image-base,0x189000000 \
-    -shared "$bundle/dispatcher.generated.cpp" \
-    -o "$destination/dispatcher.dll"
+  cp "$bundle/dispatcher.dll" "$destination/dispatcher.dll"
   x86_64-w64-mingw32-g++ \
     -std=c++20 -Wall -Wextra -Werror -O2 -static \
     -Wl,--no-insert-timestamp \

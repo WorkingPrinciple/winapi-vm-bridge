@@ -2148,6 +2148,30 @@ Hard stops:
   execution, anti-cheat bypass, ambient path loading or untraced reverse
   dependency proxying for the approved runtime architecture.
 
+## 16.8 Runtime Owner convergence surface
+
+VM Bridge owns only typed runtime operations:
+
+- install, activate and roll back an already-frozen bundle;
+- execute one admitted operation;
+- query a runtime receipt;
+- collect runtime diagnostics.
+
+Host capability discovery records readiness, architecture, authority, supported
+profiles, payload bounds and capability revision. Selection prefers a ready
+local Windows ARM64 host for compatible non-authoritative work and routes x64
+or authoritative requirements to the authoritative Windows x64 host.
+
+Every workload attempt has a workload UUID, attempt UUID, selected host,
+bundle hash, optional operation ID and terminal receipt ID. The canonicalized
+correlation is stored in the durable operation detail and its hash is the
+idempotency key. `whiny.runtime-receipt.v1` remains unchanged; correlation is
+joined by durable receipt ID rather than adding VM-owned fields to Whiny's
+schema.
+
+VM Bridge does not own AI policy, blocker interpretation, contract inference,
+campaign policy, semantic review or generation.
+
 ---
 
 # 17. Audit integrity and privacy
@@ -2412,18 +2436,19 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R052 | Native/.NET process execution and Job Object lifecycle | VM Bridge | `R011`, `R020`; clean native-EXE migration artifact | argv/env/stdin/stdout/stderr/exit/timeout/cancel/tree-kill/receipt tests | native codec/broker/CrossOver Job Object oracle complete; managed process pending |
 | R060 | Broker service composition and bounded queues | VM Bridge | `R011`, `R030`–`R052` | least privilege, package ACL, worker containment, restart reconciliation | ready |
 | R061 | Readiness, health and redacted diagnostics | VM Bridge | `R060`, receipt store | truthful distinct states, source versions, no unconditional success, privacy tests | readiness/resource controls and runtime doctor complete; service export pending |
-| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS chain, anchored-prefix recovery and authenticated receipt v1 emission complete; native receipt `08890bcd…fd79`, managed `3f3727c6…6dcf` |
+| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS chain, anchored-prefix recovery and exact receipt v1 signing/verification codec complete; terminal runtime-key emission/retention integration remains pending |
 | R070 | macOS Keychain identity consumption | VM Bridge | `R020` | `SecItem` store/load/delete, access denial, zeroization, no argv/log secret | partial |
 | R071 | Safe Wine automatic configuration alternative | VM Bridge | `R070`; new evidence beyond failed by-name route | supported API/process boundary, exact bottle identity, no plaintext registry secret | official source confirms loader-initialized unixlib handle direction; implementation held because Wine build tooling/bundle is unavailable |
 | R080 | Windows service/MSI/firewall and macOS package setup | VM Bridge | `R060`, `R070`, admitted bundle catalog | clean install/pair/doctor/core call with receipted rollback | fail-closed bootstrap wrappers and runtime doctor complete; deterministic platform installers pending |
 | R081 | Update, rollback and uninstall | VM Bridge | `R080`, `R062` | inactive staging, health-gated activation, snapshot restoration, impact preflight | deterministic package core complete; platform installers pending |
 | R090 | Resilience, fuzzing, replay and resource bounds | VM Bridge | all runtime handlers | deterministic negative suites, fuzz/sanitizer budgets, disk/DB/keystore/worker crash | replay/rate/resource negatives and deterministic malformed transfer/process corpora complete; sanitizer/chaos campaign pending |
 | R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | process-local benchmark harness complete; real topology hold |
-| R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | reproducible unsigned macOS tar `eb0173bb…740e` and Windows tar `e735538a…6a15` complete with embedded SPDX and artifact-bound provenance; signing remains external |
+| R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | reproducible unsigned macOS tar `76a0be59…8068` and Windows tar `74fa4568…d246` complete with embedded SPDX, authenticated release envelopes and artifact-bound provenance; signing remains external |
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | target UUID verified and snapshot created; blocked because QEMU guest agent is unavailable |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | deterministic packages and lifecycle controls ready; live Windows clean-machine run blocked on guest-agent/login control |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
-| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R120` | configured quality/build/test, real evidence, zero blocking review findings | pending |
+| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic selection/correlation tests complete |
+| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | pending |
 
 Rejected or conditional scope:
 

@@ -31,6 +31,7 @@ class RuntimeMetadataTests(unittest.TestCase):
             source,
             hashlib.sha256(first).hexdigest(),
             [{"name": "runtime.zip", "digest": {"sha256": "b" * 64}}],
+            ["cargo build --release --locked -p wvb-runtime"],
         )
         self.assertEqual(provenance["signatures"], [])
         self.assertEqual(

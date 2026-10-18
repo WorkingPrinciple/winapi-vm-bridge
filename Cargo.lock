@@ -1202,6 +1202,17 @@ name = "wvb-operations"
 version = "0.2.0"
 
 [[package]]
+name = "wvb-owner"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "wvb-state",
+]
+
+[[package]]
 name = "wvb-package"
 version = "0.2.0"
 dependencies = [

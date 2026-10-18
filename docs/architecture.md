@@ -149,3 +149,15 @@ The isolated `Whiny-Windows11-x64` VM is the preferred acceptance target.
 Acceptance automation must verify its UUID and readiness, record or snapshot
 pre-state, use dedicated paths/rules/processes, and restore temporary changes.
 The official Windows-RPC VM and unrelated VMs are never modified.
+
+## Runtime Owner and host selection
+
+The Runtime Owner API exposes typed install, activate, rollback, execute,
+receipt-query and diagnostic operations only. Host discovery reports immutable
+capability observations. Selection prefers compatible local Windows ARM64 work
+and routes authoritative or x64-only profiles to authoritative Windows x64.
+
+Workload UUID, attempt UUID, selected host, bundle hash and terminal receipt ID
+are correlated in durable VM Bridge operation state. This does not extend the
+Whiny receipt schema or move campaign policy, semantic interpretation or
+generation into VM Bridge.

@@ -82,6 +82,7 @@ def provenance_document(
     source_sha: str,
     sbom_sha256: str,
     subjects: list[dict[str, object]],
+    commands: list[str],
 ) -> dict[str, Any]:
     rust_version = metadata.get("version", 1)
     return {
@@ -96,10 +97,7 @@ def provenance_document(
                     "cargoMetadataFormatVersion": rust_version,
                 },
                 "internalParameters": {
-                    "commands": [
-                        "cargo build --workspace --release --locked",
-                        "cargo test --workspace --all-features --locked",
-                    ]
+                    "commands": commands
                 },
                 "resolvedDependencies": [
                     {
@@ -174,6 +172,7 @@ def main() -> int:
             arguments.source_sha256,
             hashlib.sha256(sbom).hexdigest(),
             subjects,
+            ["cargo metadata --locked --format-version 1"],
         )
     )
     (arguments.output / "runtime.provenance.json").write_bytes(provenance)

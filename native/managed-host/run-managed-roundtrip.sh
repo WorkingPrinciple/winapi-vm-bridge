@@ -5,6 +5,7 @@ cd "$root"
 out="$root/out/acceptance/managed-roundtrip"
 runtime="$root/out/acceptance/windows-dotnet8-x64"
 bundle="$root/external/whiny/v0.3.0/frozen-bundles/managed-scalar"
+execution="$root/runtime-artifacts/whiny-v0.3.0/managed-scalar"
 pin="$root/setup/runtime-pins/windows-dotnet8-x64.json"
 bottle=${WVB_CROSSOVER_BOTTLE:-XOdeLabRPC}
 wine=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
@@ -27,6 +28,10 @@ mkdir -p "$out"
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
   dotnet build "$bundle/ExampleManagedMath.WhinyDispatcher.csproj" \
     -c Release --nologo
+cmp "$bundle/bin/Release/net8.0-windows/ExampleManagedMath.WhinyDispatcher.dll" \
+  "$execution/ExampleManagedMath.WhinyDispatcher.dll"
+cmp "$bundle/bin/Release/net8.0-windows/ExampleManagedMath.WhinyDispatcher.runtimeconfig.json" \
+  "$execution/ExampleManagedMath.WhinyDispatcher.runtimeconfig.json"
 cp "$root/out/managed-host/a/managed_roundtrip.exe" "$out/"
 cp "$root/out/managed-host/a/wvb_managed_host.dll" "$out/"
 cp "$root/target/x86_64-pc-windows-gnu/release/examples/windows_dispatch.exe" "$out/"
@@ -37,7 +42,7 @@ winpath() {
 }
 dotnet_root=$(winpath "$runtime/dotnet")
 nethost=$(winpath "$runtime/host/nethost.dll")
-runtime_dir="$bundle/bin/Release/net8.0-windows"
+runtime_dir="$execution"
 runtimeconfig=$(winpath "$runtime_dir/ExampleManagedMath.WhinyDispatcher.runtimeconfig.json")
 dispatcher=$(winpath "$runtime_dir/ExampleManagedMath.WhinyDispatcher.dll")
 target=$(winpath "$runtime_dir/Example.ManagedMath.dll")

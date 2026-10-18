@@ -54,8 +54,38 @@ struct Operation {
     response_schema_id: u32,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecutionDescriptor {
+    contract_sha256: String,
+    contract_format: String,
+    bundle_format: String,
+    dispatcher_abi: String,
+    files: Vec<ExecutionFile>,
+    operations: Vec<ExecutionOperation>,
+}
+
+#[derive(Deserialize)]
+struct ExecutionFile {
+    kind: String,
+    path: String,
+    sha256: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecutionOperation {
+    id: u32,
+    request_schema_id: u32,
+    response_schema_id: u32,
+}
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../external/whiny/v0.3.0/frozen-bundles")
+}
+
+fn execution_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime-artifacts/whiny-v0.3.0")
 }
 
 fn hash(value: &str) -> [u8; 32] {
@@ -173,6 +203,54 @@ fn persist_admission(approval: &OperatorAdmission, descriptor_bytes: &[u8], oper
     );
 }
 
+fn execution_approval(name: &str, contract: &[u8]) -> (PathBuf, OperatorAdmission, Vec<u8>) {
+    let directory = execution_root().join(name);
+    let descriptor_bytes = fs::read(directory.join("execution-admission.json")).unwrap();
+    let descriptor: ExecutionDescriptor = serde_json::from_slice(&descriptor_bytes).unwrap();
+    assert_eq!(hash(&descriptor.contract_sha256), sha256_bytes(contract));
+    let approval = OperatorAdmission {
+        compatibility: Compatibility {
+            contract: FormatVersion {
+                identifier: descriptor.contract_format,
+                major: 3,
+            },
+            bundle: FormatVersion {
+                identifier: descriptor.bundle_format,
+                major: 1,
+            },
+            dispatcher_abi: FormatVersion {
+                identifier: descriptor.dispatcher_abi,
+                major: 1,
+            },
+        },
+        contract_sha256: hash(&descriptor.contract_sha256),
+        bundle_descriptor_sha256: sha256_bytes(&descriptor_bytes),
+        files: descriptor
+            .files
+            .into_iter()
+            .map(|file| BundleFile {
+                kind: match file.kind.as_str() {
+                    "dispatcher" => BundleFileKind::Dispatcher,
+                    "target" => BundleFileKind::Target,
+                    _ => BundleFileKind::Dependency,
+                },
+                relative_path: file.path,
+                sha256: hash(&file.sha256),
+            })
+            .collect(),
+        operations: descriptor
+            .operations
+            .into_iter()
+            .map(|operation| OperationAdmission {
+                operation_id: operation.id,
+                request_schema_id: operation.request_schema_id,
+                response_schema_id: operation.response_schema_id,
+            })
+            .collect(),
+    };
+    (directory, approval, descriptor_bytes)
+}
+
 #[test]
 fn frozen_whiny_scalar_bundles_admit_persist_and_keep_invoke_separate() {
     for name in ["native-scalar", "managed-scalar"] {
@@ -233,5 +311,27 @@ fn frozen_whiny_scalar_bundles_admit_persist_and_keep_invoke_separate() {
         admitted.reverify_files().unwrap();
 
         persist_admission(&approval, &descriptor_bytes, operator);
+
+        let (execution_directory, execution, execution_descriptor) =
+            execution_approval(name, &contract);
+        let execution_engine = AdmissionEngine::new(&execution_directory).unwrap();
+        let execution_bundle = execution_engine
+            .admit(
+                &registry,
+                operator,
+                1,
+                &execution,
+                FrozenInputs {
+                    contract: &contract,
+                    bundle_descriptor: &execution_descriptor,
+                },
+            )
+            .unwrap();
+        execution_bundle.reverify_files().unwrap();
+        assert_eq!(
+            execution_bundle.operation(1),
+            admitted.operation(1),
+            "{name} execution schemas drifted"
+        );
     }
 }
