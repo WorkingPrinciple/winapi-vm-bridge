@@ -1162,6 +1162,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wvb-lifecycle"
+version = "0.2.0"
+
+[[package]]
 name = "wvb-marshal"
 version = "0.2.0"
 
