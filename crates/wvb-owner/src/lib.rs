@@ -528,6 +528,25 @@ mod tests {
             Err(OwnerError::InvalidCorrelation)
         );
         assert!(store.receipt(receipt_id).unwrap().is_none());
+        let mut wrong_host_input =
+            terminal_input(&correlation, receipt_id, String::from("other-host"));
+        assert_eq!(
+            correlation.clone().complete_with_receipt(
+                &mut store,
+                [9; 32],
+                wrong_host_input.clone(),
+            ),
+            Err(OwnerError::InvalidCorrelation)
+        );
+        wrong_host_input.runtime_identity.host_id = correlation.host_id.clone();
+        wrong_host_input.request_sha256 = [99; 32];
+        assert_eq!(
+            correlation
+                .clone()
+                .complete_with_receipt(&mut store, [9; 32], wrong_host_input,),
+            Err(OwnerError::InvalidCorrelation)
+        );
+        assert!(store.receipt(receipt_id).unwrap().is_none());
         let emitted = correlation
             .complete_with_receipt(
                 &mut store,

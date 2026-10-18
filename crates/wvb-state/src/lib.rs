@@ -678,10 +678,13 @@ impl Store {
         terminal_status: i32,
         payload: &[u8],
     ) -> Result<ReceiptRecord, StateError> {
+        let event_payload =
+            receipt_event_payload(receipt_id, actor_id, request_hash, terminal_status, payload);
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let event = Self::append_event_transaction(&transaction, "receipt-committed", payload)?;
+        let event =
+            Self::append_event_transaction(&transaction, "receipt-committed", &event_payload)?;
         transaction.execute(
             "INSERT INTO receipts(
                 receipt_id,actor_id,request_hash,terminal_status,
@@ -1136,6 +1139,22 @@ fn migration_hash(sequence: u64) -> [u8; 32] {
     digest.finalize().into()
 }
 
+fn receipt_event_payload(
+    receipt_id: [u8; 16],
+    actor_id: Option<[u8; 16]>,
+    request_hash: Option<[u8; 32]>,
+    terminal_status: i32,
+    payload: &[u8],
+) -> Vec<u8> {
+    let mut output = Vec::with_capacity(16 + 16 + 32 + 4 + 32);
+    output.extend_from_slice(&receipt_id);
+    output.extend_from_slice(&actor_id.unwrap_or([0; 16]));
+    output.extend_from_slice(&request_hash.unwrap_or([0; 32]));
+    output.extend_from_slice(&terminal_status.to_be_bytes());
+    output.extend_from_slice(&Sha256::digest(payload));
+    output
+}
+
 fn fixed_hash(value: &[u8]) -> Result<[u8; 32], StateError> {
     value
         .try_into()
@@ -1588,6 +1607,20 @@ mod tests {
         let receipt = store
             .commit_receipt([1; 16], None, Some([2; 32]), 0, b"sensitive detail")
             .unwrap();
+        let committed_payload: Vec<u8> = store
+            .connection
+            .query_row(
+                "SELECT payload FROM events WHERE sequence=?1",
+                [sql_i64(receipt.event_sequence).unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_ne!(committed_payload, b"sensitive detail");
+        assert!(
+            !committed_payload
+                .windows(b"sensitive detail".len())
+                .any(|window| window == b"sensitive detail")
+        );
         let (event, changed) = store
             .redact_receipts_through(receipt.event_sequence, b"retention policy")
             .unwrap();
