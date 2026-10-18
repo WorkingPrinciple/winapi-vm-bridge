@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 pub const SCHEMA_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TargetFamily {
     NativeCDll,
@@ -48,12 +48,20 @@ pub enum Sensitivity {
     Secret,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Direction {
     In,
     Out,
     InOut,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CallingConvention {
+    Cdecl,
+    Stdcall,
+    Winapi,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +98,7 @@ pub struct Operation {
     pub id: u32,
     pub name: String,
     pub symbol: String,
+    pub calling_convention: CallingConvention,
     pub timeout_ms: u32,
     pub request_schema_id: u32,
     pub response_schema_id: u32,
@@ -342,6 +351,7 @@ mod tests {
                 id: 1,
                 name: "Add".into(),
                 symbol: "VendorAdd".into(),
+                calling_convention: CallingConvention::Stdcall,
                 timeout_ms: 1_000,
                 request_schema_id: 0x3000_0001,
                 response_schema_id: 0x3000_0002,

@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "adapter_id": "example.math",
+  "adapter_version": "1.0.0",
+  "family": "native-c-dll",
+  "target": {
+    "relative_path": "vendor.dll",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "architecture": "x86-64"
+  },
+  "dependencies": [],
+  "types": {},
+  "operations": [
+    {
+      "id": 1,
+      "name": "Add",
+      "symbol": "ExampleAdd",
+      "calling_convention": "stdcall",
+      "timeout_ms": 1000,
+      "request_schema_id": 805306369,
+      "response_schema_id": 805306370,
+      "parameters": [
+        {
+          "name": "left",
+          "type_id": "i32",
+          "direction": "in",
+          "sensitivity": "public",
+          "max_bytes": null
+        },
+        {
+          "name": "right",
+          "type_id": "i32",
+          "direction": "in",
+          "sensitivity": "public",
+          "max_bytes": null
+        }
+      ],
+      "return_type_id": "i32"
+    }
+  ]
+}
