@@ -19,6 +19,10 @@ application into Windows.
 to the Mac client and Windows broker. It is not application-user or online
 account authentication.
 
+Pairing belongs to the Mac ↔ VM transport, not an individual adapter. All
+installed DLL adapters share the same paired connection. Re-pair only for a new
+machine/VM pair, a rebuild/reset, or capability rotation.
+
 ## Generic DLL model
 
 The broker never accepts an arbitrary DLL path or export from an untrusted

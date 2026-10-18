@@ -51,6 +51,9 @@ Short reusable introduction:
 > pointers, callbacks, COM,
 > handles, and async APIs need explicit marshalling. Kernel drivers, anti-cheat,
 > and per-frame graphics are the wrong fit.
+>
+> Pairing happens once per Mac ↔ Windows VM pair. New DLL adapters reuse the
+> same transport and do not need another pairing code.
 
 Only post this where it directly answers the thread. Adjust it to the user's
 problem and avoid cross-posting identical promotional text.

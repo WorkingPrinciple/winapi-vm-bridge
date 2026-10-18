@@ -35,9 +35,25 @@ Windows prints a pairing code once. Paste it into the Mac setup prompt. The
 third command then calls the real `kernel32.dll!GetTickCount64` export inside
 the Windows VM and returns its native unsigned 64-bit result to the Mac.
 
-Here, **paired** means the Mac client and Windows broker prove they share the
-same random capability. It prevents an unrelated local process from using the
-broker. It is not user, Microsoft, application, or account authentication.
+## First-time pairing
+
+Pair the **Mac and Windows VM once**, not once per DLL.
+
+The Windows setup creates one random capability. The Mac setup stores it with
+restricted permissions. Every installed DLL adapter uses that same private
+transport.
+
+Pair again only when:
+
+- connecting a different Mac or Windows VM;
+- rebuilding or resetting either side;
+- rotating a capability that may have been exposed.
+
+Adding another DLL means installing its manifest, proxy, and dispatcher. It
+does not require a new pairing code.
+
+Pairing is transport access control. It is not user, Microsoft, application, or
+account authentication.
 
 ## How it works
 
