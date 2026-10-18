@@ -1,0 +1,26 @@
+[package]
+name = "wvb-runtime-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+
+wvb-exe = { path = "../crates/wvb-exe" }
+wvb-protocol = { path = "../crates/wvb-protocol" }
+wvb-receipt = { path = "../crates/wvb-receipt" }
+wvb-transfer = { path = "../crates/wvb-transfer" }
+
+[[bin]]
+name = "runtime_inputs"
+path = "fuzz_targets/runtime_inputs.rs"
+test = false
+doc = false
+bench = false
