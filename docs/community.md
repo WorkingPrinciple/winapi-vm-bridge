@@ -16,6 +16,10 @@ Short reusable introduction:
 > RPC link to the real DLL inside a Windows VM, then the native result comes
 > back to the app.
 >
+> **The demo calls a real Windows DLL—not a ping or mock.**
+> `kernel32.dll!GetTickCount64` runs inside Windows and its native 64-bit result
+> returns to the Mac. Windows CI executes the same round trip.
+>
 > Try the core round trip:
 >
 > ```powershell

@@ -7,6 +7,10 @@ app stays on the Mac. A generated proxy DLL exposes the missing exports, sends
 selected calls to the real DLL inside a Windows VM, and returns the native
 result.
 
+> **This calls a real Windows DLL—not a ping or mock.** The third command invokes
+> `kernel32.dll!GetTickCount64` inside the Windows VM and returns the native
+> unsigned 64-bit result to the Mac. The Windows CI job runs this exact call.
+
 ## Try the bridge
 
 **Windows PowerShell**
