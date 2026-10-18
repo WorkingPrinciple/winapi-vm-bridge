@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/wvb-broker",
+  "crates/wvb-client",
   "crates/wvb-crypto",
   "crates/wvb-ir",
   "crates/wvb-protocol",
@@ -34,3 +36,4 @@ zeroize = { version = "1.8.2", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 tempfile = "3.23.0"
 tokio = { version = "1.48.0", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+async-trait = "0.1.89"

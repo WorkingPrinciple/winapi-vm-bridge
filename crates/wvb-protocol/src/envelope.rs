@@ -25,6 +25,7 @@ impl EnvelopeFlags {
         if bits & !Self::KNOWN != 0 || bits & Self::REQUEST.0 != 0 && bits & Self::RESPONSE.0 != 0 {
             return Err(ProtocolError::FlagsInvalid);
         }
+
         Ok(Self(bits))
     }
 
@@ -36,6 +37,14 @@ impl EnvelopeFlags {
     #[must_use]
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
+    }
+}
+
+impl std::ops::BitOr for EnvelopeFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::from_bits(self.bits() | rhs.bits()).expect("known flags compose")
     }
 }
 
