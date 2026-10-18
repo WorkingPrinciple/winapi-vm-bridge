@@ -46,6 +46,14 @@ thresholds. Performance must be measured on the actual Mac/UTM/Windows topology.
 | gVisor production guide | https://gvisor.dev/docs/production_guide/ | Default-deny syscall/surface-minimization reference |
 | Noise Protocol Framework | https://noiseprotocol.org/noise.html | Handshake, cipher-state and transport-message constraints |
 | RFC 8785 JCS | https://www.rfc-editor.org/rfc/rfc8785 | Canonical JSON for contract/receipt hashing |
+| Windows DLL security | https://learn.microsoft.com/windows/win32/dlls/dynamic-link-library-security | Reject current-directory/ambient-path loading and use explicit controlled paths |
+| `SetDefaultDllDirectories` | https://learn.microsoft.com/windows/win32/api/libloaderapi/nf-libloaderapi-setdefaultdlldirectories | Restrict process DLL search locations |
+| `AddDllDirectory` | https://learn.microsoft.com/windows/win32/api/libloaderapi/nf-libloaderapi-adddlldirectory | Add only admitted package directories when dependency loading requires it |
+| Windows reparse points | https://learn.microsoft.com/windows/win32/fileio/reparse-points | Treat junctions and other reparse points as path-identity hazards |
+| Windows Job Objects | https://learn.microsoft.com/windows/win32/procthread/job-objects | Process-tree containment, limits and termination |
+| Apple Keychain items | https://developer.apple.com/documentation/security/keychain-items | OS-backed generic-password/key storage model |
+| `SecItemCopyMatching` | https://developer.apple.com/documentation/security/secitemcopymatching(_:_:) | Exact Keychain lookup behavior |
+| Adding a Keychain password | https://developer.apple.com/documentation/security/adding-a-password-to-the-keychain | `kSecClassGenericPassword`, service/account and secret data pattern |
 
 ## Performance references
 
@@ -79,4 +87,3 @@ Whiny does **not** provide the bridge transport. It contains no shipped
 gRPC/protobuf, cross-VM shared memory, vsock, callback RPC, COM marshaling,
 pairing/encryption or RPC performance benchmark. Its reusable value is lifecycle,
 evidence, inspection, differential testing, receipts and release discipline.
-

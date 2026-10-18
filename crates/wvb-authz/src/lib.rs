@@ -181,6 +181,26 @@ impl Registry {
         operation_id: u32,
         now_unix_ms: u64,
     ) -> Result<(), AuthorizationError> {
+        self.authorize_role_exact(
+            actor_id,
+            Role::Invoke,
+            adapter_hash,
+            Some(operation_id),
+            now_unix_ms,
+        )
+    }
+
+    /// Authorizes a role using wildcard-compatible grant semantics.
+    ///
+    /// A grant with no adapter or operation scope matches any requested scope.
+    pub fn authorize_role(
+        &self,
+        actor_id: ActorId,
+        role: Role,
+        adapter_hash: Option<AdapterHash>,
+        operation_id: Option<u32>,
+        now_unix_ms: u64,
+    ) -> Result<(), AuthorizationError> {
         let actor = self
             .actors
             .get(&actor_id)
@@ -189,9 +209,41 @@ impl Registry {
             return Err(AuthorizationError::Revoked);
         }
         let allowed = actor.grants.iter().any(|grant| {
-            grant.role == Role::Invoke
-                && grant.adapter_hash.is_none_or(|hash| hash == adapter_hash)
-                && grant.operation_id.is_none_or(|id| id == operation_id)
+            grant.role == role
+                && grant
+                    .adapter_hash
+                    .is_none_or(|hash| adapter_hash == Some(hash))
+                && grant.operation_id.is_none_or(|id| operation_id == Some(id))
+                && grant
+                    .expires_at_unix_ms
+                    .is_none_or(|expires| now_unix_ms < expires)
+        });
+        if allowed {
+            Ok(())
+        } else {
+            Err(AuthorizationError::Denied)
+        }
+    }
+
+    pub fn authorize_role_exact(
+        &self,
+        actor_id: ActorId,
+        role: Role,
+        adapter_hash: AdapterHash,
+        operation_id: Option<u32>,
+        now_unix_ms: u64,
+    ) -> Result<(), AuthorizationError> {
+        let actor = self
+            .actors
+            .get(&actor_id)
+            .ok_or(AuthorizationError::UnknownActor)?;
+        if actor.status != ActorStatus::Active {
+            return Err(AuthorizationError::Revoked);
+        }
+        let allowed = actor.grants.iter().any(|grant| {
+            grant.role == role
+                && grant.adapter_hash == Some(adapter_hash)
+                && grant.operation_id == operation_id
                 && grant
                     .expires_at_unix_ms
                     .is_none_or(|expires| now_unix_ms < expires)
@@ -287,6 +339,56 @@ mod tests {
         assert_eq!(
             registry.authorize_invoke(actor, adapter, 7, 1),
             Err(AuthorizationError::Revoked)
+        );
+    }
+
+    #[test]
+    fn exact_authorization_rejects_wildcard_and_wrong_scopes() {
+        let actor = [1; 16];
+        let key = [2; 32];
+        let adapter = [3; 32];
+        let mut registry = Registry::default();
+        registry.register(actor, key).unwrap();
+        registry
+            .grant(
+                actor,
+                Grant {
+                    role: Role::Invoke,
+                    adapter_hash: None,
+                    operation_id: None,
+                    expires_at_unix_ms: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            registry.authorize_invoke(actor, adapter, 7, 1),
+            Err(AuthorizationError::Denied)
+        );
+        registry
+            .grant(
+                actor,
+                Grant {
+                    role: Role::Invoke,
+                    adapter_hash: Some([4; 32]),
+                    operation_id: Some(7),
+                    expires_at_unix_ms: None,
+                },
+            )
+            .unwrap();
+        registry
+            .grant(
+                actor,
+                Grant {
+                    role: Role::Invoke,
+                    adapter_hash: Some(adapter),
+                    operation_id: Some(8),
+                    expires_at_unix_ms: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            registry.authorize_invoke(actor, adapter, 7, 1),
+            Err(AuthorizationError::Denied)
         );
     }
 }

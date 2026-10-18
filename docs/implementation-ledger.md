@@ -1,16 +1,22 @@
-# WinAPI VM Bridge — Canonical Implementation Ledger, Revision 4
+# WinAPI VM Bridge — Canonical Runtime Ledger and ADR, Revision 5
 
 > **Repository:** `dragoshont/winapi-vm-bridge`  
 > **Public product branch:** `main`, observed at `21d1d484b964965afe44397c6e99d170237cd17e` before ledger publication  
-> **Integration branch:** `canonical-runtime`  
+> **Integration baseline:** `canonical-runtime` at `d5b8e89`; active implementation branch `dragoshont-vm-bridge-runtime-split`
 > **Canonical Run ID:** `wvb-canonical-v2`  
-> **Public ledger destination:** `docs/implementation-ledger.md` on public `main`, in a ledger-only commit after T000 records the exhausted review loops, consolidated corrections and owner continuation decision  
-> **Implementation destination:** integration branch only until the complete release path passes  
+> **Public ledger destination:** no publication or merge is authorized by this revision; implementation remains on the active branch
+> **Implementation destination:** reviewable checkpoints on the active branch until the complete release path passes
 > **Revision date:** 2026-10-18  
 > **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation; three adversarial revise loops were completed, their consolidated findings are binding, and the owner directed implementation to continue after those findings were corrected  
-> **Current state:** P0 is active; P1–P16 remain held until T000 proves every consolidated architectural blocker is resolved, reconciles the Run/status/task graph and records the owner continuation decision; final independent PASS at T161 remains mandatory before product integration  
-> **Authorship mode:** advisory/read-only; no repository edit, build, deployment, post, runtime mutation, or delegated agent was performed while authoring this ledger  
+> **Current state:** the verified runtime baseline through `d5b8e89` is active; the first runtime-only slice is bundle admission plus ownership reconciliation; Whiny bundle/dispatcher vectors remain an external cutover hold; Windows VM parity remains held on the occupied official forwarding path
+> **Execution mode:** approved repository edit/build/test program; no publish, signing-secret access, production deployment or infrastructure mutation is authorized
 > **Notation:** **[D]** binding decision; **[GATE]** deterministic acceptance; **[STOP]** no inference or implementation beyond this point; **[CONDITIONAL]** implemented only after its specified evidence trigger
+
+> **Revision 5 authority:** this file is the one canonical VM Bridge runtime
+> ledger and architecture decision record. It supersedes the earlier full-stack
+> ownership model without creating a second roadmap. Historical task identifiers
+> remain only where they identify already-proven runtime work or migration
+> provenance.
 
 ---
 
@@ -27,8 +33,38 @@ This ledger reconciles:
 5. Whiny evidence patterns at the reviewed commit;
 6. the Architrave rubric, backend guidance and operations guidance;
 7. the user’s binding requirements in this conversation.
+8. the user-directed product split assigning all inspection, inference,
+   canonical contract/IR, dependency-description, review/freezing and generation
+   work to Whiny;
+9. the Whiny handoff selecting `whiny.adapter-contract.v3`,
+   `whiny.adapter-bundle.v1`, `whiny.dispatch.v1` and
+   `whiny.runtime-receipt.v1`.
 
-### 0.2 Canonical hash and commit rules
+### 0.2 Binding ownership ADR
+
+**[D] Whiny is the source plane.** Whiny exclusively owns inspection, semantic
+investigation/evidence, canonical contract/IR, dependency-placement
+description, review/freezing, all proxy/dispatcher/project/package generation
+and immutable adapter bundle production.
+
+**[D] VM Bridge is the execution plane.** VM Bridge owns admission of frozen
+Whiny artifacts, transport/session security, authorization, controlled loading,
+broker/client execution, transfer/callback/handle/process lifecycle, operation
+state and receipts, setup/service operations, diagnostics, resilience,
+packaging and topology acceptance.
+
+**[D] Dependency direction is one-way.** VM Bridge may depend on a pinned,
+versioned Whiny validator/package and immutable bundle. Whiny contracts and
+bundles never depend on VM Bridge implementation types, and VM Bridge does not
+fork, infer or regenerate Whiny-owned contract data.
+
+**[D] No compatibility layer is required.** Neither product is released.
+`whiny.adapter-contract.v3` replaces both the old Whiny 1.0 contract and
+`wvb-ir` schema 2. Cutover is atomic after Whiny publishes validator/package
+coordinates plus frozen native and managed bundle/dispatcher vectors and the
+runtime consumer tests pass.
+
+### 0.3 Canonical hash and commit rules
 
 This response is a candidate ledger document and has no repository commit or final file hash yet. No fabricated hash is assigned.
 
@@ -55,7 +91,7 @@ Task T000 shall:
 
 No implementation source may accompany the ledger-only public commit.
 
-### 0.3 Public redaction boundary
+### 0.4 Public redaction boundary
 
 The public ledger may contain:
 
@@ -109,19 +145,14 @@ Protocol v2 uses the generated packed codec for its entire lifetime. T131 benchm
 The final release shall provide:
 
 - one encrypted, persistent, multiplexed framed-TCP protocol for Mac/Wine to Windows VM communication;
-- deterministic unsigned DLL, EXE and managed proxy generation;
-- separate Authenticode/notarization receipts;
-- support for:
-  1. native C DLL;
-  2. the exact native C++ subset in §10;
-  3. COM;
-  4. WinRT;
-  5. .NET assembly;
-  6. native EXE;
-  7. .NET EXE;
-- exact dependency graphs and same-relative-folder placement;
-- static inspection and authorized dynamic inference;
-- prompt-injection-safe contract-specific AI packets for unproved semantics;
+- admission and execution of exact, immutable Whiny-generated bundles only;
+- pinned `whiny.adapter-contract.v3`, `whiny.adapter-bundle.v1` and
+  `whiny.dispatch.v1` compatibility;
+- exact target, dispatcher and dependency hashes plus controlled load paths;
+- separate operator admission and actor/operation invocation authorization;
+- separate Whiny build/signing evidence and VM runtime-operation receipts;
+- runtime support for the target profiles present in admitted frozen bundles,
+  without VM-owned target generation;
 - complete marshalling for supported types and lifecycle semantics;
 - secure one-time pairing, persistent actor identity, grants and revocation;
 - durable operation state, diagnostics and tamper-evident receipts;
@@ -133,6 +164,7 @@ The final release shall provide:
 
 The release shall not claim:
 
+- inspection, semantic inference, canonical contract/IR ownership or code generation;
 - arbitrary caller-selected DLLs, exports, assemblies, methods, CLSIDs or commands;
 - universal C++ ABI support;
 - exported C++ constructors, destructors, copy/move functions or instance methods in the initial C++ subset;
@@ -145,7 +177,8 @@ The release shall not claim:
 - gRPC, named pipes, ALPC, UDS, vsock or ivshmem as the canonical cross-VM transport;
 - v1 compatibility after v2 release;
 - deterministic signed bytes;
-- a scaffold, AI packet, TODO, mock or fixture-only result as support.
+- a scaffold, AI packet, TODO, mock or fixture-only result as support;
+- that bundle metadata can create or widen an actor grant.
 
 ## 2.3 Terminology
 
@@ -166,6 +199,46 @@ The release shall not claim:
 ---
 
 # 3. Current-state inventory and disposition
+
+The following binding split overrides the earlier full-stack disposition table
+for ownership and cutover. No listed path is removed before the Whiny validator,
+package and frozen native/managed bundle vectors are available and the runtime
+consumer suite passes.
+
+| Current path | Disposition | Runtime cutover rule |
+|---|---|---|
+| `crates/wvb-ir/**` | **MOVE to Whiny** | Replace with pinned `whiny-contract` v0.3.0 / `whiny.adapter-contract.v3`; delete only in the atomic cutover |
+| `crates/wvb-inspect/**` | **MOVE to Whiny** | Whiny owns all native inspection and evidence; remove after validator parity |
+| `crates/wvb-generate/**` | **MOVE to Whiny** | Whiny owns all proxy/dispatcher/project/package generation; remove after frozen bundle consumer tests pass |
+| `sdk/abi_inspect.py` | **MOVE to Whiny** | Preserve only until Whiny inspection parity is recorded |
+| `sdk/adapter.schema.json` | **MOVE to Whiny** | Superseded by `whiny.adapter-contract.v3`; no VM schema fork |
+| `sdk/generate.py` | **MOVE to Whiny** | Delete at atomic cutover |
+| `sdk/templates/**` | **MOVE to Whiny** | Templates and AI packets are source-plane artifacts |
+| `sdk/README.md` | **MOVE to Whiny** | Replace VM documentation with frozen-bundle consumption guidance |
+| `sdk/__init__.py` | **DROP after cutover** | Python package marker is unnecessary after the source-plane SDK moves |
+| `examples/inspection/vendor.h` | **MOVE to Whiny** | Inspection fixture belongs with Whiny validator tests |
+| `examples/example-math/adapter.json` | **MOVE to Whiny** | Old schema fixture; replace with a pinned frozen bundle vector |
+| `examples/managed-scalar/adapter.json` | **MOVE to Whiny** | Old schema fixture; replace with a pinned frozen managed bundle vector |
+| `managed/tools/Wvb.ManagedInspector/**` | **MOVE to Whiny** | Managed inspection is not runtime execution |
+| `managed/fixtures/unsupported-managed-instance/**` | **MOVE to Whiny** | Expected-stop inspection fixture |
+| `managed/fixtures/example-managed-math/{Proxy.generated.cs,Dispatcher.generated.cs,*.csproj,contract.canonical.json}` | **DROP after cutover** | Generated source ownership ends; consume an immutable Whiny bundle instead |
+| `native/fixtures/c-dll/adapter.json` | **MOVE to Whiny** | Old generator input; replace with the frozen native bundle descriptor |
+| `native/fixtures/c-dll/{vendor.c,test_app.c,runtime_stub.c}` | **KEEP runtime** | Local target/oracle/runtime fixture remains useful after its generator input is replaced |
+| `native/fixtures/c-dll/build-and-test.sh` | **DROP and replace after cutover** | Current script invokes `wvb-generate`; replace with a frozen-bundle consumer/oracle script |
+| `managed/fixtures/vendor-managed-math/**` | **KEEP runtime** | Runtime target fixture, not inspection or generation logic |
+| `managed/fixtures/vendor-managed-math-local/**` | **KEEP runtime** | Fresh-process local differential oracle |
+| `managed/fixtures/managed-dispatch-oracle/**` | **KEEP runtime** | Runtime dispatcher-host acceptance oracle |
+| `tests/test_sdk.py` | **MOVE then DROP** | Port inspection/generator cases to Whiny; retain only unrelated legacy runtime coverage until replacement |
+| `tests/test-portable.sh` | **KEEP runtime** | Remove source-plane checks only in the atomic cutover; add frozen-bundle consumer checks |
+| `native/managed-host/**`, `crates/wvb-managed-host/**` | **KEEP runtime** | Generic CLR dispatcher host and controlled loader |
+| `native/macos-keychain/**` | **KEEP runtime** | OS-backed client identity consumption |
+| `native/macos-keychain/tests/**` | **KEEP runtime** | Keychain identity fixtures and negative tests |
+| `native/managed-host/tests/**` | **KEEP runtime** | CLR host configuration and round-trip runtime tests |
+| `native/wine-unixlib/tests/**` | **KEEP conditionally** | Retain as evidence for the failed route and replacement configuration tests |
+| `native/wine-unixlib/**` | **KEEP conditionally** | Current by-name route is a failed experiment; replace only with a newly evidenced supported mechanism |
+
+The previous rows below remain historical migration context. Where they
+conflict with this table, this table governs.
 
 | Existing path | Current status | Final disposition |
 |---|---|---|
@@ -216,8 +289,12 @@ shall be added. Production keys remain in external OS-backed stores and are neve
 ## 4.1 Architecture
 
 ```text
+Whiny validator/freezer
+  → immutable contract + bundle + dispatcher package
+  → operator approval and VM Bridge admission store
+  → controlled runtime load paths and hash re-verification
 Application under Wine
-  → generated same-relative-path proxy
+  → admitted immutable proxy
   → guarded local ABI marshalling
   → libwvb_client
   → persistent TCP with TCP_NODELAY
@@ -225,7 +302,7 @@ Application under Wine
   → protocol-v2 packed logical frames
   → Windows service broker
   → actor ACL + bounded operation queue
-  → exact-hash generated dispatcher
+  → exact-hash admitted dispatcher
   → exact-hash target dependency subtree
   → result/callback/operation/receipt
 ```
@@ -234,80 +311,42 @@ Application under Wine
 
 ```text
 /
-├── .architrave/runs/wvb-canonical-v2/
-│   ├── architrave.run.v2.json
-│   ├── intake.md
-│   ├── acceptance-matrix.json
-│   ├── tournament.md
-│   ├── candidate-ledger.md
-│   ├── ledger-reconciliation.json
-│   ├── owner-approval.json
-│   ├── reviews/
-│   ├── events.jsonl
-│   ├── holds.json
-│   ├── gates/
-│   ├── receipts/
-│   └── summary.md
 ├── .github/workflows/{ci.yml,fuzz.yml,reproducible.yml,release.yml}
 ├── Cargo.toml
 ├── Cargo.lock
-├── rust-toolchain.toml
-├── deny.toml
-├── CMakeLists.txt
-├── CMakePresets.json
-├── Directory.Build.props
-├── global.json
-├── tools/{gate.py,run_gate.py,verify_receipts.py,verify_reproducible.py}
-├── schemas/
-│   ├── adapter-v2.schema.json
-│   ├── protocol-v2.schema.json
-│   ├── dependency-v1.schema.json
-│   ├── evidence-v1.schema.json
-│   ├── ai-packet-v1.schema.json
-│   ├── operation-v1.schema.json
-│   ├── receipt-v1.schema.json
-│   └── architrave-run-v2.schema.json
 ├── crates/
+│   ├── wvb-admission/
 │   ├── wvb-protocol/
 │   ├── wvb-crypto/
 │   ├── wvb-authz/
 │   ├── wvb-client/
+│   ├── wvb-client-ffi/
 │   ├── wvb-broker/
 │   ├── wvb-state/
-│   ├── wvb-ir/
-│   ├── wvb-inspect/
-│   ├── wvb-trace/
-│   ├── wvb-generate/
-│   ├── wvb-cli/
-│   └── wvb-bench/
+│   ├── wvb-session/
+│   ├── wvb-call/
+│   ├── wvb-lifecycle/
+│   ├── wvb-runtime/
+│   ├── wvb-marshal/
+│   ├── wvb-managed-host/
+│   └── wvb-exe/
 ├── native/
 │   ├── include/wvb_client.h
-│   ├── client-ffi/
-│   ├── broker-host/
-│   ├── trace-detours/
-│   └── fixtures/{c-dll,cpp-dll,com-server,native-exe}
+│   ├── macos-keychain/
+│   ├── managed-host/
+│   ├── wine-unixlib/
+│   └── fixtures/
 ├── managed/
-│   ├── Wvb.Client/
-│   ├── Wvb.DispatchHost/
-│   ├── Wvb.Generator/
-│   └── fixtures/{ManagedLibrary,ManagedExe,WinRtComponent}
-├── generator/templates/{native-c,native-cpp,com,winrt,dotnet-library,native-exe,dotnet-exe,ai-packet}
-├── protocol/
-│   ├── v2.md
-│   ├── registries/{messages.csv,flags.csv,features.csv,enums.csv,errors.csv}
-│   ├── golden/
-│   └── fuzz-corpus/
-├── adapters/fixtures/
+│   ├── runtime-host/
+│   └── fixtures/
 ├── packaging/{macos,windows,manifests}
 ├── benchmarks/{topology.toml,baselines}
-├── tests/{unit,property,contract,differential,compatibility,chaos,e2e,clean-machine,held-out,fuzz,scripts}
+├── tests/{unit,property,compatibility,chaos,e2e,clean-machine,fuzz,scripts}
 ├── docs/
 │   ├── implementation-ledger.md
 │   ├── architecture.md
 │   ├── protocol-v2.md
-│   ├── adapter-contract.md
-│   ├── dependency-layout.md
-│   ├── inspection-and-tracing.md
+│   ├── bundle-consumption.md
 │   ├── security.md
 │   ├── privacy.md
 │   ├── operations.md
@@ -320,13 +359,19 @@ Application under Wine
 │   ├── research-sources.md
 │   ├── release.md
 │   └── historical/evidence.md
-├── examples/{native-c,native-cpp,com,winrt,dotnet-library,native-exe,dotnet-exe}
+├── external/
+│   └── pinned Whiny package and bundle coordinates recorded by digest
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
 ├── LICENSE
 └── NOTICE
 ```
+
+`crates/wvb-ir`, `crates/wvb-inspect`, `crates/wvb-generate`, the source-plane
+SDK and generated fixtures remain temporarily in the working tree only to keep
+the current vertical paths green. They are not part of the final runtime source
+tree and are removed together at R120.
 
 No UI or IaC product is introduced.
 
@@ -1539,6 +1584,11 @@ If exposure status of any `runtime.key`, development identity or signing materia
 
 # 11. Adapter contract, canonicalization and dependency layout
 
+**Ownership notice:** this section defines the runtime facts VM Bridge requires
+from Whiny. Whiny owns the schema, canonicalization, validation, dependency
+description and freezing. VM Bridge consumes the exact validated bytes and
+hashes; it does not implement or extend the schema.
+
 ## 11.1 Canonicalization
 
 Hash-bearing JSON uses:
@@ -1551,9 +1601,11 @@ Hash-bearing JSON uses:
 - schema-defined sorting for set-like arrays;
 - no post-parse Unicode normalization beyond RFC 8785 behavior.
 
-## 11.2 Adapter schema
+## 11.2 External Whiny contract
 
-Required sections:
+The current Whiny-owned identifier is `whiny.adapter-contract.v3`, major 3.
+The old illustrative VM schema below is retained only as historical context
+until atomic cutover and is not a VM-owned compatibility contract.
 
 ```json
 {
@@ -1576,7 +1628,13 @@ Required sections:
 
 Every operation defines identity, signature, ownership, nullability, aliasing, bounds, allocator, error behavior, roles, timeout, cancellation, disconnect, deduplication, callbacks, handles, async behavior and exact tests.
 
-## 11.3 Dependency schema
+## 11.3 External Whiny bundle and dependency facts
+
+The current Whiny-owned bundle identifier is `whiny.adapter-bundle.v1`, major
+1. The dispatcher ABI identifier is `whiny.dispatch.v1`, major 1. VM Bridge
+requires exact descriptor bytes and digest, contract bytes and digest, one
+dispatcher, one target, dependency paths and hashes, operation IDs/schema
+mappings and an explicit supported profile.
 
 Package root:
 
@@ -1647,6 +1705,10 @@ T140 depends on T087, so no OR-dependency or unowned branch remains.
 
 # 12. Static inspection, dynamic inference and AI packets
 
+**Whiny-owned source-plane section.** VM Bridge consumes only frozen outcomes.
+No task in this section authorizes inspection, tracing, semantic inference,
+evidence promotion or AI-packet generation in this repository.
+
 ## 12.1 Static inspection
 
 Inputs:
@@ -1707,6 +1769,11 @@ Malicious comments, Markdown fences, shell commands, Unicode controls and instru
 ---
 
 # 13. Target-family generation contracts
+
+**Whiny-owned source-plane section.** These target-family requirements constrain
+the immutable bundles VM Bridge may consume. VM Bridge implements generic
+runtime execution and loaders for the declared dispatcher ABI only; it does not
+generate native, managed, EXE, C++, COM or WinRT artifacts.
 
 ## 13.1 Native C
 
@@ -1951,7 +2018,43 @@ Mandatory tests:
 - SQLite WAL with bounded writer queue.
 - Startup reconciliation and distinct health/readiness.
 
-## 16.3 Durable operation schema
+## 16.3 Frozen-bundle admission and controlled loading
+
+Admission consumes a runtime-owned operator approval record plus exact immutable
+Whiny contract and bundle-descriptor bytes. It does not parse, infer or extend
+the Whiny schema.
+
+The approval record pins:
+
+- contract identifier and major: `whiny.adapter-contract.v3`, major 3;
+- bundle identifier and major: `whiny.adapter-bundle.v1`, major 1;
+- dispatcher ABI identifier and major: `whiny.dispatch.v1`, major 1;
+- exact contract and bundle-descriptor SHA-256 values;
+- exactly one dispatcher and one target;
+- every dependency relative path and SHA-256;
+- the admitted operation IDs and schema mappings;
+- the explicit supported bundle profile.
+
+Admission requires a pre-existing, unexpired `AdapterAdmin` grant scoped to the
+contract hash. Bundle contents cannot create actors, roles or grants. Invocation
+separately requires the caller's `Invoke` grant for the exact contract hash and
+operation ID.
+
+Load paths are portable relative forward-slash paths only. Admission rejects
+absolute, drive, UNC, backslash, NUL, empty, dot and dot-dot components;
+case-fold collisions; duplicate dispatcher/target roles; symlinks, junctions
+and other reparse points; non-regular files; path escapes; incompatible majors;
+and contract, descriptor or file hash mismatches. The runtime returns only
+canonical verified paths and re-verifies file identity immediately before and
+after module load. Ambient `PATH`, current-directory and registry-based library
+resolution are prohibited.
+
+Whiny bundle v1 descriptor and dispatcher vectors are an external hold. The
+selected identifiers may be pinned now, but old generator/fixture removal and
+production activation wait for Whiny's exact bytes, digests and artifact
+coordinates.
+
+## 16.4 Durable operation schema
 
 Every long-running/effecting operation includes:
 
@@ -1966,7 +2069,7 @@ Every long-running/effecting operation includes:
 - error/evidence/artifacts;
 - trace ID and terminal receipt.
 
-## 16.4 Two-command setup wrapper
+## 16.5 Two-command setup wrapper
 
 After obtaining the signed release wrapper/package through the documented release channel, canonical clean-machine setup is accepted only if these two operator commands are sufficient:
 
@@ -2003,7 +2106,7 @@ Acceptance requires no manual file copy, service editing, firewall editing, conf
 
 The wrappers are convenience orchestrators over the same receipted package operations, not alternate installers or protocols.
 
-## 16.5 Platform/toolchain matrix
+## 16.6 Platform/toolchain matrix
 
 Product classes are frozen now:
 
@@ -2020,7 +2123,7 @@ Product classes are frozen now:
 
 Exact patch versions, package hashes, compiler binaries, SDK hashes, UTM/QEMU build IDs, Wine build and OS patch versions are blocking T010 inputs. T010 cannot pass, and no toolchain/platform receipt may be claimed, until those values are observed, selected, downloaded from approved sources and recorded. No placeholder is accepted in a release receipt.
 
-## 16.6 Migration
+## 16.7 Migration and hard stops
 
 - Back up v1 state.
 - Pair v2 from scratch.
@@ -2031,6 +2134,20 @@ Exact patch versions, package hashes, compiler binaries, SDK hashes, UTM/QEMU bu
 - Delete plaintext v1 secret with presence-only destruction receipt.
 - Never run v1 and v2 simultaneously.
 - After deletion, v1 rollback requires fresh v1 pairing.
+
+Hard stops:
+
+- do not retry the occupied official Windows forwarding path without a newly
+  identified isolated port or explicit maintenance authorization;
+- do not retry the CrossOver by-name unixlib route with the unchanged
+  `NtQueryVirtualMemory`/`STATUS_INVALID_INFO_CLASS` hypothesis;
+- do not consume the paused native-EXE candidate except through its explicit
+  clean migration artifact or a later commit from its owner;
+- do not activate native, managed, EXE, C++, COM or WinRT profiles before their
+  frozen Whiny bundle and dispatcher vectors are admitted;
+- do not substitute shared memory, vsock, gRPC, GUI remoting, kernel/driver
+  execution, anti-cheat bypass, ambient path loading or untraced reverse
+  dependency proxying for the approved runtime architecture.
 
 ---
 
@@ -2259,27 +2376,73 @@ main-integrated
 
 | Phase | Current status | Exit |
 |---|---|---|
-| P0 ledger reconciliation, approval and independent review | `approved-for-this-run` | follow-up PASS, Run validated, public ledger-only commit recorded |
-| P1 platform/toolchain foundation | `not-started`, held | exact patches/hashes frozen; build foundation green |
-| P2 protocol/crypto/authz/state | `not-started` | protocol/security/property gates |
-| P3 inspection/IR | `not-started` | static held-out classification |
-| P4 early native vertical path | `not-started` | generated DLL real topology parity |
-| P5 marshalling/guarded copy | `not-started` | ABI/buffer/error gates |
-| P6 handles/callbacks/async | `not-started` | lifecycle/chaos gates |
-| P7 C++ | `not-started` | exact subset differential suite |
-| P8 COM/WinRT | `not-started` | activation/identity/apartment suite |
-| P9 managed | `not-started` | binding/API/field/strong-name suite |
-| P10 EXE and final dependency layout | `not-started` | process/layout gates |
-| P11 tracing/AI packets/reverse trigger | `not-started` | redaction/injection/trigger outcome |
-| P12 packaging/setup/operations | `not-started` | clean-machine lifecycle |
-| P13 security/performance/provenance | `not-started` | fuzz/benchmark/SBOM/signing |
-| P14 complete E2E/held-out | `not-started` | all family/held-out gates |
-| P15 migration/cleanup/docs | `not-started` | no v1/scaffold/false claims |
-| P16 release/final integration | `not-started` | independent PASS and atomic product merge |
+| P0 runtime ownership and admission architecture | `in-progress` | independent review PASS and focused gates |
+| P1 durable admission/state/receipts | `ready` | crash-safe admit/revoke/query and audit gates |
+| P2 transfer/handle/callback/async integration | `ready` | lifecycle, cancellation, replay and resource gates |
+| P3 generic native/CLR/process execution hosts | `partially-held` | frozen Whiny vectors plus host/process gates |
+| P4 pairing/key storage/Wine configuration | `partial` | OS-backed identity and supported Wine configuration evidence |
+| P5 broker service/readiness/diagnostics | `ready` | least privilege, reconciliation and truthful diagnostics |
+| P6 setup/update/rollback/uninstall | `pending` | clean lifecycle and restoration gates |
+| P7 resilience/fuzz/performance/provenance | `pending` | abuse, crash, benchmark, SBOM and signing-separation gates |
+| P8 Windows VM and clean-machine acceptance | `topology-hold` | isolated authorized forward, exact commands and real evidence |
+| P9 atomic Whiny cutover | `external-hold` | frozen native+managed bundle vectors and consumer PASS |
+| P10 final integration review | `pending` | full configured gates and independent PASS |
 
 ---
 
 # 21. Dependency-safe task graph
+
+## 21.1 Binding runtime-only graph and deferred-scope inventory
+
+Statuses describe repository evidence at Revision 5. `external-hold` means VM
+Bridge code may prepare the consumer/runtime side but cannot claim integration.
+
+| ID | Runtime-owned deliverable | Owner | Dependencies | Acceptance gate | Status |
+|---|---|---|---|---|---|
+| R000 | Runtime ledger/ADR and exact ownership map | VM Bridge | verified baseline `d5b8e89`; Whiny ownership decision | one canonical ledger, path map complete, independent adversarial review | in progress |
+| R010 | Frozen-bundle admission, compatibility and controlled loader | VM Bridge | `R000`; Whiny identifiers | negative ACL/path/hash/ABI/symlink/reparse tests; pre-load reverify | in progress |
+| R011 | Durable admission store and operator lifecycle | VM Bridge | `R010`, state/audit chain | authorized admit/revoke, crash rollback, startup reconciliation, no bundle-granted ACL | ready |
+| R020 | Pair transaction, IK session recovery and OS-backed key consumption | VM Bridge | existing crypto/session/authz; Keychain/Windows keystore policy | pairing crash windows, rotation/revocation, no plaintext secret, keystore denial tests | partial |
+| R030 | Compound transfer integration | VM Bridge | protocol transfer states, broker/client multiplexing, receipts | begin/data/end/cancel/receipt, bounds/hash/replay/disconnect tests | ready |
+| R031 | Guarded runtime copy and native error containment | VM Bridge | admitted native profile; Whiny marshalling declarations | SEH/TOCTOU/buffer/HRESULT/Win32/NTSTATUS/last-error tests under Wine | external-hold |
+| R040 | Handle ownership, generation and restart invalidation | VM Bridge | `R020`, `R011` | actor/epoch/type/generation/close/restart/crash tests | primitives proven; integration ready |
+| R041 | Callback reverse RPC lifecycle | VM Bridge | `R030`, `R040` | thread/order/reentrancy/unregister/disconnect/resource-bound tests | primitives proven; integration ready |
+| R042 | Async cancellation and unknown-outcome receipts | VM Bridge | `R041`, `R011` | first terminal outcome wins; cancel races; disconnect/crash remains `unknown` | primitives proven; durable integration ready |
+| R050 | Native dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; frozen native vector | exact export/ABI/load-path/hash and pre/post-load checks | external-hold |
+| R051 | CLR dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; existing CLR host; frozen managed vector | host/runtime/dispatcher/target hashes, binding and crash isolation | external-hold |
+| R052 | Native/.NET process execution and Job Object lifecycle | VM Bridge | `R011`, `R020`; clean native-EXE migration artifact | argv/env/stdin/stdout/stderr/exit/timeout/cancel/tree-kill/receipt tests | migration artifact available |
+| R060 | Broker service composition and bounded queues | VM Bridge | `R011`, `R030`–`R052` | least privilege, package ACL, worker containment, restart reconciliation | ready |
+| R061 | Readiness, health and redacted diagnostics | VM Bridge | `R060`, receipt store | truthful distinct states, source versions, no unconditional success, privacy tests | partial |
+| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | partial |
+| R070 | macOS Keychain identity consumption | VM Bridge | `R020` | `SecItem` store/load/delete, access denial, zeroization, no argv/log secret | partial |
+| R071 | Safe Wine automatic configuration alternative | VM Bridge | `R070`; new evidence beyond failed by-name route | supported API/process boundary, exact bottle identity, no plaintext registry secret | research hold |
+| R080 | Windows service/MSI/firewall and macOS package setup | VM Bridge | `R060`, `R070`, admitted bundle catalog | clean install/pair/doctor/core call with receipted rollback | ready after package inputs |
+| R081 | Update, rollback and uninstall | VM Bridge | `R080`, `R062` | inactive staging, health-gated activation, snapshot restoration, impact preflight | pending |
+| R090 | Resilience, fuzzing, replay and resource bounds | VM Bridge | all runtime handlers | deterministic negative suites, fuzz/sanitizer budgets, disk/DB/keystore/worker crash | pending |
+| R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | topology hold |
+| R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | pending |
+| R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | blocked on authorized topology |
+| R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | pending |
+| R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | external-hold |
+| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R120` | configured quality/build/test, real evidence, zero blocking review findings | pending |
+
+Rejected or conditional scope:
+
+| Item | Decision |
+|---|---|
+| Shared memory, ivshmem or vsock replacement | **REJECTED** for v2; no supported Mac/UTM/Windows topology evidence |
+| gRPC replacement | **REJECTED** for v2; the canonical framed transport remains |
+| GUI remoting | **REJECTED** |
+| Kernel/driver execution | **REJECTED** |
+| Anti-cheat or DRM bypass | **REJECTED** |
+| Ambient `PATH`/current-directory DLL loading | **REJECTED** |
+| Reverse dependency proxying | **CONDITIONAL** only after explicit Whiny evidence and an admitted frozen bundle; never inferred by VM Bridge |
+
+## 21.2 Historical full-stack graph
+
+The table below is retained only for provenance. Whiny-owned inspection,
+contract, inference and generation rows are external dependencies, not VM Bridge
+implementation tasks. Section 21.1 is the binding executable graph.
 
 | ID | Files/owner | Dependencies | Acceptance | Rollback/risk |
 |---|---|---|---|---|
@@ -2344,7 +2507,9 @@ main-integrated
 
 # 22. Release gates and definition of done
 
-Release requires:
+Runtime release requires the following. Whiny-owned contract, inspection and
+generation evidence is satisfied only by pinned Whiny package/bundle receipts,
+never by duplicate VM Bridge implementation:
 
 1. follow-up independent `PASS` on this ledger;
 2. Run validation and ledger/status reconciliation;

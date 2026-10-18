@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/wvb-admission",
   "crates/wvb-authz",
   "crates/wvb-broker",
   "crates/wvb-call",
