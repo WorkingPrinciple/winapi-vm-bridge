@@ -1,14 +1,14 @@
-# WinAPI VM Bridge — Canonical Implementation Ledger, Revision 3
+# WinAPI VM Bridge — Canonical Implementation Ledger, Revision 4
 
 > **Repository:** `dragoshont/winapi-vm-bridge`  
 > **Public product branch:** `main`, observed at `21d1d484b964965afe44397c6e99d170237cd17e` before ledger publication  
 > **Integration branch:** `canonical-runtime`  
 > **Canonical Run ID:** `wvb-canonical-v2`  
-> **Public ledger destination:** `docs/implementation-ledger.md` on public `main`, in a ledger-only commit after the independent follow-up review returns `PASS`  
+> **Public ledger destination:** `docs/implementation-ledger.md` on public `main`, in a ledger-only commit after T000 records the exhausted review loops, consolidated corrections and owner continuation decision  
 > **Implementation destination:** integration branch only until the complete release path passes  
 > **Revision date:** 2026-10-18  
-> **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation, subject to an independent follow-up `PASS` before P1 starts  
-> **Current state:** P0 is approved and active; P1–P16 are held by `independent-follow-up-pass-required`  
+> **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation; three adversarial revise loops were completed, their consolidated findings are binding, and the owner directed implementation to continue after those findings were corrected  
+> **Current state:** P0 is active; P1–P16 remain held until T000 proves every consolidated architectural blocker is resolved, reconciles the Run/status/task graph and records the owner continuation decision; final independent PASS at T161 remains mandatory before product integration  
 > **Authorship mode:** advisory/read-only; no repository edit, build, deployment, post, runtime mutation, or delegated agent was performed while authoring this ledger  
 > **Notation:** **[D]** binding decision; **[GATE]** deterministic acceptance; **[STOP]** no inference or implementation beyond this point; **[CONDITIONAL]** implemented only after its specified evidence trigger
 
@@ -43,7 +43,9 @@ Task T000 shall:
    - the branch and commits it described;
    - any stale phase/status claims;
    - the final reconciled SHA-256 after the status artifact is corrected outside this ledger;
-6. after independent `PASS`, publish the redacted public ledger alone to `main`;
+6. after the third review's consolidated architectural findings are corrected
+   and T000 records deterministic closure plus the owner continuation decision,
+   publish the redacted public ledger alone to `main`;
 7. record the resulting public ledger commit and blob hash;
 8. update the Run to distinguish:
    - candidate ledger hash;
@@ -386,6 +388,13 @@ After XXpsk3 completes:
 - only pair-control messages are legal;
 - application `HELLO`, calls, transfers, callbacks and handles are forbidden.
 
+Pair-control messages use the ordinary logical envelope with
+`connectionEpoch=0`, control `streamId=0`, and pair-message schema IDs. They do
+not use `HELLO/HELLO_ACK`, do not contain `actorId`, and are accepted only on a
+`PAIR` connection after the Noise handshake. `PAIR_ACCEPT` is the first message
+that contains the committed actor ID. The pair connection closes immediately
+after `PAIR_COMPLETE` and never becomes an application session.
+
 ### Pair transaction
 
 1. Client sends `PAIR_REQUEST`.
@@ -454,9 +463,12 @@ Ordering:
    - active broker epoch;
    - random nonzero connection epoch;
    - selected features and limits.
-6. Both atomically promote the connection to `ACTIVE`.
-7. Physical fragments and logical envelopes after `HELLO_ACK` use the active connection epoch.
-8. Calls and non-control streams may now begin.
+6. The physical fragment and logical envelope carrying `HELLO_ACK` still use
+   `connectionEpoch=0`. The nonzero returned epoch becomes active only after the
+   complete `HELLO_ACK` has been authenticated, decoded and accepted.
+7. Both atomically promote the connection to `ACTIVE`.
+8. Physical fragments and logical envelopes after `HELLO_ACK` use the active connection epoch.
+9. Calls and non-control streams may now begin.
 
 No XX fallback exists for normal future sessions. Recovery or key rotation uses a newly authorized pairing window, not silent pattern downgrade.
 
@@ -709,6 +721,24 @@ Field flags:
 
 Fields are emitted in ascending tag order. Unknown fields are skipped after bounds validation. Duplicate known non-repeated fields fail.
 
+Top-level payload schema IDs are derived without a registry decision:
+
+```text
+schemaId = 0x20000000 | messageType
+schemaVersion = 1
+```
+
+Nested schemas use the fixed `0x1001..0x10FF` registry below. A message ID,
+top-level schema ID or nested schema ID is never reused with different
+semantics. A compatible additive change increments `schemaVersion`; an
+incompatible change requires a protocol-major revision.
+
+Unknown numeric enum values are rejected for required closed enums. Bit-flag
+fields may preserve unknown bits only when their field contract explicitly sets
+`preserveUnknownBits=true`; otherwise unknown bits are rejected. Optional
+messages carrying unknown enums follow their message ACK policy and never
+silently become accepted operations.
+
 ## 8.2 Numeric enum registry
 
 ### Peer kind
@@ -866,7 +896,113 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | 11 | `RECONCILED` |
 | 12 | `AUDIT_CHECKPOINTED` |
 
+### Disconnect policy
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CANCEL_ON_DISCONNECT` |
+| 2 | `CONTINUE_AS_DURABLE_OPERATION` |
+| 3 | `FINISH_IN_FLIGHT_NO_NEW_CALLBACKS` |
+
+### Sensitivity / privacy class
+
+| Value | Symbol |
+|---:|---|
+| 1 | `PUBLIC` |
+| 2 | `INTERNAL` |
+| 3 | `PERSONAL` |
+| 4 | `CREDENTIAL` |
+| 5 | `SECRET` |
+
+### GOAWAY reason
+
+| Value | Symbol |
+|---:|---|
+| 1 | `NORMAL_DRAIN` |
+| 2 | `SERVER_SHUTDOWN` |
+| 3 | `PROTOCOL_VIOLATION` |
+| 4 | `SEQUENCE_EXHAUSTED` |
+| 5 | `AUTHORIZATION_CHANGED` |
+| 6 | `RESOURCE_PRESSURE` |
+
+### Pair close/reject reason
+
+| Value | Symbol |
+|---:|---|
+| 1 | `PAIR_COMPLETE_NORMAL` |
+| 2 | `WINDOW_CLOSED` |
+| 3 | `PSK_INVALID_OR_CONSUMED` |
+| 4 | `OFFER_MISMATCH` |
+| 5 | `POLICY_DENIED` |
+| 6 | `ROLLBACK_DETECTED` |
+
+### Cancellation reason
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CALLER_REQUESTED` |
+| 2 | `DEADLINE_EXPIRED` |
+| 3 | `DISCONNECT_POLICY` |
+| 4 | `BROKER_SHUTDOWN` |
+| 5 | `DEPENDENCY_FAILED` |
+| 6 | `RESOURCE_LIMIT` |
+
+### Handle disposition
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CLOSED` |
+| 2 | `ALREADY_CLOSED` |
+| 3 | `STALE` |
+| 4 | `OWNER_MISMATCH` |
+| 5 | `TYPE_MISMATCH` |
+
+### Receipt-query disposition
+
+| Value | Symbol |
+|---:|---|
+| 1 | `FOUND_TERMINAL` |
+| 2 | `FOUND_RUNNING` |
+| 3 | `UNKNOWN` |
+| 4 | `CONFLICT` |
+
+### Callback unregister reason
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CALLER_UNREGISTERED` |
+| 2 | `LEASE_EXPIRED` |
+| 3 | `SESSION_CLOSED` |
+| 4 | `TARGET_RELEASED` |
+| 5 | `POLICY_REVOKED` |
+
+### Audit signature algorithm
+
+| Value | Symbol |
+|---:|---|
+| 1 | `TPM_ECDSA_P256_SHA256` |
+| 2 | `TPM_ED25519` |
+
 ## 8.3 Nested schemas
+
+### `UuidValueV1`, schema `0x100B`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | value | UUID | yes |
+
+### `StringValueV1`, schema `0x100C`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | value | UTF-8 | yes |
+
+### `HashValueV1`, schema `0x100D`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | algorithm | `u16` (`1=SHA256`) | yes |
+| 2 | value | bytes (exactly 32 for SHA-256) | yes |
 
 ### `RoleGrantV1`, schema `0x1001`
 
@@ -933,7 +1069,7 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | 5 | completedAtUnixMs | `u64` | no |
 | 6 | message | UTF-8 | no |
 | 7 | nativeStatus | `NativeStatusV1` | no |
-| 8 | evidenceIds | repeated nested UUID wrapper | no |
+| 8 | evidenceIds | repeated `UuidValueV1` | no |
 
 ### `OperationV1`, schema `0x1007`
 
@@ -942,7 +1078,7 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | 1 | operationUuid | UUID | yes |
 | 2 | operationType | UTF-8 | yes |
 | 3 | actorId | UUID | yes |
-| 4 | targetIds | repeated nested string wrapper | yes |
+| 4 | targetIds | repeated `StringValueV1` | yes |
 | 5 | status | `u16` | yes |
 | 6 | createdAtUnixMs | `u64` | yes |
 | 7 | startedAtUnixMs | `u64` | no |
@@ -973,7 +1109,7 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | 8 | nativeStatus | `NativeStatusV1` | no |
 | 9 | previousEventHash | bytes | yes |
 | 10 | eventHash | bytes | yes |
-| 11 | evidenceIds | repeated nested UUID wrapper | no |
+| 11 | evidenceIds | repeated `UuidValueV1` | no |
 
 ### `ReceiptV1`, schema `0x1009`
 
@@ -992,7 +1128,7 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | 11 | eventHash | bytes | yes |
 | 12 | checkpointSequence | `u64` | no |
 | 13 | checkpointSignature | bytes | no |
-| 14 | artifactHashes | repeated nested hash wrapper | no |
+| 14 | artifactHashes | repeated `HashValueV1` | no |
 | 15 | privacyClass | `u16` | yes |
 
 ### `ProtocolFailureV1`, schema `0x100A`
@@ -1030,7 +1166,7 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 
 | ID | Message | Fields |
 |---:|---|---|
-| `0x0100` | `CALL_BEGIN` | `1 adapterHash:bytes R`, `2 operationId:u32 R`, `3 requestSchemaId:u32 R`, `4 deduplicationMode:u16 R`, `5 idempotencyKey:uuid O`, `6 requestHash:bytes R`, `7 actorContextId:uuid R`, `8 disconnectPolicy:u16 R`, `9 sensitivity:u16 R` |
+| `0x0100` | `CALL_BEGIN` | `1 adapterHash:bytes R`, `2 operationId:u32 R`, `3 requestSchemaId:u32 R`, `4 deduplicationMode:u16 R`, `5 idempotencyKey:uuid O`, `6 requestHash:bytes R`, `7 disconnectPolicy:u16 R`, `8 sensitivity:u16 R` |
 | `0x0101` | `CALL_DATA` | `1 chunkIndex:u32 R`, `2 offset:u64 R`, `3 logicalTotal:u64 R`, `4 chunkHash:bytes R`, `5 data:bytes R` |
 | `0x0102` | `CALL_END` | `1 chunkCount:u32 R`, `2 totalHash:bytes R` |
 | `0x0110` | `RESULT_BEGIN` | `1 responseSchemaId:u32 R`, `2 operationUuid:uuid O`, `3 nativeStatus:NativeStatusV1 R`, `4 logicalTotal:u64 R` |
@@ -1064,7 +1200,11 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | `0x0401` | `OPERATION_STATE` | `1 operation:OperationV1 R`, `2 events:repeated EventV1 O`, `3 nextEventSequence:u64 R` |
 | `0x0402` | `RECEIPT_QUERY` | `1 idempotencyKey:uuid R`, `2 adapterHash:bytes R`, `3 operationId:u32 R` |
 | `0x0403` | `RECEIPT_RESULT` | `1 disposition:u16 R`, `2 operationUuid:uuid O`, `3 receipt:ReceiptV1 O` |
-| `0x0410` | `AUDIT_CHECKPOINT` | `1 checkpointSequence:u64 R`, `2 eventSequence:u64 R`, `3 eventHash:bytes R`, `4 databaseGeneration:u64 R`, `5 signature:bytes R`, `6 signerFingerprint:bytes R` |
+| `0x0410` | `AUDIT_CHECKPOINT` | `1 checkpointSequence:u64 R`, `2 eventSequence:u64 R`, `3 eventHash:bytes R`, `4 databaseGeneration:u64 R`, `5 signatureAlgorithm:u16 R`, `6 signingKeyGeneration:u64 R`, `7 signature:bytes R`, `8 signerFingerprint:bytes R` |
+
+The actor context for every application message is derived exclusively from the
+authenticated Noise session and broker actor registry. It is not caller
+supplied in `CALL_BEGIN` or any other invocation message.
 
 ---
 
@@ -1125,7 +1265,92 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | 49 | `DATABASE_CORRUPT` |
 | 50 | `INTERNAL_INVARIANT_FAILED` |
 
-## 9.2 Limits
+## 9.2 Flow-control state machine
+
+Credits count decrypted logical payload bytes, excluding physical-fragment and
+logical-envelope headers.
+
+- `HELLO/HELLO_ACK` negotiates:
+  - connection data credit: 8 MiB;
+  - per-stream data credit: 2 MiB;
+  - control reserve: 64 KiB.
+- Sending `CALL_DATA`, `RESULT_DATA` or `TRANSFER_DATA` debits both connection
+  and stream credit before the first byte is written.
+- Control messages debit only the control reserve. A peer replenishes control
+  reserve automatically after parsing a valid control message, capped at
+  64 KiB. More than 1,024 control messages/second without data progress is
+  `RESOURCE_EXHAUSTED`.
+- `WINDOW_UPDATE(targetStreamId=0)` adds connection credit. Nonzero
+  `targetStreamId` adds that stream's credit. `additionalBytes` must be
+  `1..16 MiB`; overflow beyond negotiated maxima is
+  `FLOW_CONTROL_EXCEEDED`.
+- A sender with zero data credit queues no more than the negotiated bounded
+  queue and writes no data bytes until credit arrives or the deadline expires.
+- The receiver sends updates only after bytes are consumed, persisted to the
+  bounded transfer file, or rejected and discarded.
+- Closing/resetting a stream discards its remaining credit; stream credit is
+  never transferred to another stream.
+- Credit counters are unsigned 64-bit values; underflow, overflow or data
+  received without credit closes the connection.
+
+## 9.3 Call lifecycle
+
+```text
+NEW
+ → CALL_BEGIN
+ → REQUEST_OPEN
+ → CALL_DATA* (contiguous chunkIndex/offset)
+ → CALL_END (count/hash verified)
+ → QUEUED
+ → RUNNING
+ → RESULT_BEGIN
+ → RESULT_DATA*
+ → RESULT_END
+ → TERMINAL
+```
+
+Rules:
+
+- One `CALL_BEGIN` per client-initiated odd stream.
+- `CALL_DATA` indices begin at zero; offsets are contiguous; duplicate chunks
+  are accepted only when index, offset, length and hash match exactly.
+- `CALL_END` verifies chunk count, logical length and SHA-256 before dispatch.
+- No result message precedes successful request verification.
+- Exactly one terminal message exists: `RESULT_END`, terminal
+  `PROTOCOL_ERROR`, or connection-loss reconciliation to `UNKNOWN`.
+- `CANCEL` before dispatch removes the queued call. During execution it invokes
+  only a contract-approved cancellation mechanism. A completion/cancel race is
+  resolved by the broker's first committed terminal event; later messages get
+  `ALREADY_TERMINAL`/`TOO_LATE`.
+- Temporary request/result files are removed after terminal receipt retention
+  no longer requires them; startup reconciliation removes orphaned uncommitted
+  files.
+
+## 9.4 Transfer lifecycle
+
+```text
+NEW
+ → TRANSFER_BEGIN
+ → TRANSFER_DATA* (contiguous offset)
+ → TRANSFER_END
+ → HASH_VERIFIED
+ → RECEIPTED
+ → CLOSED
+```
+
+- `declaredLength` and SHA-256 are mandatory before any data.
+- `chunkIndex` starts at zero; `offset` must equal bytes already accepted.
+- Exact duplicates are ignored idempotently; conflicting duplicates terminate
+  with `TRANSFER_HASH_MISMATCH`.
+- `TRANSFER_END` succeeds only when count, total length and total hash match.
+- `TRANSFER_CANCEL` races use the same first-committed-terminal rule as calls.
+- Interrupted transfers remain incomplete operations, never successful files.
+- Startup reconciliation deletes unreceipted temp files and records a redacted
+  cleanup event.
+- `TRANSFER_RECEIPT` is emitted only after the final file/stream is durably
+  placed under its declared path/content policy.
+
+## 9.5 Limits
 
 | Limit | Value |
 |---|---:|
@@ -1151,7 +1376,7 @@ Fields are emitted in ascending tag order. Unknown fields are skipped after boun
 | Ordinary deadline maximum | 300 seconds |
 | Contract-authorized EXE maximum | 24 hours |
 
-## 9.3 Deduplication and crash windows
+## 9.6 Deduplication and crash windows
 
 Modes:
 
@@ -1236,14 +1461,36 @@ The broker creates:
    - actor-registry revision;
    - broker-identity-key generation.
 
-The exact supported TPM algorithm is frozen by T010 after capability probing and becomes a blocking platform input. It is not silently changed.
+The exact supported TPM algorithm is frozen by T010 after capability probing
+and becomes a blocking platform input. It is not silently changed. Every
+checkpoint carries `signatureAlgorithm`, `signingKeyGeneration`, signer
+fingerprint and signature.
 
-Every terminal operation, actor/grant mutation, pairing commit, key rotation and each 1,024-event interval:
+SQLite appends and signs every event in the broker hash chain, but TPM NV is
+not written for every ordinary call. A TPM anchor is updated:
 
-1. commits event chain and checkpoint transaction;
-2. signs checkpoint with TPM-backed key;
-3. updates TPM NV anchor;
-4. only then reports durable success.
+1. immediately for pairing commit, actor/grant/revocation changes, broker or
+   audit-key rotation, update activation, migration and destructive actions;
+2. after each 256 ordinary terminal events;
+3. at least every 60 seconds while new events exist;
+4. on clean service shutdown.
+
+An ordinary call may return a signed receipt before the next TPM anchor. That
+receipt states `anchorState=PENDING`, the last anchored checkpoint and the
+current event hash. Paired clients persist the highest observed signed event
+hash in Keychain and therefore act as an independent rollback witness. An
+administrative/effecting operation reports durable success only after its
+immediate TPM anchor succeeds.
+
+T024 must measure TPM NV latency/endurance on the supported TPM/vTPM and may
+increase the ordinary-event batch interval only through a ledger update and
+security review. The gate requires:
+
+- 100,000 simulated ordinary events without exceeding the vendor endurance
+  budget extrapolated for five years;
+- p99 immediate administrative anchor latency recorded;
+- crash tests before/after DB commit, signature, and TPM write;
+- no readiness when TPM state and the signed chain cannot be reconciled.
 
 Startup compares database chain and metadata against TPM NV:
 
@@ -1253,6 +1500,18 @@ Startup compares database chain and metadata against TPM NV:
 - TPM unavailable: pairing/admin/update blocked; invocation policy defaults to blocked for effecting operations.
 
 Paired Mac clients also pin the audit public key and highest observed checkpoint, providing an additional external witness.
+
+The client witness contains broker fingerprint, signing-key generation,
+checkpoint sequence, event sequence and event hash. Recovery requires at least
+one of:
+
+- TPM anchor consistent with the signed chain;
+- a previously pinned client witness consistent with the signed chain and local
+  administrator confirmation;
+- a separately stored signed recovery bundle.
+
+Restoring the database and broker metadata together cannot silently pass if all
+independent anchors disagree or are unavailable.
 
 ## 10.3 Recovery and key rotation
 
@@ -2180,7 +2439,9 @@ T000 shall record:
 
 - [x] Full corrected canonical program is user-approved.
 - [x] Run ID is exactly `wvb-canonical-v2`.
-- [x] P1 is held until independent follow-up `PASS`.
+- [x] Three adversarial review loops completed; consolidated findings are binding.
+- [x] Owner explicitly directed implementation to continue after corrections.
+- [x] P1 remains held until T000 proves consolidated blocker closure and reconciles the Run.
 - [x] Public ledger destination is exact and ledger-only.
 - [x] Live-status and ledger hashes require durable reconciliation.
 - [x] Pairing bootstrap and future session ordering are complete.
@@ -2201,7 +2462,11 @@ T000 shall record:
 - [x] Toolchain patch versions/hashes are blocking T010 inputs.
 - [x] Exact 65,536 rejection semantics are specified.
 - [x] Two-command wrapper acceptance is specified.
-- [ ] Independent follow-up review returns `PASS`.
+- [x] Pairing/session bootstrap has no actor/epoch cycle.
+- [x] Top-level/nested schema IDs and enum compatibility rules are frozen.
+- [x] Flow-control, call and transfer state machines are executable.
+- [x] Audit algorithm/key generation and sustainable TPM anchor cadence are explicit.
+- [ ] T000 records the exhausted review-loop evidence and deterministic blocker closure.
 - [ ] T000 records the approved ledger hash and reconciled live-status hashes.
 - [ ] T002 publishes the redacted ledger-only commit.
 - [ ] P1 hold is released.
@@ -2209,4 +2474,4 @@ T000 shall record:
 - [ ] Final independent implementation review returns `PASS`.
 - [ ] Product implementation merges atomically to `main`.
 
-**Current decision:** `USER-APPROVED; P0 ACTIVE; P1–P16 HELD FOR INDEPENDENT FOLLOW-UP PASS`
+**Current decision:** `USER-APPROVED; REVIEW LOOPS EXHAUSTED; P0 CORRECTION ACTIVE; P1–P16 HELD FOR T000 CLOSURE`
