@@ -1,7 +1,9 @@
 //! Encrypted persistent framed transport over an asynchronous byte stream.
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use wvb_crypto::{CryptoError, NOISE_MESSAGE_MAX, Transport};
+use wvb_crypto::{
+    CryptoError, Handshake, NOISE_MESSAGE_MAX, PairingPsk, StaticPrivateKey, Transport,
+};
 use wvb_protocol::{ENVELOPE_BYTES, Envelope, ProtocolError, Reassembler, fragment_logical_frame};
 
 #[derive(Debug)]
@@ -11,6 +13,171 @@ pub enum TransportError {
     Protocol(ProtocolError),
     Closed,
     PayloadLength,
+    Bootstrap,
+}
+
+const PREFACE_MAGIC: [u8; 4] = *b"WVBN";
+const PREFACE_MAJOR: u8 = 2;
+const PREFACE_MINOR: u8 = 0;
+const PREFACE_BYTES: usize = 12;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BootstrapMode {
+    Pair = 1,
+    Session = 2,
+}
+
+impl TryFrom<u8> for BootstrapMode {
+    type Error = TransportError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Pair),
+            2 => Ok(Self::Session),
+            _ => Err(TransportError::Bootstrap),
+        }
+    }
+}
+
+pub async fn pairing_initiator<S>(
+    mut io: S,
+    local_private: &StaticPrivateKey,
+    psk: &PairingPsk,
+) -> Result<([u8; 32], SecureConnection<S>), TransportError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    write_preface(&mut io, BootstrapMode::Pair).await?;
+    let mut handshake = Handshake::pairing_initiator(local_private, psk)?;
+    write_handshake(&mut io, &mut handshake).await?;
+    read_handshake(&mut io, &mut handshake).await?;
+    write_handshake(&mut io, &mut handshake).await?;
+    let remote = handshake.remote_static()?;
+    Ok((
+        remote,
+        SecureConnection::new(io, handshake.into_transport()?, 0),
+    ))
+}
+
+pub async fn pairing_responder<S>(
+    mut io: S,
+    local_private: &StaticPrivateKey,
+    psk: &PairingPsk,
+) -> Result<([u8; 32], SecureConnection<S>), TransportError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    expect_preface(&mut io, BootstrapMode::Pair).await?;
+    let mut handshake = Handshake::pairing_responder(local_private, psk)?;
+    read_handshake(&mut io, &mut handshake).await?;
+    write_handshake(&mut io, &mut handshake).await?;
+    read_handshake(&mut io, &mut handshake).await?;
+    let remote = handshake.remote_static()?;
+    Ok((
+        remote,
+        SecureConnection::new(io, handshake.into_transport()?, 0),
+    ))
+}
+
+pub async fn session_initiator<S>(
+    mut io: S,
+    local_private: &StaticPrivateKey,
+    remote_public: &[u8; 32],
+) -> Result<SecureConnection<S>, TransportError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    write_preface(&mut io, BootstrapMode::Session).await?;
+    let mut handshake = Handshake::session_initiator(local_private, remote_public)?;
+    write_handshake(&mut io, &mut handshake).await?;
+    read_handshake(&mut io, &mut handshake).await?;
+    if handshake.remote_static()? != *remote_public {
+        return Err(TransportError::Bootstrap);
+    }
+    Ok(SecureConnection::new(io, handshake.into_transport()?, 0))
+}
+
+pub async fn session_responder<S>(
+    mut io: S,
+    local_private: &StaticPrivateKey,
+) -> Result<([u8; 32], SecureConnection<S>), TransportError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    expect_preface(&mut io, BootstrapMode::Session).await?;
+    let mut handshake = Handshake::session_responder(local_private)?;
+    read_handshake(&mut io, &mut handshake).await?;
+    write_handshake(&mut io, &mut handshake).await?;
+    let remote = handshake.remote_static()?;
+    Ok((
+        remote,
+        SecureConnection::new(io, handshake.into_transport()?, 0),
+    ))
+}
+
+async fn write_preface<S>(io: &mut S, mode: BootstrapMode) -> Result<(), TransportError>
+where
+    S: AsyncWrite + Unpin,
+{
+    let mut preface = [0_u8; PREFACE_BYTES];
+    preface[..4].copy_from_slice(&PREFACE_MAGIC);
+    preface[4] = PREFACE_MAJOR;
+    preface[5] = PREFACE_MINOR;
+    preface[6] = mode as u8;
+    io.write_all(&preface).await?;
+    io.flush().await?;
+    Ok(())
+}
+
+async fn expect_preface<S>(io: &mut S, expected: BootstrapMode) -> Result<(), TransportError>
+where
+    S: AsyncRead + Unpin,
+{
+    let mut preface = [0_u8; PREFACE_BYTES];
+    io.read_exact(&mut preface).await?;
+    if preface[..4] != PREFACE_MAGIC
+        || preface[4] != PREFACE_MAJOR
+        || preface[5] != PREFACE_MINOR
+        || BootstrapMode::try_from(preface[6])? != expected
+        || preface[7..] != [0; 5]
+    {
+        return Err(TransportError::Bootstrap);
+    }
+    Ok(())
+}
+
+async fn write_handshake<S>(io: &mut S, handshake: &mut Handshake) -> Result<(), TransportError>
+where
+    S: AsyncWrite + Unpin,
+{
+    let mut message = [0_u8; 512];
+    let length = handshake.write(&[], &mut message)?;
+    let encoded = u16::try_from(length).map_err(|_| TransportError::Bootstrap)?;
+    io.write_all(&encoded.to_be_bytes()).await?;
+    io.write_all(&message[..length]).await?;
+    io.flush().await?;
+    Ok(())
+}
+
+async fn read_handshake<S>(io: &mut S, handshake: &mut Handshake) -> Result<(), TransportError>
+where
+    S: AsyncRead + Unpin,
+{
+    let mut length = [0_u8; 2];
+    io.read_exact(&mut length).await?;
+    let length = usize::from(u16::from_be_bytes(length));
+    if length == 0 || length > NOISE_MESSAGE_MAX {
+        return Err(TransportError::Bootstrap);
+    }
+    let mut message = vec![0_u8; length];
+    io.read_exact(&mut message).await?;
+    let mut payload = [0_u8; 512];
+    let payload_length = handshake.read(&message, &mut payload)?;
+    if payload_length != 0 {
+        return Err(TransportError::Bootstrap);
+    }
+    Ok(())
 }
 
 impl std::fmt::Display for TransportError {
@@ -199,5 +366,41 @@ mod tests {
         let original = sender.await.unwrap();
         assert_eq!(received_envelope, envelope);
         assert_eq!(received_payload, original);
+    }
+
+    #[tokio::test]
+    async fn tcp_bootstrap_runs_pairing_then_pinned_session_handshakes() {
+        let (client_key, client_public) = StaticPrivateKey::generate().unwrap();
+        let (broker_key, broker_public) = StaticPrivateKey::generate().unwrap();
+        let (client_io, broker_io) = duplex(4_096);
+        let client_psk = PairingPsk::from_bytes([7; 32]);
+        let broker_psk = PairingPsk::from_bytes([7; 32]);
+        let client_pair = pairing_initiator(client_io, &client_key, &client_psk);
+        let broker_pair = pairing_responder(broker_io, &broker_key, &broker_psk);
+        let ((observed_broker, _), (observed_client, _)) =
+            tokio::try_join!(client_pair, broker_pair).unwrap();
+        assert_eq!(observed_broker, broker_public);
+        assert_eq!(observed_client, client_public);
+
+        let (client_io, broker_io) = duplex(4_096);
+        let client_session = session_initiator(client_io, &client_key, &broker_public);
+        let broker_session = session_responder(broker_io, &broker_key);
+        let (_, (observed_client, _)) = tokio::try_join!(client_session, broker_session).unwrap();
+        assert_eq!(observed_client, client_public);
+    }
+
+    #[tokio::test]
+    async fn tcp_bootstrap_rejects_wrong_mode_without_oracle_detail() {
+        let (mut client_io, mut broker_io) = duplex(64);
+        let writer = tokio::spawn(async move {
+            write_preface(&mut client_io, BootstrapMode::Pair)
+                .await
+                .unwrap();
+        });
+        assert!(matches!(
+            expect_preface(&mut broker_io, BootstrapMode::Session).await,
+            Err(TransportError::Bootstrap)
+        ));
+        writer.await.unwrap();
     }
 }
