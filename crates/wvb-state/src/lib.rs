@@ -147,7 +147,6 @@ impl Store {
     fn migrate(&self) -> Result<(), StateError> {
         self.create_schema()?;
         let mut schema_version = self.metadata("schema_version")?;
-        let rebuild_audit_chain = schema_version < 4;
         if schema_version == 1 {
             self.migrate_v1_to_v2()?;
             schema_version = 2;
@@ -158,19 +157,17 @@ impl Store {
         }
         if schema_version == 3 {
             self.migrate_v3_to_v4()?;
+            self.rebuild_audit_chain_and_finalize_v4()?;
             schema_version = 4;
         }
         if schema_version != 4 {
             return Err(StateError::Corrupt("unsupported schema version"));
         }
         self.create_current_tables()?;
-        if rebuild_audit_chain {
-            self.rebuild_audit_chain()?;
-        }
         Ok(())
     }
 
-    fn rebuild_audit_chain(&self) -> Result<(), StateError> {
+    fn rebuild_audit_chain_and_finalize_v4(&self) -> Result<(), StateError> {
         let mut statement = self
             .connection
             .prepare("SELECT sequence,kind,payload FROM events ORDER BY sequence")?;
@@ -212,6 +209,7 @@ impl Store {
             )?;
             previous = hash;
         }
+        transaction.execute("UPDATE metadata SET value=4 WHERE key='schema_version'", [])?;
         transaction.commit()?;
         Ok(())
     }
@@ -220,7 +218,7 @@ impl Store {
         self.connection.execute_batch(
             "
             BEGIN IMMEDIATE;
-            CREATE TABLE operations(
+            CREATE TABLE IF NOT EXISTS operations(
                 operation_id BLOB PRIMARY KEY CHECK(length(operation_id)=16),
                 operation_type TEXT NOT NULL,
                 actor_id BLOB NOT NULL REFERENCES actors(actor_id)
@@ -243,7 +241,6 @@ impl Store {
                 created_event INTEGER NOT NULL REFERENCES events(sequence),
                 updated_event INTEGER NOT NULL REFERENCES events(sequence)
             ) STRICT;
-            UPDATE metadata SET value=4 WHERE key='schema_version';
             COMMIT;
             ",
         )?;
@@ -1641,5 +1638,31 @@ mod tests {
         assert!(store.active_bundle_admissions().unwrap().is_empty());
         assert!(store.operation([8; 16]).unwrap().is_none());
         store.verify_chain().unwrap();
+    }
+
+    #[test]
+    fn interrupted_v4_migration_retries_rehash_before_version_bump() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("interrupted-v4.db");
+        {
+            let mut store = Store::open(&path).unwrap();
+            store.append_event("legacy", b"payload").unwrap();
+            let legacy = legacy_event_hash(ZERO_HASH, 1, "legacy", b"payload");
+            store
+                .connection
+                .execute(
+                    "UPDATE events SET event_hash=?1 WHERE sequence=1",
+                    [legacy.as_slice()],
+                )
+                .unwrap();
+            store
+                .connection
+                .execute("UPDATE metadata SET value=3 WHERE key='schema_version'", [])
+                .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.metadata("schema_version").unwrap(), 4);
+        store.verify_chain().unwrap();
+        assert_ne!(store.latest_event().unwrap().unwrap().event_hash, ZERO_HASH);
     }
 }
