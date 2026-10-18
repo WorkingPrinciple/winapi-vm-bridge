@@ -1,0 +1,138 @@
+{
+  "schema": "architrave.run.v2",
+  "revision": 0,
+  "runId": "wvb-canonical-v2",
+  "createdAt": "2026-10-18T14:44:16Z",
+  "updatedAt": "2026-10-18T14:44:16Z",
+  "goal": "Implement the complete canonical WinAPI VM Bridge across native, COM/WinRT, managed, and EXE target families",
+  "status": "CREATED",
+  "autonomy": {
+    "scope": "approved-program"
+  },
+  "policy": {
+    "default": "deny",
+    "allow": [
+      {
+        "scope": "repository",
+        "operations": [
+          "edit",
+          "build",
+          "test"
+        ]
+      }
+    ],
+    "confirmationRequired": [
+      "destructive-migration,signing-secret,credential-material,architecture-invalidating-finding"
+    ]
+  },
+  "outcome": {
+    "description": "A deterministic generated proxy and Windows dispatcher system with one secure protocol, complete marshalling/lifecycle semantics, two-command setup, clean-machine qualification, and atomic final integration",
+    "requiredCriteria": [
+      {
+        "id": "AC1",
+        "description": "One canonical protocol and implementation only",
+        "verification": "semantic",
+        "required": true
+      },
+      {
+        "id": "AC2",
+        "description": "All six target families have honest support gates",
+        "verification": "semantic",
+        "required": true
+      },
+      {
+        "id": "AC3",
+        "description": "Generated unsigned artifacts are deterministic",
+        "verification": "deterministic",
+        "required": true
+      },
+      {
+        "id": "AC4",
+        "description": "Real Wine application consumes real Windows DLL results",
+        "verification": "e2e",
+        "required": true
+      },
+      {
+        "id": "AC5",
+        "description": "Security performance compatibility and clean-machine gates pass",
+        "verification": "semantic",
+        "required": true
+      }
+    ]
+  },
+  "acceptanceCriteria": [
+    {
+      "id": "AC1",
+      "description": "One canonical protocol and implementation only",
+      "scope": "program",
+      "risk": "R4",
+      "verificationType": "semantic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC2",
+      "description": "All six target families have honest support gates",
+      "scope": "program",
+      "risk": "R4",
+      "verificationType": "semantic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC3",
+      "description": "Generated unsigned artifacts are deterministic",
+      "scope": "build",
+      "risk": "R3",
+      "verificationType": "deterministic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC4",
+      "description": "Real Wine application consumes real Windows DLL results",
+      "scope": "runtime",
+      "risk": "R4",
+      "verificationType": "e2e",
+      "surface": "runtime",
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC5",
+      "description": "Security performance compatibility and clean-machine gates pass",
+      "scope": "release",
+      "risk": "R4",
+      "verificationType": "semantic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    }
+  ],
+  "baseline": {
+    "repository": "/Users/dragoshont/.copilot/chats/2026-10-17/jubilant-goggles-c36465cb/vm-bridge-seed",
+    "commit": "f583f70fdc283de78abcc16e019d0b84ffd481fe",
+    "branch": "canonical-runtime",
+    "deployment": null
+  },
+  "tasks": [],
+  "checkpoints": [],
+  "externalCheckpoints": [],
+  "artifacts": [],
+  "workers": [],
+  "gateResults": [],
+  "eventLog": ".architrave/runs/wvb-canonical-v2/events.jsonl",
+  "eventCursor": {
+    "sequence": 1,
+    "lastHash": "2dcc5dc934ed435c43908867edb122e58de4aa0e4e47c599a2fe23759ac13e3f"
+  },
+  "pendingEvent": null
+}

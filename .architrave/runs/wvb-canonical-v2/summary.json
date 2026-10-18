@@ -1,0 +1,17 @@
+{
+  "schema": "architrave.run.v2",
+  "runId": "wvb-canonical-v2",
+  "status": "CREATED",
+  "updatedAt": "2026-10-18T14:44:31Z",
+  "canonicalState": ".architrave/runs/wvb-canonical-v2/run.json",
+  "eventLog": ".architrave/runs/wvb-canonical-v2/events.jsonl",
+  "outcome": "A deterministic generated proxy and Windows dispatcher system with one secure protocol, complete marshalling/lifecycle semantics, two-command setup, clean-machine qualification, and atomic final integration",
+  "acceptance": {
+    "required": 5,
+    "passed": 0,
+    "failed": 0,
+    "blockedExternal": 0
+  },
+  "readyTasks": [],
+  "pendingExternalCheckpoints": []
+}

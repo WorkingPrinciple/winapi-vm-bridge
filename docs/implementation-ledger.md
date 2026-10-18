@@ -1,187 +1,252 @@
-# WinAPI VM Bridge — Canonical Implementation Ledger
+# WinAPI VM Bridge — Canonical Implementation Ledger, Revision 3
 
 > **Repository:** `dragoshont/winapi-vm-bridge`  
-> **Observed checkout:** `canonical-runtime` at `e6ce707b6fd6152f50d5ff0256f5e94d757dcace`  
-> **Public `main` observed at:** `21d1d484b964965afe44397c6e99d170237cd17e`  
-> **Ledger date:** 2026-10-18  
-> **Disposition:** advisory/read-only; no repository changes, builds, agents, posts, deployments, or runtime mutations were performed.  
-> **Normative sources:** live canonical-status canvas; current repository; external transport report; Architrave rubric and backend/operations packs. The repository has no `architrave.config.json`; therefore no repository-specific Architrave backend/IaC commands or contracts could be loaded.  
-> **Notation:** **[D]** is a binding decision. **[AC]** requires confirmation by the independent adversarial review before implementation begins. **[STOP]** is a hard implementation stop, not permission to improvise.
+> **Public product branch:** `main`, observed at `21d1d484b964965afe44397c6e99d170237cd17e` before ledger publication  
+> **Integration branch:** `canonical-runtime`  
+> **Canonical Run ID:** `wvb-canonical-v2`  
+> **Public ledger destination:** `docs/implementation-ledger.md` on public `main`, in a ledger-only commit after the independent follow-up review returns `PASS`  
+> **Implementation destination:** integration branch only until the complete release path passes  
+> **Revision date:** 2026-10-18  
+> **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation, subject to an independent follow-up `PASS` before P1 starts  
+> **Current state:** P0 is approved and active; P1–P16 are held by `independent-follow-up-pass-required`  
+> **Authorship mode:** advisory/read-only; no repository edit, build, deployment, post, runtime mutation, or delegated agent was performed while authoring this ledger  
+> **Notation:** **[D]** binding decision; **[GATE]** deterministic acceptance; **[STOP]** no inference or implementation beyond this point; **[CONDITIONAL]** implemented only after its specified evidence trigger
 
 ---
 
-## 0. Plan tournament
+## 0. Source reconciliation and governing records
+
+### 0.1 Normative inputs
+
+This ledger reconciles:
+
+1. the current public repository and local `canonical-runtime` state;
+2. the live canonical-status document;
+3. the independent review-loop findings;
+4. the external transport research;
+5. Whiny evidence patterns at the reviewed commit;
+6. the Architrave rubric, backend guidance and operations guidance;
+7. the user’s binding requirements in this conversation.
+
+### 0.2 Canonical hash and commit rules
+
+This response is a candidate ledger document and has no repository commit or final file hash yet. No fabricated hash is assigned.
+
+Task T000 shall:
+
+1. write this exact approved text to the Run’s candidate ledger artifact;
+2. compute `SHA-256` over the UTF-8 bytes with LF line endings;
+3. record that candidate hash in `architrave.run.v2.json`;
+4. record the independent follow-up verdict and its source hash;
+5. reconcile the live canonical-status document by recording:
+   - its pre-reconciliation SHA-256;
+   - the branch and commits it described;
+   - any stale phase/status claims;
+   - the final reconciled SHA-256 after the status artifact is corrected outside this ledger;
+6. after independent `PASS`, publish the redacted public ledger alone to `main`;
+7. record the resulting public ledger commit and blob hash;
+8. update the Run to distinguish:
+   - candidate ledger hash;
+   - independently approved ledger hash;
+   - public ledger blob hash;
+   - integration implementation commits.
+
+No implementation source may accompany the ledger-only public commit.
+
+### 0.3 Public redaction boundary
+
+The public ledger may contain:
+
+- architecture and protocol specifications;
+- public source URLs;
+- public repository commit IDs;
+- logical filenames and source-tree paths;
+- limits, tests and support policy.
+
+It must not contain:
+
+- local filesystem paths;
+- credentials, pairing material or private-key references;
+- confidential target names, headers, PDB contents or contracts;
+- held-out corpus contents;
+- private trace details;
+- unpublished security findings that would increase exploitability;
+- personal information.
+
+Confidential Run artifacts remain off public `main`.
+
+---
+
+# 1. Plan tournament
 
 Scores are `1` best and `5` worst.
 
-| Candidate | Description | Contract drift | Blast radius | Migration / rollback | Test burden | Operator approval | Verdict |
+| Candidate | Description | Contract drift | Blast radius | Migration / rollback | Test burden | Approval burden | Result |
 |---|---|---:|---:|---:|---:|---:|---|
-| A. Minimal scalar slice | Replace JSON with protocol v2, generate scalar native C DLL and dispatcher, prove one real call; defer handles, callbacks, COM, managed and EXE support | 4 | 2 | 3 | 2 | 2 | Rejected: useful as an internal checkpoint but violates “100% canonical implementation” if merged or presented as completion |
-| B. Fuller canonical sequence | Freeze protocol/security/adapter contracts, implement shared runtime, then all six target families and complete marshalling/lifecycle/setup/release gates on one integration branch | 1 | 4 | 3 | 5 | 4 | **Selected**: only option matching the requested final support matrix without temporary public protocols |
-| C. ADR/research-first deferral | Write ADRs and benchmarks, defer implementation until later approvals | 2 | 1 | 1 | 2 | 5 | Rejected: transport evidence is sufficient to select framed TCP; the user explicitly requested a complete executable ledger followed by implementation |
-| D. gRPC/Protobuf primary | Replace transport with gRPC and generated protobuf services | 3 | 4 | 4 | 4 | 4 | Rejected: no topology-specific evidence, extra HTTP/2/channel/allocation complexity, and no demonstrated advantage for tiny ABI calls |
-| E. FlatBuffers primary | Use FlatBuffers for every message from the outset | 2 | 3 | 3 | 4 | 3 | Rejected as primary: available benchmark is stale and not cross-VM; verifier/runtime/dependency costs are unjustified before project-local measurement |
-| F. Preserve JSON/v1 alongside v2 | Add v2 and maintain compatibility negotiation with current JSON/v1 | 5 | 5 | 4 | 5 | 2 | Rejected: creates the prohibited parallel temporary protocol and doubles security/testing surface |
+| A. Scalar-only release | Protocol v2 plus native C scalar DLL only | 5 | 2 | 3 | 2 | 2 | Rejected as a release; retained only as an internal checkpoint |
+| B. Full contract-first sequence | Freeze protocol, identity, dependency placement and receipts; preserve early topology parity; implement all six families; merge atomically | 1 | 4 | 3 | 5 | 4 | **Selected** |
+| C. Research-only deferral | Publish ADRs and defer implementation | 3 | 1 | 1 | 2 | 5 | Rejected; the user approved complete implementation |
+| D. Parallel JSON/v1 and v2 | Maintain compatibility listeners | 5 | 5 | 4 | 5 | 2 | Rejected; prohibited temporary protocol |
+| E. gRPC primary | HTTP/2/gRPC/Protobuf data plane | 3 | 4 | 4 | 4 | 4 | Rejected; no topology-specific advantage |
+| F. FlatBuffers primary | FlatBuffers payloads from v2 launch | 2 | 3 | 3 | 4 | 3 | Rejected for v2; no applicable measured need |
+| G. Deterministic CBOR | RFC 8949 deterministic CBOR | 2 | 2 | 2 | 3 | 2 | Rejected for ABI traffic; larger generic parser/model than the closed contract requires |
+| H. Generated packed codec | Fixed envelope plus generated bounded tagged fields | 1 | 3 | 2 | 4 | 3 | **Selected and immutable for protocol v2** |
 
-### Recommended sequence
+## Recommended sequence
 
-**[D] Select Candidate B: contract-first canonical replacement on `canonical-runtime`, retained off `main` until the complete vertical path passes.**
+**[D] Select B with H.**
 
-It wins because it:
-
-1. Defines one protocol and one adapter model before generators or UI/CLI claims bind to them.
-2. Uses internal vertical checkpoints without treating them as releasable support.
-3. replaces JSON/v1 atomically at final integration instead of maintaining two data planes;
-4. lands operation state, diagnostics, audit receipts, preflight and rollback before setup/status claims;
-5. covers all requested target families and marshalling classes;
-6. preserves hard manual gates where ABI semantics cannot be proved;
-7. permits autonomous implementation after one program-level sign-off and independent adversarial PASS, while retaining mandatory stop gates for identity, secrets, signing, destructive migration, and unproved ABI behavior.
+Protocol v2 uses the generated packed codec for its entire lifetime. T131 benchmarks performance but cannot replace or negotiate another v2 codec. Any future codec change requires a protocol-major v3 plan, compatibility design, benchmark evidence and independent approval.
 
 ---
 
-# 1. Outcome, non-goals and terms
+# 2. Outcome, non-goals and terminology
 
-## 1.1 Outcome
+## 2.1 Outcome
 
 The final release shall provide:
 
-- A macOS/Wine client runtime and a Windows broker connected by one persistent, custom-framed, encrypted TCP protocol v2 with `TCP_NODELAY`.
-- Deterministically generated unsigned proxy artifacts and matching Windows dispatchers from a normalized, hashed adapter contract.
-- Supported generation/runtime backends for:
+- one encrypted, persistent, multiplexed framed-TCP protocol for Mac/Wine to Windows VM communication;
+- deterministic unsigned DLL, EXE and managed proxy generation;
+- separate Authenticode/notarization receipts;
+- support for:
   1. native C DLL;
-  2. native C++ DLL;
-  3. COM/WinRT;
-  4. .NET assembly;
-  5. native EXE;
-  6. .NET EXE.
-- Contract-preserving handling for scalar values, records, strings, buffers, handles, callbacks, async operations, errors, COM identity, and explicitly modeled file/bulk transfer.
-- Authorized static inspection and optional authorized dynamic tracing on Windows and macOS/Wine.
-- Explicit confidence and evidence. Observation never silently becomes contract truth.
-- A contract-specific AI implementation packet whenever generation cannot prove semantics.
-- Append-only receipts, durable long-running-operation state, specific diagnostics, benchmark evidence, immutable held-out assessments, clean-machine packaging tests, and deterministic unsigned build hashes.
-- No scaffold, TODO, fake result, mock-only behavior, or generated-but-unimplemented path counted as support.
+  2. the exact native C++ subset in §10;
+  3. COM;
+  4. WinRT;
+  5. .NET assembly;
+  6. native EXE;
+  7. .NET EXE;
+- exact dependency graphs and same-relative-folder placement;
+- static inspection and authorized dynamic inference;
+- prompt-injection-safe contract-specific AI packets for unproved semantics;
+- complete marshalling for supported types and lifecycle semantics;
+- secure one-time pairing, persistent actor identity, grants and revocation;
+- durable operation state, diagnostics and tamper-evident receipts;
+- real-topology performance evidence;
+- package installation, two-command setup wrapper, update rollback and uninstall;
+- no product implementation merge to `main` until the full vertical release path passes.
 
-## 1.2 Non-goals
+## 2.2 Non-goals
 
-The final product shall not claim or implement:
+The release shall not claim:
 
-- arbitrary caller-selected DLL paths, exports, commands, CLSIDs, assemblies, methods, or environment variables;
-- raw process pointer or OS-handle transfer;
-- kernel drivers, anti-cheat bypass, DRM/licensing bypass, injected GUI remoting, arbitrary desktop interaction, or per-frame graphics remoting;
-- transparent remoting of undocumented C++ ABIs, custom COM marshaling, mixed-mode C++/CLI, process-local IPC, window-message contracts, or shared memory without an explicit reviewed adapter;
-- OpenCode or another subprocess/polling protocol as the transport;
-- gRPC as the primary data plane;
-- QEMU macOS vhost-vsock, ivshmem, ALPC, named pipes, or Unix-domain sockets as a cross-VM transport;
-- externally published benchmark numbers as acceptance thresholds;
-- deterministic signed bytes. Only unsigned payloads are reproducible; signing is separate and receipted.
+- arbitrary caller-selected DLLs, exports, assemblies, methods, CLSIDs or commands;
+- universal C++ ABI support;
+- exported C++ constructors, destructors, copy/move functions or instance methods in the initial C++ subset;
+- raw pointer or OS-handle transfer;
+- automatic custom `IMarshal`;
+- automatic interactive GUI remoting;
+- arbitrary process-local IPC or shared-memory remoting;
+- kernel-driver, anti-cheat, DRM or licensing bypass;
+- mixed-mode C++/CLI;
+- gRPC, named pipes, ALPC, UDS, vsock or ivshmem as the canonical cross-VM transport;
+- v1 compatibility after v2 release;
+- deterministic signed bytes;
+- a scaffold, AI packet, TODO, mock or fixture-only result as support.
 
-## 1.3 Terms
+## 2.3 Terminology
 
-- **Adapter contract:** normalized, immutable description of target identity, ABI/API, semantics, limits, permissions and tests.
-- **Proxy:** Mac/Wine-side DLL, assembly or executable exposing the caller-facing contract.
-- **Dispatcher:** generated Windows-side operation table and marshalling code.
-- **Broker:** Windows service hosting dispatchers and invoking allowlisted targets.
-- **Operation:** durable, inspectable unit for long-running work such as generation, tracing, EXE execution, async calls, update or uninstall.
-- **Call:** potentially short-lived RPC invocation. Every call receives an audit receipt; only long-running/recoverable calls become durable operations.
-- **Receipt:** immutable JSON/CBOR record containing hashes, state transitions and redacted evidence.
-- **Broker epoch:** random 128-bit value regenerated at broker start; scopes handles and non-resumable callbacks.
-- **Contract hash:** SHA-256 of canonical UTF-8 JSON with sorted keys, NFC strings, no insignificant whitespace and integers represented in decimal.
-- **Support:** all family-specific acceptance tests, fresh-process differential tests, clean-machine E2E, and held-out assessment pass with no unresolved semantics.
-- **AI completion packet:** frozen contract-specific task containing exact unknowns, files, symbols, tests and stop conditions. It is not support by itself.
+- **Physical record:** one `u16`-length-prefixed Noise ciphertext.
+- **Physical fragment:** authenticated plaintext inside one physical record.
+- **Logical frame:** one reconstructed 80-byte envelope plus payload.
+- **Logical chunk:** up to 1 MiB of call/result/transfer data in one logical frame.
+- **Stream:** ordered frames for one call, callback, operation query or transfer.
+- **Pair transport:** authenticated XXpsk3 transport used only for pairing bootstrap.
+- **Application session:** future IK transport that completed application `HELLO/HELLO_ACK`.
+- **Actor:** registered client static key and broker-stored roles/grants.
+- **Proxy:** caller-side generated DLL, assembly or EXE.
+- **Dispatcher:** generated Windows-side typed invocation module.
+- **Receipt:** RFC 8785-canonicalized, hash-chained event or build statement.
+- **Support:** all applicable tests pass with no unresolved semantics.
+- **AI packet:** escaped, non-executable specification for unresolved work; never support.
 
 ---
 
-# 2. Current-state inventory and disposition
+# 3. Current-state inventory and disposition
 
-## 2.1 Branch state
-
-- `main` ends at `21d1d48…`.
-- `canonical-runtime` adds:
-  - `83973ec…`: static ABI inspection;
-  - `e6ce707…`: contract-specific AI completion tasks.
-- **[D]** Continue only on an integration branch derived from `canonical-runtime`. Public `main` remains unchanged until final integration.
-- Git internals are not product files and are excluded from source-tree migration.
-
-## 2.2 Existing files
-
-| Existing path | Current role/status | Final disposition |
+| Existing path | Current status | Final disposition |
 |---|---|---|
-| `.github/workflows/ci.yml` | macOS portable tests plus Windows Python `kernel32` round trip | **Replace** with pinned lint/unit/fuzz/build/reproducibility/Windows/macOS/Wine/package/clean-machine/held-out matrix |
-| `.gitignore` | ignores caches/build/log/token/secret/local config | **Keep and extend** for Rust/CMake/.NET/build receipts/traces/corpora/private pairing state |
-| `CONTRIBUTING.md` | basic adapter contribution rules | **Migrate** to contract-first evidence, family support gates and no-support-with-unresolved-fields policy |
-| `LICENSE` | Apache-2.0 | **Keep** |
-| `NOTICE` | trademark and third-party disclaimer | **Keep; update provenance references** |
-| `README.md` | describes Python proof as working core and generation as next step | **Replace at release** with canonical v2 truth; remove premature “included/working” claims until gates pass |
-| `SECURITY.md` | short allowlist and secret guidance | **Replace** with full threat/reporting/rotation/supported-version policy |
-| `config.example.yml` | v1 host/port/capability-file YAML | **Delete after migration**; replace with versioned TOML containing references, never secrets |
-| `setup-mac.sh` | git clone/reset, plaintext capability prompt/file, symlink | **Replace** with signed package installer/bootstrap; no direct `curl | sh` as canonical setup |
-| `setup-windows.ps1` | Git/Python requirement, scheduled task, plaintext capability display | **Replace** with signed MSI/service installer and explicit pairing window |
-| `adapters/example-math.yaml` | duplicate YAML v1 example | **Delete**; JSON is the sole canonical contract form |
-| `bin/winapi-vm-bridge` | shell CLI routing to Python scripts | **Replace** with native `wvb` CLI |
-| `docs/adapter-guide.md` | high-level adapter workflow | **Migrate** |
-| `docs/adapter-inference.md` | static/trace concept; trace marked future | **Replace** with exact evidence/confidence/redaction contract |
-| `docs/architecture.md` | proof architecture and historical game evidence | **Migrate**; separate historical evidence from canonical architecture |
-| `docs/community.md` | promotional copy | **Delete from canonical implementation branch** or move to non-normative website; it is not product architecture |
-| `docs/evidence.md` | historical experiment evidence | **Keep as historical, immutable appendix**; label non-release evidence |
-| `docs/generic-adapters.md` | intended type model | **Replace** with generated schema reference and support matrix |
-| `docs/assets/bridge-overview.svg` | conceptual diagram | **Replace/update** to show encrypted persistent TCP, broker service and generated runtime |
-| `examples/example-math/adapter.json` | schema-v1 scalar example with placeholder hash | **Migrate** to v2 fixture with a deterministic built test DLL hash |
-| `examples/inspection/vendor.h` | scalar/pointer/callback inspection fixture | **Keep and expand** into family fixtures |
-| `mac/doctor.sh` | prints unconditional `pairedCore=true` and `doctor=ok` | **Delete/replace**; current output is not evidence-backed |
-| `sdk/README.md` | skeleton generator documentation | **Replace** |
-| `sdk/__init__.py` | empty Python package marker | **Delete** after Python generator migration |
-| `sdk/abi_inspect.py` | useful Clang AST/header/DLL hashing proof; limited C parsing | **Migrate behavior** into canonical inspector; retain fixture parity tests, then delete Python implementation |
-| `sdk/adapter.schema.json` | schema v1, DLL-only, limited types | **Replace atomically** with schema v2 |
-| `sdk/generate.py` | emits review skeleton/TODO comments, not compilable support | **Delete after generator parity**; no skeleton generator remains |
-| `sdk/templates/adapter.json` | v1 DLL template | **Replace** with family-specific v2 examples |
-| `sdk/templates/AI_ADAPTER_PROMPT.md` | generic prompt | **Replace** with generated contract-specific packet schema/template |
-| `tests/test-portable.sh` | shell checks and broad regex secret scan | **Replace** with canonical test orchestration |
-| `tests/test_sdk.py` | proof tests for v1 generator/transport/inspection | **Migrate behavior**, then delete Python tests |
-| `tests/windows-roundtrip.ps1` | Python `kernel32` loopback round trip | **Replace** with real packaged broker/proxy E2E |
-| `winapi_vm_bridge/__init__.py` | Python proof package | **Delete after v2 E2E parity** |
-| `winapi_vm_bridge/cli.py` | v1 CLI | **Delete** |
-| `winapi_vm_bridge/client.py` | one connection per JSON call, plaintext capability auth | **Delete** |
-| `winapi_vm_bridge/protocol.py` | custom 8-byte header, JSON, 65,535-byte limit | **Replace entirely**; must not coexist in final tree |
-| `winapi_vm_bridge/server.py` | single-threaded Python broker with hard-coded operations | **Delete** |
-| `windows/doctor.ps1` | unconditional doctor output | **Delete/replace** |
-| `sdk/__pycache__/**`, `tests/__pycache__/**`, `winapi_vm_bridge/__pycache__/**` | generated local bytecode, including stale `inspect.cpython-314.pyc` | **Delete from working tree; never track/package** |
+| `.github/workflows/ci.yml` | old portable and Windows proof jobs | Replace with pinned deterministic matrix |
+| `.gitignore` | ignores caches, generic tokens/secrets and local config, but not `runtime.key` | Keep and extend before any key generation |
+| `CONTRIBUTING.md` | basic adapter guidance | Replace |
+| `LICENSE` | Apache-2.0 | Keep |
+| `NOTICE` | trademark/distribution notice | Keep and update provenance references |
+| `README.md` | proof implementation claims | Replace only at final release |
+| `SECURITY.md` | short allowlist guidance | Replace |
+| `config.example.yml` | v1 host/port/capability file | Delete after migration |
+| `setup-mac.sh` | Git/Python/plaintext capability setup | Replace with signed package wrapper |
+| `setup-windows.ps1` | Git/Python/scheduled task/plain capability | Replace with signed package wrapper |
+| `adapters/example-math.yaml` | duplicate v1 YAML | Delete |
+| `bin/winapi-vm-bridge` | shell/Python CLI | Replace with native `wvb` |
+| `docs/*.md` | conceptual proof documentation | Migrate or replace as assigned |
+| `docs/community.md` | promotional text | Remove from normative tree |
+| `docs/evidence.md` | historical evidence | Preserve under `docs/historical/` |
+| `docs/assets/bridge-overview.svg` | old architecture diagram | Replace |
+| `examples/example-math/adapter.json` | v1 placeholder-hash fixture | Replace |
+| `examples/inspection/vendor.h` | useful inspection fixture | Keep and expand |
+| `mac/doctor.sh` | unconditional success output | Delete/replace |
+| `sdk/abi_inspect.py` | useful Clang proof | Port with parity, then delete |
+| `sdk/adapter.schema.json` | incomplete schema v1 | Replace atomically |
+| `sdk/generate.py` | non-compilable skeleton generator | Delete after canonical parity |
+| `sdk/templates/*` | generic v1 templates | Replace |
+| `tests/test-portable.sh` | old proof gate | Replace |
+| `tests/test_sdk.py` | old proof tests | Port, then delete |
+| `tests/windows-roundtrip.ps1` | real old topology proof | Retain until T005/T026 parity |
+| `winapi_vm_bridge/*` | Python JSON/v1 proof | Delete after v2 parity |
+| `windows/doctor.ps1` | unconditional success output | Delete/replace |
+| `**/__pycache__/**`, `*.pyc` | generated cache | Delete; never package |
+
+Before generating any runtime identity:
+
+```gitignore
+runtime.key
+*.runtime.key
+.architrave/private/
+```
+
+shall be added. Production keys remain in external OS-backed stores and are never stored as repository files. If prior exposure cannot be conclusively ruled out, all affected development keys are treated as compromised and rotated before use.
 
 ---
 
-# 3. Final architecture and complete source tree
+# 4. Final architecture and source tree
 
-## 3.1 Binding architecture
-
-**[D]**
+## 4.1 Architecture
 
 ```text
 Application under Wine
-  → generated proxy DLL / managed assembly / proxy EXE
-  → libwvb_client (persistent multiplexed connection)
-  → Noise-encrypted framed TCP v2, TCP_NODELAY
-  → Windows service wvb-broker
-  → generated dispatcher loaded by contract hash
-  → pinned DLL / COM class / managed assembly / EXE
-  → result, callback, operation state and receipt over same session
+  → generated same-relative-path proxy
+  → guarded local ABI marshalling
+  → libwvb_client
+  → persistent TCP with TCP_NODELAY
+  → Noise physical records/fragments
+  → protocol-v2 packed logical frames
+  → Windows service broker
+  → actor ACL + bounded operation queue
+  → exact-hash generated dispatcher
+  → exact-hash target dependency subtree
+  → result/callback/operation/receipt
 ```
 
-- Core runtime language: **Rust stable**, pinned in `rust-toolchain.toml`.
-- Native generated ABI surfaces: C11 or target-pinned C++ with MSVC/Clang compatibility as declared by the contract.
-- Managed generated surfaces: C# with pinned .NET SDK; NativeAOT is optional per target, not assumed.
-- Build orchestration: CMake presets for generated native targets, Cargo workspace for runtime/tooling, `dotnet` for managed targets.
-- Durable broker state: SQLite in WAL mode with bounded busy timeout and `BEGIN IMMEDIATE` for state transitions.
-- Shared schema/code generation: Rust generator emits Rust/C/C++/C# codecs from the one contract IR.
-- No public HTTP/admin dashboard is required. CLI status commands expose setup, inventory, operations, diagnostics and audit truth.
-
-## 3.2 Final tree
+## 4.2 Canonical source tree
 
 ```text
 /
-├── .github/workflows/
-│   ├── ci.yml
-│   ├── fuzz.yml
-│   ├── reproducible.yml
-│   └── release.yml
+├── .architrave/runs/wvb-canonical-v2/
+│   ├── architrave.run.v2.json
+│   ├── intake.md
+│   ├── acceptance-matrix.json
+│   ├── tournament.md
+│   ├── candidate-ledger.md
+│   ├── ledger-reconciliation.json
+│   ├── owner-approval.json
+│   ├── reviews/
+│   ├── events.jsonl
+│   ├── holds.json
+│   ├── gates/
+│   ├── receipts/
+│   └── summary.md
+├── .github/workflows/{ci.yml,fuzz.yml,reproducible.yml,release.yml}
 ├── Cargo.toml
 ├── Cargo.lock
 ├── rust-toolchain.toml
@@ -190,40 +255,33 @@ Application under Wine
 ├── CMakePresets.json
 ├── Directory.Build.props
 ├── global.json
+├── tools/{gate.py,run_gate.py,verify_receipts.py,verify_reproducible.py}
 ├── schemas/
 │   ├── adapter-v2.schema.json
 │   ├── protocol-v2.schema.json
+│   ├── dependency-v1.schema.json
 │   ├── evidence-v1.schema.json
+│   ├── ai-packet-v1.schema.json
 │   ├── operation-v1.schema.json
-│   └── receipt-v1.schema.json
+│   ├── receipt-v1.schema.json
+│   └── architrave-run-v2.schema.json
 ├── crates/
 │   ├── wvb-protocol/
-│   │   └── src/{lib.rs,envelope.rs,codec.rs,messages.rs,limits.rs,error.rs,state.rs}
 │   ├── wvb-crypto/
-│   │   └── src/{lib.rs,noise.rs,identity.rs,pairing.rs,storage.rs}
+│   ├── wvb-authz/
 │   ├── wvb-client/
-│   │   └── src/{lib.rs,connection.rs,multiplex.rs,callbacks.rs,handles.rs,operations.rs}
 │   ├── wvb-broker/
-│   │   └── src/{main.rs,service.rs,listener.rs,session.rs,dispatch.rs,policy.rs,limits.rs}
 │   ├── wvb-state/
-│   │   ├── src/{lib.rs,db.rs,event.rs,operation.rs,receipt.rs,audit.rs}
-│   │   └── migrations/{0001_expand.sql,0002_import_v1.sql}
-│   ├── wvb-inspect/
-│   │   └── src/{main.rs,pe.rs,clang.rs,pdb.rs,clr.rs,typelib.rs,evidence.rs,confidence.rs}
-│   ├── wvb-trace/
-│   │   └── src/{main.rs,authorize.rs,detours.rs,frida.rs,shape.rs,redact.rs,merge.rs}
 │   ├── wvb-ir/
-│   │   └── src/{lib.rs,adapter.rs,types.rs,semantics.rs,normalize.rs,validate.rs}
+│   ├── wvb-inspect/
+│   ├── wvb-trace/
 │   ├── wvb-generate/
-│   │   └── src/{main.rs,receipt.rs,ai_packet.rs,native_c.rs,native_cpp.rs,com.rs,dotnet.rs,exe.rs}
 │   ├── wvb-cli/
-│   │   └── src/{main.rs,setup.rs,doctor.rs,pair.rs,inspect.rs,generate.rs,operation.rs,audit.rs,benchmark.rs}
 │   └── wvb-bench/
-│       └── src/{main.rs,matrix.rs,metrics.rs,report.rs}
 ├── native/
 │   ├── include/wvb_client.h
-│   ├── client-ffi/src/lib.rs
-│   ├── broker-host/include/wvb_dispatcher.h
+│   ├── client-ffi/
+│   ├── broker-host/
 │   ├── trace-detours/
 │   └── fixtures/{c-dll,cpp-dll,com-server,native-exe}
 ├── managed/
@@ -231,45 +289,25 @@ Application under Wine
 │   ├── Wvb.DispatchHost/
 │   ├── Wvb.Generator/
 │   └── fixtures/{ManagedLibrary,ManagedExe,WinRtComponent}
-├── generator/templates/
-│   ├── native-c/
-│   ├── native-cpp/
-│   ├── com/
-│   ├── dotnet-library/
-│   ├── native-exe/
-│   ├── dotnet-exe/
-│   └── AI_IMPLEMENTATION_PACKET.md
+├── generator/templates/{native-c,native-cpp,com,winrt,dotnet-library,native-exe,dotnet-exe,ai-packet}
 ├── protocol/
 │   ├── v2.md
-│   ├── message-ids.csv
+│   ├── registries/{messages.csv,flags.csv,features.csv,enums.csv,errors.csv}
 │   ├── golden/
 │   └── fuzz-corpus/
-├── adapters/
-│   └── fixtures/*.adapter.json
-├── packaging/
-│   ├── macos/{pkg,launchd,entitlements}
-│   ├── windows/{msi,service,firewall}
-│   └── manifests/
-├── benchmarks/
-│   ├── topology.toml
-│   └── baselines/.gitkeep
-├── tests/
-│   ├── unit/
-│   ├── property/
-│   ├── contract/
-│   ├── differential/
-│   ├── compatibility/
-│   ├── chaos/
-│   ├── e2e/
-│   ├── clean-machine/
-│   ├── held-out/
-│   └── scripts/
+├── adapters/fixtures/
+├── packaging/{macos,windows,manifests}
+├── benchmarks/{topology.toml,baselines}
+├── tests/{unit,property,contract,differential,compatibility,chaos,e2e,clean-machine,held-out,fuzz,scripts}
 ├── docs/
+│   ├── implementation-ledger.md
 │   ├── architecture.md
 │   ├── protocol-v2.md
 │   ├── adapter-contract.md
+│   ├── dependency-layout.md
 │   ├── inspection-and-tracing.md
 │   ├── security.md
+│   ├── privacy.md
 │   ├── operations.md
 │   ├── setup-macos.md
 │   ├── setup-windows.md
@@ -277,16 +315,10 @@ Application under Wine
 │   ├── support-matrix.md
 │   ├── reproducible-builds.md
 │   ├── performance.md
+│   ├── research-sources.md
 │   ├── release.md
-│   ├── examples/
 │   └── historical/evidence.md
-├── examples/
-│   ├── native-c/
-│   ├── native-cpp/
-│   ├── com/
-│   ├── dotnet-library/
-│   ├── native-exe/
-│   └── dotnet-exe/
+├── examples/{native-c,native-cpp,com,winrt,dotnet-library,native-exe,dotnet-exe}
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -294,214 +326,975 @@ Application under Wine
 └── NOTICE
 ```
 
+No UI or IaC product is introduced.
+
 ---
 
-# 4. Canonical protocol v2
+# 5. Protocol layering and pairing bootstrap
 
-## 4.1 Transport and codec decision
+## 5.1 TCP bootstrap preface
 
-- **[D] Transport:** persistent bidirectional TCP over the VM virtual NIC/explicit loopback forwarding, with `TCP_NODELAY`, keepalive, bounded reconnect backoff and one multiplexed connection per broker identity.
-- **[D] Encryption/authentication:** Noise `Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s`.
-- **[D] Primary codec:** generated deterministic packed tagged fields, not JSON, Protobuf, gRPC or FlatBuffers.
-- Packed encoding is selected because the contract is closed and generated, tiny calls matter, deterministic byte representations are required, and applicable evidence does not establish a FlatBuffers advantage across this topology.
-- FlatBuffers may replace the packed payload codec only through a future protocol-major decision after the benchmark gate in §14. It is not an optional parallel codec in v2.
+Every TCP connection begins with an unencrypted, non-secret 12-byte preface:
 
-## 4.2 Wire envelope
+| Offset | Field | Type | Values |
+|---:|---|---|---|
+| 0 | magic | `[u8;4]` | `WVBN` |
+| 4 | major | `u8` | `2` |
+| 5 | minor | `u8` | `0` |
+| 6 | mode | `u8` | `1=PAIR`, `2=SESSION` |
+| 7 | flags | `u8` | zero |
+| 8 | reserved | `u32 BE` | zero |
 
-Every decrypted Noise transport record contains one 80-byte little-endian header followed by `payloadLength` bytes.
+The preface selects a Noise pattern only. It contains no actor ID, key, code, platform or capability.
+
+- `PAIR` is accepted only while a local administrator-opened pairing window is active.
+- `SESSION` uses the future-session IK path.
+- Invalid prefaces close without a detailed oracle.
+
+Noise handshake messages use:
+
+```text
+handshakeCiphertextLength:u16 BE
+handshakeCiphertext[handshakeCiphertextLength]
+```
+
+No application envelope is accepted until the Noise handshake succeeds.
+
+## 5.2 Initial XXpsk3 pairing
+
+Pattern:
+
+```text
+Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s
+```
+
+Knowledge before TCP:
+
+| Peer | Knows |
+|---|---|
+| Broker | broker static private key; one-time PSK; pairing-window ID/expiry/requested maximum grants |
+| Client | one-time PSK entered out of band; its newly generated static key |
+| Neither | actor ID, active session epoch or final grants |
+
+After XXpsk3 completes:
+
+- client knows and authenticates broker static public key through PSK-authenticated XX;
+- broker knows and authenticates client static public key;
+- both have a provisional encrypted pair transport;
+- no actor exists yet;
+- `connectionEpoch=0`;
+- only pair-control messages are legal;
+- application `HELLO`, calls, transfers, callbacks and handles are forbidden.
+
+### Pair transaction
+
+1. Client sends `PAIR_REQUEST`.
+2. Broker validates:
+   - window active;
+   - PSK unused;
+   - client key not already active/revoked without recovery;
+   - requested roles do not exceed window policy.
+3. Broker creates an in-memory provisional actor and sends `PAIR_OFFER`.
+4. Client stores:
+   - broker static key;
+   - broker audit key;
+   - provisional actor ID;
+   - offer hash;
+   in Keychain as `pending`.
+5. Client sends `PAIR_COMMIT` containing the exact offer hash.
+6. Broker atomically:
+   - inserts/activates actor;
+   - inserts grants;
+   - consumes pairing window and PSK;
+   - appends pair audit event;
+   - updates trusted rollback anchor;
+   - commits the transaction.
+7. Broker sends `PAIR_ACCEPT`.
+8. Client marks its Keychain record active and erases PSK.
+9. Broker erases PSK and closes the pair transport with `PAIR_COMPLETE`.
+
+If `PAIR_ACCEPT` is lost after broker commit:
+
+- the client already has broker/client static identities and pending actor ID;
+- it erases the PSK after sending `PAIR_COMMIT`;
+- it reconnects using `SESSION`/IK;
+- the broker identifies the now-active actor from the client static key;
+- successful `HELLO_ACK` promotes the local pending record to active.
+
+If failure occurs before broker commit:
+
+- no actor is active;
+- the window remains usable until expiry unless policy closes it;
+- provisional actor state is discarded;
+- the client deletes its pending actor record;
+- the one-time PSK remains valid only if the broker confirms it was not consumed.
+
+## 5.3 Future IK application session
+
+Pattern:
+
+```text
+Noise_IK_25519_ChaChaPoly_BLAKE2s
+```
+
+Ordering:
+
+1. TCP preface `mode=SESSION`.
+2. IK handshake:
+   - client already pins broker static key;
+   - broker authenticates client static key;
+   - broker maps key to active, non-revoked actor.
+3. Both enter encrypted pre-session state with:
+   - `connectionEpoch=0`;
+   - independent physical sequences at zero;
+   - no application streams.
+4. Client sends application `HELLO` in a provisional logical control frame.
+5. Broker validates protocol/features/platform and sends `HELLO_ACK` with:
+   - active actor ID;
+   - active broker epoch;
+   - random nonzero connection epoch;
+   - selected features and limits.
+6. Both atomically promote the connection to `ACTIVE`.
+7. Physical fragments and logical envelopes after `HELLO_ACK` use the active connection epoch.
+8. Calls and non-control streams may now begin.
+
+No XX fallback exists for normal future sessions. Recovery or key rotation uses a newly authorized pairing window, not silent pattern downgrade.
+
+---
+
+# 6. Physical fragmentation, sequencing and drain
+
+## 6.1 Noise size limits
+
+A Noise transport ciphertext is at most 65,535 bytes. ChaChaPoly uses a 16-byte tag.
+
+```text
+maximum plaintext = 65,535 − 16 = 65,519 bytes
+```
+
+TCP transport record:
+
+```text
+ciphertextLength:u16 BE
+noiseCiphertext[ciphertextLength]
+```
+
+Decrypted physical-fragment header is exactly 32 bytes:
+
+| Offset | Field | Type |
+|---:|---|---|
+| 0 | magic=`WVF2` | `[u8;4]` |
+| 4 | connectionEpoch | `u64 LE` |
+| 12 | physicalSequence | `u64 LE` |
+| 20 | logicalFrameId | `u64 LE` |
+| 28 | fragmentIndex | `u16 LE` |
+| 30 | fragmentCount | `u16 LE` |
+
+Maximum body:
+
+```text
+65,519 − 32 = 65,487 bytes
+```
+
+Maximum logical frame:
+
+```text
+80 + 1,048,576 = 1,048,656 bytes
+ceil(1,048,656 / 65,487) = 17 fragments
+```
+
+## 6.2 Per-sender ownership
+
+Each sender independently owns:
+
+- `physicalSequence`, starting at `0`;
+- `logicalFrameId`, starting at `1`;
+- its stream-ID parity;
+- its per-stream `streamSequence`.
+
+Client and broker values may be numerically equal because direction is part of identity.
+
+Rules:
+
+- `physicalSequence` increments for every encrypted physical record sent by that peer.
+- `logicalFrameId` increments once per logical frame created by that peer.
+- Fragments for one logical frame are contiguous and not interleaved.
+- `fragmentIndex` starts at zero and advances exactly.
+- `fragmentCount` is `1..17`.
+- Duplicates, gaps, reorder, conflicting counts or wrong epoch close the connection.
+- Reassembly timeout is ten monotonic seconds.
+- No more than one partial incoming logical frame exists per direction.
+
+## 6.3 Wrap and GOAWAY
+
+A peer must begin drain before any owned counter reaches exhaustion:
+
+- physical sequence threshold: `2^64−1024`;
+- logical frame threshold: `2^64−1024`;
+- stream ID threshold: next allocatable ID would exceed parity maximum;
+- stream sequence threshold: `2^32−1024`.
+
+At threshold:
+
+1. send `GOAWAY(SEQUENCE_EXHAUSTED)` while counters remain valid;
+2. stop opening new streams;
+3. drain accepted streams for at most 30 monotonic seconds;
+4. close and establish a fresh IK session.
+
+Counters never wrap or reset inside one connection.
+
+## 6.4 Exact 65,536 rejection tests
+
+A 65,536-byte ciphertext cannot be represented by the `u16` wire length.
+
+Required tests are therefore:
+
+1. sender API given a Noise plaintext of 65,520 bytes, which would require 65,536 ciphertext bytes, returns `PhysicalMessageTooLarge` before writing any socket byte;
+2. sender accepts at most 65,519 plaintext bytes;
+3. authenticated ciphertext of exactly 65,535 bytes is accepted;
+4. malicious TCP prefix `0x0000` is rejected as `PHYSICAL_LENGTH_INVALID`, not interpreted as 65,536;
+5. truncated `0xFFFF` record is rejected on EOF/timeout;
+6. no test claims a receiver can directly encode or receive a `u16` length value of 65,536.
+
+---
+
+# 7. Logical envelope, flags, features and stream rules
+
+## 7.1 Envelope
 
 | Offset | Field | Type | Rule |
 |---:|---|---|---|
-| 0 | `magic` | `[u8;4]` | ASCII `WVB2` |
-| 4 | `headerBytes` | `u16` | exactly `80` |
-| 6 | `major` | `u8` | exactly `2` |
-| 7 | `minor` | `u8` | negotiated, initially `0` |
-| 8 | `messageType` | `u16` | registry value |
-| 10 | `flags` | `u16` | only negotiated bits accepted |
-| 12 | `connectionEpoch` | `u64` | random per connection, echoed by peer |
-| 20 | `streamId` | `u32` | `0` control; nonzero call/callback/transfer stream |
-| 24 | `sequence` | `u32` | starts at zero per stream; strictly increments |
-| 28 | `messageId` | `[u8;16]` | UUIDv7 bytes; unique per sender identity |
-| 44 | `correlationId` | `[u8;16]` | request ID or all zero when not a response |
-| 60 | `deadlineUnixMs` | `u64` | zero only for allowed control messages |
-| 68 | `payloadLength` | `u32` | at most 1,048,576 |
-| 72 | `uncompressedLength` | `u32` | initially equal to payload length; compression flag forbidden in minor 0 |
-| 76 | `reserved` | `u32` | zero on send; nonzero rejected in v2.0 |
+| 0 | magic | `[u8;4]` | `WVB2` |
+| 4 | headerBytes | `u16` | `80` |
+| 6 | major | `u8` | `2` |
+| 7 | minor | `u8` | selected minor |
+| 8 | messageType | `u16` | registry value |
+| 10 | flags | `u16` | registry value |
+| 12 | connectionEpoch | `u64` | zero only for pair/pre-session control |
+| 20 | streamId | `u32` | zero control, otherwise parity-owned |
+| 24 | streamSequence | `u32` | sender sequence on stream |
+| 28 | messageId | `[u8;16]` | unique random/UUIDv7-compatible bytes |
+| 44 | correlationId | `[u8;16]` | request message ID or zero |
+| 60 | remainingBudgetMs | `u64` | monotonic remaining budget |
+| 68 | payloadLength | `u32` | `0..1,048,576` |
+| 72 | logicalLength | `u32` | equals payload length in v2.0 |
+| 76 | reserved | `u32` | zero |
 
-Noise record length is a big-endian `u32` outside the ciphertext and may not exceed `1,048,672` bytes including header and authentication overhead. The receiver validates record length before allocation.
+### Monotonic deadlines
 
-## 4.3 Packed payload encoding
+- Senders derive `remainingBudgetMs` from local monotonic time.
+- Receivers start a local monotonic deadline at receipt.
+- Queueing and forwarding subtract locally elapsed monotonic time.
+- Wall clocks never determine timeout expiration.
+- Child callbacks/transfers inherit the smaller of parent remaining budget and their contract maximum.
+- `remainingBudgetMs=0` is allowed only for pairing, `HELLO`, `PING/PONG`, `GOAWAY`, `WINDOW_UPDATE`, `GENERIC_ACK` and protocol errors.
+- Wall-clock skew is reported by readiness using diagnostic timestamps. It never extends a call deadline.
+- Clock skew over five minutes yields readiness `warning`; over 24 hours yields `blocked` for signing/update operations but not ordinary monotonic RPC.
+
+## 7.2 Flags
+
+| Value | Symbol |
+|---:|---|
+| `0x0001` | `REQUEST` |
+| `0x0002` | `RESPONSE` |
+| `0x0004` | `END_STREAM` |
+| `0x0008` | `OPTIONAL_MESSAGE` |
+| `0x0010` | `ACK_REQUIRED` |
+| `0x0020` | `CONTROL_PRIORITY` |
+| `0x0040` | `SENSITIVE` |
+| `0x0080` | `RETRY` |
+| `0x0100` | `FINAL_CHUNK` |
+| `0x0200–0x8000` | reserved |
+
+`REQUEST` and `RESPONSE` are mutually exclusive. Unknown flag bits fail the frame.
+
+## 7.3 Optional and acknowledgment behavior
+
+- Unknown message without `OPTIONAL_MESSAGE`: send `PROTOCOL_ERROR(MESSAGE_UNKNOWN_REQUIRED)` and close.
+- Unknown message with `OPTIONAL_MESSAGE` and no `ACK_REQUIRED`: validate envelope/bounds, consume sequence and ignore.
+- Unknown message with both flags: reply `GENERIC_ACK` with `UNSUPPORTED_OPTIONAL`, then ignore.
+- Known message with `ACK_REQUIRED`: its defined response is the acknowledgment. If it has no defined response, send `GENERIC_ACK`.
+- `GENERIC_ACK` never has `ACK_REQUIRED`.
+- An acknowledgment references the original `messageId` through `correlationId`.
+- Lack of required acknowledgment before deadline fails the requesting operation, not necessarily the whole connection.
+- An optional message may never mutate state unless the feature registry explicitly declares that mutation understood by both peers.
+
+## 7.4 Features
+
+| Bit | Feature |
+|---:|---|
+| `0x0001` | `PACKED_FIELDS_V1`, mandatory and immutable |
+| `0x0002` | `FLOW_CONTROL_V1`, mandatory |
+| `0x0004` | `CANCELLATION_V1` |
+| `0x0008` | `CALLBACKS_V1` |
+| `0x0010` | `HANDLES_V1` |
+| `0x0020` | `DURABLE_OPERATIONS_V1` |
+| `0x0040` | `AUDIT_CHECKPOINTS_V1` |
+| `0x0080` | `TRANSFER_STREAMS_V1` |
+| `0x0100` | `COM_IDENTITY_V1` |
+| `0x0200` | `REVERSE_DEPENDENCY_V1`, conditional |
+| `0x0400` | `UNKNOWN_OPTIONAL_MESSAGES_V1`, mandatory |
+| remaining | reserved |
+
+## 7.5 Stream ownership
+
+- Stream `0`: control only.
+- Client-created streams: odd IDs `1..0xFFFFFFFD`.
+- Broker-created streams: even IDs `2..0xFFFFFFFE`.
+- IDs increase monotonically by two and are never reused.
+- First sender frame has `streamSequence=0`; each later frame by that sender increments exactly.
+- A response may use the same stream with the opposite sender’s own stream sequence.
+- After either side sends GOAWAY, no new streams are opened.
+- GOAWAY carries last accepted odd and even stream IDs.
+- Accepted streams drain for at most 30 monotonic seconds.
+- Callback executor shutdown:
+  1. stops registration;
+  2. rejects new callback streams;
+  3. unregisters leases;
+  4. drains accepted invocations;
+  5. terminates remaining invocations as `CALLBACK_GONE`;
+  6. permits connection drain.
+
+---
+
+# 8. Packed codec and complete message schemas
+
+## 8.1 Field format
 
 Payload prefix:
 
 ```text
-schemaId:u32 | schemaVersion:u16 | fieldCount:u16
-repeated fieldCount times:
-  tag:u16 | wireType:u8 | fieldFlags:u8 | length:u32 | value:length
+schemaId:u32 LE
+schemaVersion:u16 LE
+fieldCount:u16 LE
 ```
 
-Rules:
+Field:
 
-- Fields are emitted in ascending tag order.
-- Duplicate known scalar tags are malformed.
-- Unknown tags and unknown message types are ignored only when the envelope marks them `OPTIONAL`; required unknown control messages close the connection with `UNSUPPORTED_REQUIRED_FEATURE`.
-- Wire types: `1=u8`, `2=u16`, `3=u32`, `4=u64`, `5=i32`, `6=i64`, `7=f32`, `8=f64`, `9=bool`, `10=bytes`, `11=utf8`, `12=uuid128`, `13=nested`, `14=repeated`.
-- Integers are little-endian; booleans are exactly `0` or `1`; floats preserve IEEE bits.
-- UTF-8 must be well formed; contract-specific UTF-16 values use bytes plus explicit code-unit count and permit contract-declared unpaired-surrogate behavior.
-- Required fields missing or malformed fail that message with a specific protocol error.
-- Canonical re-encoding must be byte-identical.
+```text
+tag:u16 LE
+wireType:u8
+fieldFlags:u8
+length:u32 LE
+value[length]
+```
 
-## 4.4 Message registry
+Wire types:
 
-| ID | Symbol | Direction / purpose |
+| ID | Type |
+|---:|---|
+| 1 | `u8` |
+| 2 | `u16` |
+| 3 | `u32` |
+| 4 | `u64` |
+| 5 | `i32` |
+| 6 | `i64` |
+| 7 | `f32` |
+| 8 | `f64` |
+| 9 | bool, one byte `0|1` |
+| 10 | bytes |
+| 11 | UTF-8 |
+| 12 | UUID/128-bit |
+| 13 | nested message |
+| 14 | repeated nested message |
+
+Field flags:
+
+| Value | Meaning |
+|---:|---|
+| `0x01` | required |
+| `0x02` | repeated |
+| `0x04` | sensitive |
+| others | reserved |
+
+Fields are emitted in ascending tag order. Unknown fields are skipped after bounds validation. Duplicate known non-repeated fields fail.
+
+## 8.2 Numeric enum registry
+
+### Peer kind
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CLIENT_CLI` |
+| 2 | `CLIENT_PROXY` |
+| 3 | `BROKER` |
+| 4 | `BROKER_WORKER` |
+
+### Role
+
+| Value | Symbol |
+|---:|---|
+| 1 | `INVOKE` |
+| 2 | `OPERATOR` |
+| 3 | `ADAPTER_ADMIN` |
+| 4 | `PAIRING_ADMIN` |
+| 5 | `AUDITOR` |
+| 6 | `SERVICE_ADMIN` |
+
+### Platform OS
+
+| Value | Symbol |
+|---:|---|
+| 1 | `MACOS` |
+| 2 | `WINDOWS` |
+
+### Architecture
+
+| Value | Symbol |
+|---:|---|
+| 1 | `ARM64` |
+| 2 | `X86_64` |
+| 3 | `X86` |
+| 4 | `ARM64EC` |
+
+### Readiness status
+
+| Value | Symbol |
+|---:|---|
+| 1 | `PASS` |
+| 2 | `WARNING` |
+| 3 | `BLOCKED` |
+| 4 | `FAIL` |
+| 5 | `UNKNOWN` |
+
+### Native status domain
+
+| Value | Symbol |
+|---:|---|
+| 0 | `NONE` |
+| 1 | `HRESULT` |
+| 2 | `WIN32` |
+| 3 | `NTSTATUS` |
+| 4 | `C_RETURN` |
+| 5 | `SEH` |
+| 6 | `CPP_EXCEPTION_MAPPED` |
+| 7 | `DOTNET_EXCEPTION` |
+| 8 | `PROCESS_EXIT` |
+
+### Operation status
+
+| Value | Symbol |
+|---:|---|
+| 1 | `QUEUED` |
+| 2 | `WAITING` |
+| 3 | `RUNNING` |
+| 4 | `BLOCKED` |
+| 5 | `CANCELING` |
+| 6 | `CANCELED` |
+| 7 | `SUCCEEDED` |
+| 8 | `FAILED` |
+| 9 | `PARTIAL` |
+| 10 | `EXPIRED` |
+| 11 | `UNKNOWN` |
+
+### Deduplication mode
+
+| Value | Symbol |
+|---:|---|
+| 1 | `READ_ONLY_REPLAYABLE` |
+| 2 | `BROKER_DEDUPLICATED` |
+| 3 | `TARGET_IDEMPOTENT` |
+| 4 | `NOT_RETRYABLE` |
+
+### Cancel disposition
+
+| Value | Symbol |
+|---:|---|
+| 1 | `ACCEPTED` |
+| 2 | `TOO_LATE` |
+| 3 | `UNSUPPORTED` |
+| 4 | `UNKNOWN_TARGET` |
+| 5 | `ALREADY_TERMINAL` |
+
+### ACK disposition
+
+| Value | Symbol |
+|---:|---|
+| 1 | `ACCEPTED` |
+| 2 | `IGNORED_OPTIONAL` |
+| 3 | `UNSUPPORTED_OPTIONAL` |
+| 4 | `REJECTED` |
+
+### Callback ordering/executor
+
+| Value | Symbol |
+|---:|---|
+| ordering 1 | `SERIAL` |
+| ordering 2 | `PARALLEL` |
+| executor 1 | `WORKER` |
+| executor 2 | `STA` |
+| executor 3 | `CALLER_RENDEZVOUS` |
+| executor 4 | `EVENT_LOOP` |
+
+### Transfer kind
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CALL_INPUT` |
+| 2 | `CALL_OUTPUT` |
+| 3 | `FILE_INPUT` |
+| 4 | `FILE_OUTPUT` |
+| 5 | `STDIN` |
+| 6 | `STDOUT` |
+| 7 | `STDERR` |
+| 8 | `DIAGNOSTIC_ARTIFACT` |
+
+### Transfer terminal status
+
+| Value | Symbol |
+|---:|---|
+| 1 | `COMPLETE` |
+| 2 | `CANCELED` |
+| 3 | `FAILED` |
+| 4 | `HASH_MISMATCH` |
+| 5 | `LIMIT_EXCEEDED` |
+
+### Event kind
+
+| Value | Symbol |
+|---:|---|
+| 1 | `CREATED` |
+| 2 | `QUEUED` |
+| 3 | `STARTED` |
+| 4 | `STAGE_CHANGED` |
+| 5 | `PROGRESS` |
+| 6 | `CANCEL_REQUESTED` |
+| 7 | `CANCELED` |
+| 8 | `SUCCEEDED` |
+| 9 | `FAILED` |
+| 10 | `UNKNOWN_OUTCOME` |
+| 11 | `RECONCILED` |
+| 12 | `AUDIT_CHECKPOINTED` |
+
+## 8.3 Nested schemas
+
+### `RoleGrantV1`, schema `0x1001`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | role | `u16` | yes |
+| 2 | adapterContractHash | bytes | no |
+| 3 | operationId | `u32` | no |
+| 4 | expiresAtUnixMs | `u64` | no |
+
+### `PlatformV1`, schema `0x1002`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | os | `u16` | yes |
+| 2 | osVersion | UTF-8 | yes |
+| 3 | architecture | `u16` | yes |
+| 4 | wineVersion | UTF-8 | no |
+| 5 | runtimeVersion | UTF-8 | no |
+| 6 | buildFingerprint | bytes | yes |
+
+### `ReadinessCheckV1`, schema `0x1003`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | checkId | UTF-8 | yes |
+| 2 | scope | UTF-8 | yes |
+| 3 | status | `u16` | yes |
+| 4 | source | UTF-8 | yes |
+| 5 | checkedAtUnixMs | `u64` | yes |
+| 6 | reason | UTF-8 | yes |
+| 7 | remediation | UTF-8 | no |
+| 8 | evidenceId | UUID | no |
+
+### `ReadinessV1`, schema `0x1004`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | overallStatus | `u16` | yes |
+| 2 | checks | repeated `ReadinessCheckV1` | yes |
+| 3 | generatedAtUnixMs | `u64` | yes |
+| 4 | sourceVersion | UTF-8 | yes |
+
+### `NativeStatusV1`, schema `0x1005`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | domain | `u16` | yes |
+| 2 | code | `i64` | yes |
+| 3 | secondaryCode | `i64` | no |
+| 4 | exceptionType | UTF-8 | no |
+| 5 | redactedMessage | UTF-8 | no |
+| 6 | retryable | bool | yes |
+| 7 | diagnosticId | UUID | no |
+
+### `StageV1`, schema `0x1006`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | stageId | UTF-8 | yes |
+| 2 | ordinal | `u32` | yes |
+| 3 | status | `u16` | yes |
+| 4 | startedAtUnixMs | `u64` | no |
+| 5 | completedAtUnixMs | `u64` | no |
+| 6 | message | UTF-8 | no |
+| 7 | nativeStatus | `NativeStatusV1` | no |
+| 8 | evidenceIds | repeated nested UUID wrapper | no |
+
+### `OperationV1`, schema `0x1007`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | operationUuid | UUID | yes |
+| 2 | operationType | UTF-8 | yes |
+| 3 | actorId | UUID | yes |
+| 4 | targetIds | repeated nested string wrapper | yes |
+| 5 | status | `u16` | yes |
+| 6 | createdAtUnixMs | `u64` | yes |
+| 7 | startedAtUnixMs | `u64` | no |
+| 8 | updatedAtUnixMs | `u64` | yes |
+| 9 | completedAtUnixMs | `u64` | no |
+| 10 | stages | repeated `StageV1` | yes |
+| 11 | progressCompleted | `u64` | no |
+| 12 | progressTotal | `u64` | no |
+| 13 | attempt | `u32` | yes |
+| 14 | cancelable | bool | yes |
+| 15 | retryable | bool | yes |
+| 16 | rerunnable | bool | yes |
+| 17 | traceId | UUID | no |
+| 18 | terminalReceiptHash | bytes | no |
+| 19 | nativeStatus | `NativeStatusV1` | no |
+
+### `EventV1`, schema `0x1008`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | eventSequence | `u64` | yes |
+| 2 | operationUuid | UUID | no |
+| 3 | kind | `u16` | yes |
+| 4 | occurredAtUnixMs | `u64` | yes |
+| 5 | actorId | UUID | no |
+| 6 | stageId | UTF-8 | no |
+| 7 | message | UTF-8 | no |
+| 8 | nativeStatus | `NativeStatusV1` | no |
+| 9 | previousEventHash | bytes | yes |
+| 10 | eventHash | bytes | yes |
+| 11 | evidenceIds | repeated nested UUID wrapper | no |
+
+### `ReceiptV1`, schema `0x1009`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | receiptId | UUID | yes |
+| 2 | receiptType | UTF-8 | yes |
+| 3 | actorId | UUID | no |
+| 4 | adapterContractHash | bytes | no |
+| 5 | operationId | `u32` | no |
+| 6 | operationUuid | UUID | no |
+| 7 | requestHash | bytes | no |
+| 8 | terminalStatus | `u16` | yes |
+| 9 | createdAtUnixMs | `u64` | yes |
+| 10 | eventSequence | `u64` | yes |
+| 11 | eventHash | bytes | yes |
+| 12 | checkpointSequence | `u64` | no |
+| 13 | checkpointSignature | bytes | no |
+| 14 | artifactHashes | repeated nested hash wrapper | no |
+| 15 | privacyClass | `u16` | yes |
+
+### `ProtocolFailureV1`, schema `0x100A`
+
+| Tag | Field | Type | Required |
+|---:|---|---|---|
+| 1 | code | `u32` | yes |
+| 2 | stage | UTF-8 | yes |
+| 3 | diagnosticId | UUID | yes |
+| 4 | retryable | bool | yes |
+| 5 | retryAfterMs | `u32` | no |
+
+## 8.4 Top-level messages
+
+### Pairing and session
+
+| ID | Message | Fields |
 |---:|---|---|
-| `0x0001` | `HELLO` | negotiate minor, limits, features, identity and broker epoch |
-| `0x0002` | `HELLO_ACK` | selected values or incompatibility |
-| `0x0003` | `PING` | liveness with monotonic sender timestamp |
-| `0x0004` | `PONG` | liveness response |
-| `0x0005` | `GOAWAY` | graceful drain reason and last accepted stream |
-| `0x0006` | `WINDOW_UPDATE` | add connection/stream receive credit |
-| `0x0007` | `ERROR` | protocol/session-level error |
-| `0x0100` | `CALL_BEGIN` | adapter hash, operation ID, request schema, idempotency key |
-| `0x0101` | `CALL_DATA` | one bounded argument/body chunk |
-| `0x0102` | `CALL_END` | request complete |
-| `0x0110` | `CALL_RESULT_BEGIN` | native status and output schema |
-| `0x0111` | `CALL_RESULT_DATA` | output chunk |
-| `0x0112` | `CALL_RESULT_END` | terminal receipt hash |
-| `0x0120` | `CANCEL` | cancel target message/operation with reason |
-| `0x0121` | `CANCEL_ACK` | accepted, too-late, unsupported or unknown |
-| `0x0200` | `CALLBACK_REGISTER` | callback contract, lease and threading mode |
-| `0x0201` | `CALLBACK_INVOKE` | reverse call |
-| `0x0202` | `CALLBACK_RESULT` | reverse-call result |
-| `0x0203` | `CALLBACK_UNREGISTER` | revoke callback lease |
-| `0x0300` | `HANDLE_CLOSE` | close opaque handle |
-| `0x0301` | `HANDLE_STATUS` | close result/stale status |
-| `0x0400` | `OPERATION_QUERY` | query durable operation |
-| `0x0401` | `OPERATION_STATE` | operation snapshot plus event cursor |
-| `0x0402` | `RECEIPT_QUERY` | query idempotency/receipt outcome |
-| `0x0403` | `RECEIPT_RESULT` | immutable receipt or unknown |
-| `0x0500` | `PAIR_CLIENT` | accepted only inside explicit pairing window |
-| `0x0501` | `PAIR_RESULT` | client identity registration outcome |
+| `0x0010` | `PAIR_REQUEST` | `1 clientFingerprint:bytes R`, `2 label:utf8 R`, `3 requestedGrants:repeated RoleGrantV1 R`, `4 platform:PlatformV1 R`, `5 pairingWindowId:uuid R` |
+| `0x0011` | `PAIR_OFFER` | `1 provisionalActorId:uuid R`, `2 grantedRoles:repeated RoleGrantV1 R`, `3 brokerFingerprint:bytes R`, `4 brokerAuditKey:bytes R`, `5 offerHash:bytes R`, `6 expiresAtUnixMs:u64 R` |
+| `0x0012` | `PAIR_COMMIT` | `1 provisionalActorId:uuid R`, `2 offerHash:bytes R`, `3 clientCommitNonce:uuid R` |
+| `0x0013` | `PAIR_ACCEPT` | `1 actorId:uuid R`, `2 grantedRoles:repeated RoleGrantV1 R`, `3 pairedAtUnixMs:u64 R`, `4 auditCheckpoint:ReceiptV1 R` |
+| `0x0014` | `PAIR_REJECT` | `1 failure:ProtocolFailureV1 R` |
+| `0x0015` | `PAIR_COMPLETE` | `1 actorId:uuid R`, `2 closeReason:u16 R` |
+| `0x0001` | `HELLO` | `1 peerKind:u16 R`, `2 minMinor:u16 R`, `3 maxMinor:u16 R`, `4 features:u64 R`, `5 maxLogicalPayload:u32 R`, `6 maxStreams:u32 R`, `7 initialConnectionCredit:u64 R`, `8 clientInstance:uuid R`, `9 platform:PlatformV1 R`, `10 clientWallUnixMs:u64 R` |
+| `0x0002` | `HELLO_ACK` | `1 selectedMinor:u16 R`, `2 features:u64 R`, `3 maxLogicalPayload:u32 R`, `4 maxStreams:u32 R`, `5 initialConnectionCredit:u64 R`, `6 connectionEpoch:u64 R`, `7 brokerEpoch:uuid R`, `8 actorId:uuid R`, `9 readiness:ReadinessV1 R`, `10 brokerWallUnixMs:u64 R` |
+| `0x0003` | `PING` | `1 senderMonotonicNs:u64 R`, `2 nonce:u64 R` |
+| `0x0004` | `PONG` | `1 senderMonotonicNs:u64 R`, `2 nonce:u64 R`, `3 receiverMonotonicNs:u64 R` |
+| `0x0005` | `GOAWAY` | `1 reason:u32 R`, `2 lastAcceptedClientStream:u32 R`, `3 lastAcceptedBrokerStream:u32 R`, `4 drainBudgetMs:u32 R`, `5 diagnosticId:uuid O` |
+| `0x0006` | `WINDOW_UPDATE` | `1 targetStreamId:u32 R`, `2 additionalBytes:u64 R` |
+| `0x0007` | `PROTOCOL_ERROR` | `1 failure:ProtocolFailureV1 R` |
+| `0x0008` | `GENERIC_ACK` | `1 acknowledgedMessageId:uuid R`, `2 disposition:u16 R`, `3 failure:ProtocolFailureV1 O` |
 
-## 4.5 Call state machine
+### Calls
 
-```text
-IDLE
- → CALL_BEGIN
- → RECEIVING_REQUEST (zero or more CALL_DATA)
- → CALL_END
- → QUEUED
- → RUNNING
- → RESULT_BEGIN
- → SENDING_RESULT (zero or more RESULT_DATA)
- → RESULT_END
- → TERMINAL
-```
+| ID | Message | Fields |
+|---:|---|---|
+| `0x0100` | `CALL_BEGIN` | `1 adapterHash:bytes R`, `2 operationId:u32 R`, `3 requestSchemaId:u32 R`, `4 deduplicationMode:u16 R`, `5 idempotencyKey:uuid O`, `6 requestHash:bytes R`, `7 actorContextId:uuid R`, `8 disconnectPolicy:u16 R`, `9 sensitivity:u16 R` |
+| `0x0101` | `CALL_DATA` | `1 chunkIndex:u32 R`, `2 offset:u64 R`, `3 logicalTotal:u64 R`, `4 chunkHash:bytes R`, `5 data:bytes R` |
+| `0x0102` | `CALL_END` | `1 chunkCount:u32 R`, `2 totalHash:bytes R` |
+| `0x0110` | `RESULT_BEGIN` | `1 responseSchemaId:u32 R`, `2 operationUuid:uuid O`, `3 nativeStatus:NativeStatusV1 R`, `4 logicalTotal:u64 R` |
+| `0x0111` | `RESULT_DATA` | same tags as `CALL_DATA` |
+| `0x0112` | `RESULT_END` | `1 chunkCount:u32 R`, `2 totalHash:bytes R`, `3 receipt:ReceiptV1 R`, `4 terminalStatus:u16 R` |
+| `0x0120` | `CANCEL` | `1 targetMessageId:uuid O`, `2 targetOperationUuid:uuid O`, `3 targetTransferId:uuid O`, `4 reason:u16 R`; exactly one target required |
+| `0x0121` | `CANCEL_ACK` | `1 disposition:u16 R`, `2 nativeCancelInvoked:bool R`, `3 operationStatus:u16 O`, `4 receipt:ReceiptV1 O` |
 
-Alternative transitions:
+### Transfers
 
-- `RECEIVING_REQUEST|QUEUED|RUNNING → CANCEL_REQUESTED`.
-- `CANCEL_REQUESTED → CANCELED` only after dispatcher confirms no further target mutation.
-- `CANCEL_REQUESTED → COMPLETED_TOO_LATE` if the native call already completed.
-- Disconnect invalidates connection-scoped handles/callbacks. Durable operations continue only when the adapter declares `disconnectPolicy=continue`; otherwise cancellation is attempted and final state is recorded.
-- The client may not infer success from disconnect, timeout or `CANCEL_ACK`.
+| ID | Message | Fields |
+|---:|---|---|
+| `0x0130` | `TRANSFER_BEGIN` | `1 transferId:uuid R`, `2 kind:u16 R`, `3 parentMessageId:uuid O`, `4 parentOperationUuid:uuid O`, `5 declaredLength:u64 R`, `6 contentHash:bytes R`, `7 mediaType:utf8 O`, `8 fileName:utf8 O`, `9 sensitivity:u16 R` |
+| `0x0131` | `TRANSFER_DATA` | `1 transferId:uuid R`, `2 chunkIndex:u32 R`, `3 offset:u64 R`, `4 chunkHash:bytes R`, `5 data:bytes R` |
+| `0x0132` | `TRANSFER_END` | `1 transferId:uuid R`, `2 chunkCount:u32 R`, `3 totalLength:u64 R`, `4 totalHash:bytes R`, `5 terminalStatus:u16 R`, `6 receipt:ReceiptV1 R` |
+| `0x0133` | `TRANSFER_CANCEL` | `1 transferId:uuid R`, `2 reason:u16 R` |
+| `0x0134` | `TRANSFER_CANCEL_ACK` | `1 transferId:uuid R`, `2 disposition:u16 R`, `3 receipt:ReceiptV1 O` |
+| `0x0135` | `TRANSFER_RECEIPT` | `1 transferId:uuid R`, `2 receipt:ReceiptV1 R` |
 
-## 4.6 Callback state machine
+### Callbacks, handles and operations
 
-```text
-UNREGISTERED → REGISTERED → INVOKING(n) → REGISTERED → UNREGISTERING → CLOSED
-```
-
-- Each registration has `callbackId`, contract hash, lease deadline, maximum concurrent invocations, ordering mode and reentrancy mode.
-- `serial` ordering permits one invocation at a time. `parallel` requires an explicit maximum.
-- Reentrant calls are rejected unless `reentrant=true`.
-- Callback invocation uses a distinct stream and deadline.
-- Disconnect closes all non-durable callback registrations. Late invocations return `CALLBACK_GONE`.
-- Native callback thread evidence is preserved. If the original API requires an exact thread/apartment and the proxy cannot reproduce it, generation stops.
-
-## 4.7 Limits and backpressure
-
-| Limit | Canonical value |
-|---|---:|
-| frame payload | 1,048,576 bytes |
-| ordinary logical call request/result | 16 MiB each unless lower contract bound |
-| explicit bulk/file stream | 1 GiB |
-| concurrent streams per connection | 128 |
-| queued calls per client | 256 |
-| callbacks per session | 1,024 |
-| handles per session | 65,536 |
-| nesting depth | 32 |
-| fields per payload | 4,096 |
-| string bytes | contract bound, hard maximum 16 MiB |
-| call deadline | 1 ms–300 s; EXE contract may allow 24 h |
-| handshake timeout | 10 s |
-| idle timeout | 120 s; PING after 30 s inactivity |
-| replay-receipt retention | 24 h or contract-declared longer |
-| pairing attempts | 5 per 10 minutes per source and 20 globally |
-| authentication failures | connection closed without detailed oracle |
-
-- Initial connection credit: 8 MiB; initial stream credit: 2 MiB.
-- Sender may not exceed granted credit. `WINDOW_UPDATE` is sent after consumption, not receipt.
-- Bounded broker queues reject with `RESOURCE_EXHAUSTED`, `retryAfterMs`, queue depth and limit.
-- No unbounded per-client task spawning.
-
-## 4.8 Chunking
-
-- Payload chunks are at most 1 MiB and carry `chunkIndex`, `offset`, `logicalLength`, `chunkHash`, and `final`.
-- Offsets must be contiguous unless the contract explicitly allows sparse file transfer.
-- Final logical SHA-256 is supplied in `CALL_END`/`RESULT_END`.
-- Duplicate chunks with the same index and hash are idempotently ignored; conflicting duplicates terminate the stream.
-- Reassembly writes large bodies to broker-owned temporary files, not one contiguous allocation.
-- Temporary files are owner-only, quota-bounded and removed on terminal state/startup reconciliation.
-
-## 4.9 Deadlines, cancellation, reconnect and idempotency
-
-- Deadlines are absolute UTC milliseconds plus receiver-side monotonic budget derived at receipt. Clock skew greater than five minutes is diagnostic, not a reason to extend work.
-- Cancellation is cooperative unless the target family has a proven safe cancellation primitive. Forced thread termination is forbidden.
-- Each effecting call requires a 128-bit idempotency key scoped to `(clientIdentity, adapterHash, operationId)`.
-- Repeated keys return the prior receipt or current operation; different request hashes with the same key return `IDEMPOTENCY_CONFLICT`.
-- Automatic replay after reconnect is allowed only for `idempotency=read-only|exactly-once-receipted`.
-- Non-idempotent unknown outcomes return `OUTCOME_UNKNOWN`; they are never blindly retried.
-- Reconnect uses full-jitter delays of 100 ms, 200 ms, 400 ms, 800 ms, 1.6 s, capped at 30 s.
-- Handles include `brokerEpoch`, `ownerSessionId`, `slot`, and `generation`; broker restart makes old epochs stale.
-- Durable operation queries survive reconnect; raw streams, callbacks and handles do not.
-
-## 4.10 Error model
-
-`WvbError` fields:
-
-```text
-domain, code, message, stage, retryClass, nativeDomain, nativeCode,
-correlationId, operationId?, remediation?, evidenceIds[], details{}
-```
-
-Domains include `protocol`, `auth`, `policy`, `contract`, `transport`, `marshal`, `native`, `com`, `managed`, `process`, `storage`, `resource`, `timeout`, `canceled`, `internal`.
-
-- Native errors preserve `HRESULT`, Win32 `GetLastError`, NTSTATUS, C++/SEH classification, managed exception type/HResult, and process exit status separately.
-- User-facing messages are redacted. Exact internal evidence is available only through authorized diagnostic receipts.
-- Unknown fields are ignored; malformed required fields are rejected specifically.
-- Catch-all “pipeline failed” errors are prohibited.
-
-## 4.11 Pairing, crypto and threat model
-
-- Broker generates a static X25519 identity at installation and stores the private key with Windows DPAPI machine protection and service ACL.
-- Mac client static identity is stored in Keychain; no plaintext capability file remains.
-- Pairing requires an explicit ten-minute local pairing window opened by an administrator. The broker displays a 256-bit random PSK once through the local setup UI/console.
-- Noise XXpsk3 proves PSK possession and exchanges static identities. Successful pairing stores the client public key, display label, creation time and revocation state.
-- Subsequent sessions use the stored peer identity and a fresh one-time handshake PSK derived from the pairing secret via HKDF; transport nonces prevent record replay.
-- Pairing secrets, private keys, payloads, identifiers and tokens never enter logs or receipts.
-- Capability revocation is by client public-key fingerprint.
-- Threats addressed: unauthenticated LAN callers, malicious/malformed clients, replay, oversized allocation, queue exhaustion, path/export substitution, DLL preloading, downgrade, stale handles, callback floods, secret leakage and update rollback.
-- Out of scope: compromised Mac user account, compromised Windows administrator/kernel, malicious allowlisted target code, physical memory extraction.
-- **[AC]** Cryptographic construction, DPAPI/Keychain access boundaries, pairing UX, firewall scope and update signing require adversarial security approval before implementation proceeds past the security gate.
+| ID | Message | Fields |
+|---:|---|---|
+| `0x0200` | `CALLBACK_REGISTER` | `1 callbackId:uuid R`, `2 contractHash:bytes R`, `3 leaseBudgetMs:u64 R`, `4 ordering:u16 R`, `5 maxConcurrency:u16 R`, `6 reentrant:bool R`, `7 executor:u16 R` |
+| `0x0201` | `CALLBACK_INVOKE` | `1 callbackId:uuid R`, `2 invocationId:uuid R`, `3 payloadSchemaId:u32 R`, `4 parentCallId:uuid O`, `5 payload:bytes R` |
+| `0x0202` | `CALLBACK_RESULT` | `1 invocationId:uuid R`, `2 nativeStatus:NativeStatusV1 R`, `3 payload:bytes O` |
+| `0x0203` | `CALLBACK_UNREGISTER` | `1 callbackId:uuid R`, `2 reason:u16 R`, `3 drain:bool R` |
+| `0x0300` | `HANDLE_CLOSE` | `1 brokerEpoch:uuid R`, `2 ownerActorId:uuid R`, `3 slot:u32 R`, `4 generation:u32 R`, `5 handleType:u32 R` |
+| `0x0301` | `HANDLE_STATUS` | `1 disposition:u16 R`, `2 nativeStatus:NativeStatusV1 O`, `3 receipt:ReceiptV1 O` |
+| `0x0400` | `OPERATION_QUERY` | `1 operationUuid:uuid R`, `2 afterEventSequence:u64 O` |
+| `0x0401` | `OPERATION_STATE` | `1 operation:OperationV1 R`, `2 events:repeated EventV1 O`, `3 nextEventSequence:u64 R` |
+| `0x0402` | `RECEIPT_QUERY` | `1 idempotencyKey:uuid R`, `2 adapterHash:bytes R`, `3 operationId:u32 R` |
+| `0x0403` | `RECEIPT_RESULT` | `1 disposition:u16 R`, `2 operationUuid:uuid O`, `3 receipt:ReceiptV1 O` |
+| `0x0410` | `AUDIT_CHECKPOINT` | `1 checkpointSequence:u64 R`, `2 eventSequence:u64 R`, `3 eventHash:bytes R`, `4 databaseGeneration:u64 R`, `5 signature:bytes R`, `6 signerFingerprint:bytes R` |
 
 ---
 
-# 5. Adapter contract and deterministic build receipts
+# 9. Errors, flow control and state rollback
 
-## 5.1 Schema v2 top-level fields
+## 9.1 Error registry
 
-`schemas/adapter-v2.schema.json` shall require:
+| Code | Symbol |
+|---:|---|
+| 1 | `PHYSICAL_LENGTH_INVALID` |
+| 2 | `PHYSICAL_MESSAGE_TOO_LARGE` |
+| 3 | `PHYSICAL_AUTH_FAILED` |
+| 4 | `PHYSICAL_SEQUENCE_INVALID` |
+| 5 | `FRAGMENT_HEADER_INVALID` |
+| 6 | `FRAGMENT_ORDER_INVALID` |
+| 7 | `FRAGMENT_TIMEOUT` |
+| 8 | `LOGICAL_FRAME_TOO_LARGE` |
+| 9 | `ENVELOPE_INVALID` |
+| 10 | `VERSION_UNSUPPORTED` |
+| 11 | `FEATURE_REQUIRED_UNSUPPORTED` |
+| 12 | `FLAGS_INVALID` |
+| 13 | `MESSAGE_UNKNOWN_REQUIRED` |
+| 14 | `REQUIRED_FIELD_MISSING` |
+| 15 | `FIELD_DUPLICATE` |
+| 16 | `FIELD_TYPE_INVALID` |
+| 17 | `FIELD_BOUNDS_EXCEEDED` |
+| 18 | `STREAM_INITIATOR_INVALID` |
+| 19 | `STREAM_REUSED` |
+| 20 | `STREAM_UNKNOWN` |
+| 21 | `STREAM_CLOSED` |
+| 22 | `STREAM_SEQUENCE_INVALID` |
+| 23 | `SEQUENCE_EXHAUSTED` |
+| 24 | `FLOW_CONTROL_EXCEEDED` |
+| 25 | `DEADLINE_EXCEEDED` |
+| 26 | `AUTHENTICATION_FAILED` |
+| 27 | `ACTOR_REVOKED` |
+| 28 | `AUTHORIZATION_DENIED` |
+| 29 | `PAIRING_WINDOW_CLOSED` |
+| 30 | `PAIRING_PSK_CONSUMED` |
+| 31 | `PAIRING_COMMIT_MISMATCH` |
+| 32 | `PAIRING_STATE_ROLLBACK` |
+| 33 | `ADAPTER_NOT_INSTALLED` |
+| 34 | `CONTRACT_HASH_MISMATCH` |
+| 35 | `OPERATION_NOT_ALLOWED` |
+| 36 | `IDEMPOTENCY_CONFLICT` |
+| 37 | `RESOURCE_EXHAUSTED` |
+| 38 | `HANDLE_STALE` |
+| 39 | `HANDLE_OWNER_MISMATCH` |
+| 40 | `CALLBACK_GONE` |
+| 41 | `CANCEL_TOO_LATE` |
+| 42 | `OUTCOME_UNKNOWN` |
+| 43 | `TARGET_IDENTITY_MISMATCH` |
+| 44 | `DEPENDENCY_LAYOUT_INVALID` |
+| 45 | `TRANSFER_HASH_MISMATCH` |
+| 46 | `TRANSFER_LIMIT_EXCEEDED` |
+| 47 | `KEYSTORE_UNAVAILABLE` |
+| 48 | `AUDIT_CHAIN_INVALID` |
+| 49 | `DATABASE_CORRUPT` |
+| 50 | `INTERNAL_INVARIANT_FAILED` |
+
+## 9.2 Limits
+
+| Limit | Value |
+|---|---:|
+| Physical ciphertext | 65,535 bytes |
+| Physical plaintext | 65,519 bytes |
+| Fragment data | 65,487 bytes |
+| Fragments/logical frame | 17 |
+| Logical payload | 1,048,576 bytes |
+| Ordinary request/result | 16 MiB each |
+| Explicit transfer | 1 GiB |
+| Streams/connection | 128 |
+| Queued calls/actor | 256 |
+| Callbacks/actor | 1,024 |
+| Handles/actor | 65,536 |
+| Initial connection credit | 8 MiB |
+| Initial stream credit | 2 MiB |
+| Control reserve | 64 KiB |
+| Nesting depth | 32 |
+| Fields/message | 4,096 |
+| Pair/handshake timeout | 10 monotonic seconds |
+| Fragment timeout | 10 monotonic seconds |
+| Drain timeout | 30 monotonic seconds |
+| Ordinary deadline maximum | 300 seconds |
+| Contract-authorized EXE maximum | 24 hours |
+
+## 9.3 Deduplication and crash windows
+
+Modes:
+
+- `READ_ONLY_REPLAYABLE`;
+- `BROKER_DEDUPLICATED`;
+- `TARGET_IDEMPOTENT`;
+- `NOT_RETRYABLE`.
+
+No “exactly once” claim exists.
+
+For broker deduplication:
+
+1. commit accepted request/key/hash;
+2. invoke target;
+3. commit result receipt.
+
+A crash after target invocation but before result commit produces `UNKNOWN` unless authoritative target reconciliation is available. Such a call is not automatically replayed.
+
+---
+
+# 10. Actor authorization and trusted rollback anchor
+
+## 10.1 Actor lifecycle
+
+Actor record:
+
+```text
+actorId
+clientStaticPublicKey
+fingerprint
+label
+createdAt
+roles[]
+adapterGrants[]
+revision
+status
+revokedAt?
+revokedReason?
+```
+
+Roles:
+
+- `INVOKE`;
+- `OPERATOR`;
+- `ADAPTER_ADMIN`;
+- `PAIRING_ADMIN`;
+- `AUDITOR`;
+- `SERVICE_ADMIN`.
+
+No bearer capability token or remote role delegation exists in v2.
+
+Every operation checks:
+
+```text
+active actor
+AND active session
+AND required role
+AND exact adapter/operation grant
+AND target capability
+AND dependency readiness
+AND resource/rate limit
+AND any required local administrative approval
+```
+
+Revocation rejects future IK sessions, drains active sessions with GOAWAY, blocks new calls, invalidates handles/callbacks and applies each running operation’s declared revocation policy.
+
+## 10.2 Independent trusted rollback anchor
+
+The trusted rollback anchor is independent of SQLite, broker configuration files and broker metadata.
+
+Initial Windows support requires a functioning TPM 2.0/vTPM.
+
+The broker creates:
+
+1. a non-exportable TPM-backed Ed25519-compatible audit-signing key or, where the Windows CNG TPM provider cannot expose Ed25519, a non-exportable TPM-backed ECDSA P-256 audit key;
+2. a TPM NV anchor containing:
+   - anchor schema version;
+   - database generation;
+   - latest checkpoint sequence;
+   - latest event sequence;
+   - latest event hash;
+   - actor-registry revision;
+   - broker-identity-key generation.
+
+The exact supported TPM algorithm is frozen by T010 after capability probing and becomes a blocking platform input. It is not silently changed.
+
+Every terminal operation, actor/grant mutation, pairing commit, key rotation and each 1,024-event interval:
+
+1. commits event chain and checkpoint transaction;
+2. signs checkpoint with TPM-backed key;
+3. updates TPM NV anchor;
+4. only then reports durable success.
+
+Startup compares database chain and metadata against TPM NV:
+
+- database behind TPM: block readiness as rollback;
+- database ahead of TPM: recover only from fully signed contiguous events, then advance TPM;
+- hash mismatch: block;
+- TPM unavailable: pairing/admin/update blocked; invocation policy defaults to blocked for effecting operations.
+
+Paired Mac clients also pin the audit public key and highest observed checkpoint, providing an additional external witness.
+
+## 10.3 Recovery and key rotation
+
+Recovery requires local administrator presence and a signed recovery bundle containing:
+
+- latest valid audit checkpoint;
+- actor registry export without private keys;
+- package/catalog hashes;
+- database generation;
+- prior broker/audit key fingerprints.
+
+Recovery procedure:
+
+1. verify chain to trusted checkpoint;
+2. create new broker identity and audit keys;
+3. increment TPM database/key generations;
+4. append a signed discontinuity/recovery event;
+5. revoke all active sessions;
+6. require clients to confirm changed broker fingerprint through a new pairing;
+7. never copy old private keys into source or general files.
+
+If exposure status of any `runtime.key`, development identity or signing material is unknown, it is treated as exposed and rotated. No key is committed. Secret scanning includes Git history before release.
+
+---
+
+# 11. Adapter contract, canonicalization and dependency layout
+
+## 11.1 Canonicalization
+
+Hash-bearing JSON uses:
+
+- UTF-8 I-JSON;
+- RFC 8785 JCS;
+- duplicate keys rejected before parsing;
+- no NaN/infinities;
+- integers outside interoperable IEEE-754 range encoded as decimal strings;
+- schema-defined sorting for set-like arrays;
+- no post-parse Unicode normalization beyond RFC 8785 behavior.
+
+## 11.2 Adapter schema
+
+Required sections:
 
 ```json
 {
@@ -509,620 +1302,911 @@ Domains include `protocol`, `auth`, `policy`, `contract`, `transport`, `marshal`
   "adapterId": "vendor.product",
   "adapterVersion": "1.2.3",
   "family": "native-c-dll",
-  "architectures": ["x86_64"],
-  "target": {},
-  "sources": [],
-  "types": {},
+  "platforms": [],
+  "packageRoots": [],
+  "modules": [],
+  "types": [],
   "operations": [],
   "security": {},
   "runtime": {},
-  "tests": {},
   "evidence": {},
+  "tests": {},
   "support": {}
 }
 ```
 
-Required target identities by family:
+Every operation defines identity, signature, ownership, nullability, aliasing, bounds, allocator, error behavior, roles, timeout, cancellation, disconnect, deduplication, callbacks, handles, async behavior and exact tests.
 
-- Native DLL: basename, PE machine, timestamp policy, SHA-256, export name/ordinal, loaded-path policy.
-- COM/WinRT: CLSID/runtime class, IID set, typelib/WinMD hashes, server path hash and threading model.
-- .NET: assembly name/version/culture/public-key token/MVID/SHA-256/target framework.
-- EXE: basename, SHA-256, architecture, argv grammar, working-directory policy and child-process policy.
+## 11.3 Dependency schema
 
-Every operation shall define:
-
-- stable numeric `operationId`;
-- source symbol and caller-visible signature;
-- calling convention and architecture;
-- parameter/return type references;
-- ownership, nullability, direction, lengths, alias groups and allocator pair;
-- timeout, idempotency, disconnect and cancellation policy;
-- sensitivity labels;
-- required role/capability;
-- native errors and last-error behavior;
-- callback/async/handle effects;
-- exact local-oracle, remote-parity and adversarial tests.
-
-`replace-at-install` is forbidden in release contracts. Fixture contracts may reference a build receipt that resolves the exact hash.
-
-## 5.2 Deterministic receipt
-
-`BuildReceiptV1` includes:
-
-- receipt schema/version and generator Git commit;
-- canonical contract hash;
-- every input relative path, media type and SHA-256;
-- normalized Clang/PDB/TLB/WinMD/CLR inspection evidence hashes;
-- generator, Rust, Clang/LLVM, MSVC, Windows SDK, CMake, Ninja and .NET versions;
-- target triple, architecture, language mode, ABI, compiler/linker flags;
-- environment allowlist and normalized source root;
-- generated-file hashes;
-- object and unsigned final artifact hashes;
-- export table, PE section/layout and managed public API hashes;
-- test vector and test-result receipt hashes;
-- unresolved list, which must be empty for support;
-- signature metadata in a separate `SigningReceiptV1`.
-
-Determinism rules:
-
-- `SOURCE_DATE_EPOCH` fixed to the contract commit time;
-- `/Brepro`, deterministic managed build, stable GUID/MVID strategy, sorted operations/exports, normalized paths and no absolute debug paths;
-- two clean builds in distinct directories must produce identical unsigned hashes;
-- Authenticode/notarization timestamps and signatures are not part of the unsigned equality check.
-
----
-
-# 6. Static inspection and evidence confidence
-
-## 6.1 Inspection inputs
-
-- C/C++ headers through pinned Clang AST and target-specific flags.
-- PE export/import/resource/load-config data.
-- PDB type and symbol records where authorized.
-- CLR ECMA-335 metadata, assembly references, P/Invoke, generic constraints, nullable annotations and PDBs.
-- IDL/MIDL source, TLB through `ITypeLib/ITypeInfo`, and WinRT `.winmd`.
-- Target hashes and architecture for every evidence source.
-
-## 6.2 Confidence model
-
-Each semantic claim records:
+Package root:
 
 ```text
-claimId, subject, property, value, confidence, evidenceIds[],
-contradictingEvidenceIds[], reviewer, reviewedAt, expiresOnTargetHashChange
+packageRootId
+environment: mac|windows
+installBasePolicy
+layoutHash
 ```
 
-Confidence values:
-
-- `authoritative`: declared by signed vendor IDL/header/docs plus matching binary.
-- `structural`: mechanically present in PE/PDB/CLR/TLB/WinMD.
-- `observed`: seen in authorized traces.
-- `inferred`: correlation supported by multiple traces but not authoritative.
-- `unknown`: unresolved.
-
-Only `authoritative` or `structural` claims may generate ABI layout automatically. Ownership, allocator, callback thread, COM apartment, aliasing and cancellation require authoritative evidence or explicit human-reviewed contract annotations. Observed/inferred evidence may propose annotations but cannot silently approve them.
-
-## 6.3 Required output
-
-`wvb inspect` emits:
-
-- normalized IR candidate;
-- exact evidence records;
-- conflicts and unknowns;
-- static loaded-target expectations;
-- generated test vectors;
-- a supportability classification;
-- no generated proxy when ABI-affecting unknowns remain.
-
----
-
-# 7. Authorized dynamic tracing and inference
-
-- Tracing is opt-in, target-hash-bound and local to systems the operator is authorized to inspect.
-- Windows native tracing uses Microsoft Detours in a purpose-built signed/explicitly loaded probe.
-- Frida may be used on Windows or macOS/Wine only when explicitly enabled and recorded; it is never bundled as a hidden/background component.
-- Traces collect shapes and lifecycle evidence, not unrestricted payloads:
-  - pointer identity token, null/non-null, region size, protection and alias group;
-  - before/after hash and changed byte ranges;
-  - explicit length arguments;
-  - allocation/free pairing and module;
-  - thread/apartment ID class;
-  - callback ordering, nesting and timing;
-  - handle create/use/close sequence;
-  - async begin/completion/result/cancel sequence;
-  - loaded module canonical path and SHA-256.
-- Default redaction excludes string/body contents, credentials, account IDs, capabilities, tokens, signatures and private keys.
-- Sensitive bytes may not be retained merely because tracing can see them.
-- Each trace has authorization scope, target hash, probe hash, start/end, redaction policy and destruction deadline.
-- Three or more varied traces may raise a hypothesis from `unknown` to `inferred`; they cannot make it `authoritative`.
-- Contradictory traces lower confidence and block generation.
-- **[STOP]** Rare callback behavior, allocator ownership, custom `IMarshal`, apartment affinity, nested aliasing or destructive side effects that remain unproved produce an AI packet and manual gate.
-
----
-
-# 8. Generation and runtime by target family
-
-| Family | Generated caller artifact | Windows dispatcher | Mandatory proof |
-|---|---|---|---|
-| Native C DLL | PE DLL with exact exports, calling convention, ordinals and ABI | typed function-pointer invocation from pinned DLL | export-table equality, struct layout, local-vs-remote fresh-process differential |
-| Native C++ DLL | compiler/architecture-specific shim preserving decorated names and declared ABI | same compiler ABI dispatcher | compiler version pin, name/vtable/layout proof; C++ exception crossing prohibited unless exact proof exists |
-| COM/WinRT | in-process COM proxy implementing declared IIDs / WinRT projection | apartment-aware COM activator and interface table | QI identity, AddRef/Release, apartment/reentrancy, VARIANT/SAFEARRAY/BSTR parity |
-| .NET assembly | assembly matching public API and strong-name policy | isolated managed dispatch host | public API hash, overload/generic/async/exception parity, load-context and dependency hash gate |
-| Native EXE | proxy EXE preserving approved argv/env/stdin/stdout/stderr/exit semantics | owned process-tree runner in a Windows Job Object | argument quoting, streaming I/O, timeout/cancel, child cleanup, exact exit status |
-| .NET EXE | managed proxy EXE or native launcher as contract declares | managed process runner / assembly entry host | same process contract plus runtime/assembly identity |
-
-- Side-by-side placement is canonical. PE import-table patching is not.
-- Native C++ support is per pinned compiler ABI, never a universal claim.
-- COM local servers, UI/message pumps and custom marshaling require explicit contracts.
-- EXE environment is default-deny allowlist. Interactive desktop access is off.
-- Windows Job Object uses kill-on-close, process-count/memory/CPU limits and complete child-tree accounting.
-- Managed dispatch runs in a fresh process where unload/isolation cannot be proved in-process.
-
----
-
-# 9. Marshalling matrix
-
-| Category | Canonical representation and requirement | Unsupported/stop condition |
-|---|---|---|
-| Integers/floats/bool | fixed-width wire values; explicit native width/sign; IEEE bit preservation | ABI-dependent `long`, `size_t`, `wchar_t` without target architecture |
-| Enum/flags | underlying width plus allowed/unknown-value policy | generator must not reject unknown bit flags when contract permits forward compatibility |
-| Records | field offsets, total size, alignment, packing, endianness and padding policy | missing authoritative layout |
-| Unions | discriminator plus active arm; raw union only with exact size and arm contract | unknown active arm |
-| Bitfields | compiler/architecture layout explicitly recorded and tested | portable inference from source spelling alone |
-| UTF-8/ANSI | byte count, terminator policy, code page and invalid-sequence behavior | unspecified code page |
-| UTF-16/BSTR/HSTRING | code-unit length, terminator/embedded-null rules, allocator semantics | conflation of BSTR/HSTRING/plain buffer |
-| Buffers | in/out/inout, capacity, produced/required length, maximum and insufficient-buffer behavior | unbounded pointer |
-| Pointer graph | object IDs, node/edge limits, alias groups, nullability and ownership | cycles/aliasing without reviewed graph contract |
-| Allocators | named allocator/deallocator pair and ownership transfer | unknown freeing side |
-| Opaque handles | broker epoch, owner, slot, generation, type and close operation | raw HANDLE/pointer on wire |
-| Transferable OS resources | broker-side use only or copied semantic data | arbitrary duplicated OS handle across VM |
-| Callbacks | callback ID, signature, lease, thread/apartment, order, concurrency, reentrancy and unregister | unknown callback lifetime/thread |
-| Async | begin/completion/result/cancel state machine and durable operation when needed | completion inferred from timeout or disconnect |
-| COM identity | stable remote object ID, IID, QI table, distributed lease/ref accounting | custom `IMarshal` without reviewed adapter |
-| COM refcount | local proxy refcount batched to remote with final release receipt | claiming exact instantaneous distributed refcount |
-| Apartments | STA executor/message pump or MTA pool as contract declares | unknown threading model |
-| Exceptions | native exception/SEH never crosses directly; mapped to declared error preserving code | arbitrary C++ exception ABI |
-| `GetLastError` | capture immediately after target call and set caller thread’s last error before return | another API call between target return and capture |
-| HRESULT/NTSTATUS | preserved separately from transport status | collapsing native failure into generic RPC error |
-| Files | content-addressed chunk stream plus metadata and explicit path policy | transmitting arbitrary host paths |
-| Shared buffers | copy/chunk semantics in v2; no cross-VM shared-memory claim | zero-copy/shared-memory claim on QEMU/macOS |
-| Sensitive outputs | contract sensitivity and memory/log policy | password/private-key export |
-
----
-
-# 10. Mac/Wine shim and Windows broker runtime
-
-## 10.1 Mac/Wine
-
-- `libwvb_client` owns one process-wide connection pool keyed by broker identity.
-- Generated proxies validate caller pointers before serialization, but guarded copying must convert invalid caller memory into the declared native failure rather than crash the broker.
-- Thread-local last-error state is restored before returning.
-- Callback dispatch uses contract-declared worker, caller-thread rendezvous, STA or explicit event-loop strategy.
-- Client queues are bounded and expose `BUSY`/native equivalent rather than blocking indefinitely.
-- At-fork/process-exit hooks close sessions without unsafe network work in loader-lock contexts.
-- DLL entry points perform no network connection or blocking work under loader lock.
-
-## 10.2 Windows broker
-
-- Runs as a least-privileged Windows service account, not administrator.
-- Loads dispatchers from an administrator-writable, service-readable store.
-- Before load, resolves canonical path, rejects reparse traversal, opens with no-follow semantics where available, verifies hash/signing policy and verifies the loaded module path/hash again after load.
-- Dispatchers receive typed broker-owned buffers, not the raw socket.
-- Dangerous targets may run in per-adapter worker processes with Job Object, token and resource limits.
-- SQLite stores operations/events/receipts; dispatch threads never hold database locks during native calls.
-- Startup reconciliation marks abandoned non-resumable work `unknown`/`failed` with evidence; it never fabricates completion.
-- Broker exposes readiness separately from health:
-  - readiness: listener, identity, database, dispatcher catalog and queue capacity;
-  - health: dependency checks, stale operations, disk quota, update state and recent failures.
-
----
-
-# 11. Setup, doctor, networking, update, rollback and uninstall
-
-## 11.1 Setup sequence
-
-1. Install signed Windows MSI.
-2. MSI installs service, data directories, ACLs and a firewall rule scoped to the VM/private profile and configured broker port.
-3. Service generates identity and remains unpaired.
-4. Administrator runs `wvb pair open`; preflight shows listener address, firewall scope, ten-minute expiry and current clients.
-5. Install signed/notarized macOS package containing `wvb` and Wine runtime.
-6. `wvb pair <host>` performs Noise pairing and stores identity in Keychain.
-7. `wvb doctor` verifies route, peer fingerprint, protocol, readiness, catalog, clock skew and a real fixture call.
-8. Adapter installation performs preflight, hash verification, deterministic receipt verification and atomic catalog activation.
-
-## 11.2 Doctor output
-
-Every check contains:
+Module:
 
 ```text
-checkId, scope, status, source, checkedAt, reason, remediation, evidenceId
+moduleId
+kind
+placement
+packageRootId
+relativePath
+sha256
+architecture
+abi
+loadOrder
+dependencies[]
+fallback
+sourceEvidenceIds[]
 ```
 
-Statuses: `pass`, `warning`, `blocked`, `fail`, `unknown`. No unconditional `doctor=ok` or `pairedCore=true`.
+Placements:
 
-## 11.3 Update and rollback
+- `mac-local`;
+- `mac-proxy`;
+- `windows-real`;
+- `windows-proxy-to-mac`.
 
-- Packages use signed manifests with version, content hashes, minimum compatible schema and rollback eligibility.
-- Update stages: download → signature verify → preflight → quiesce → backup state/catalog → install inactive version → health probe → atomic activate.
-- Failure restores the prior binary/catalog and records an operation receipt.
-- Database migrations use expand → import/backfill → contract. Destructive contract migrations require a separately approved release and verified backup restoration.
-- Protocol v1 is not run in parallel. Rollback restores the complete prior v1 package and state backup; it does not make v1 and v2 simultaneously reachable.
+Path rules:
 
-## 11.4 Uninstall
+- relative forward-slash paths only;
+- no absolute, drive, UNC, NUL, `.` or `..`;
+- reject Unicode-equivalent and Windows case-fold collisions;
+- reject duplicates and path escape;
+- reject escaping symlinks/reparse points;
+- reject unexpected executable files;
+- verify architecture, ABI, imports, exports, hashes and loaded canonical paths.
 
-- Preflight lists service, firewall rule, paired clients, adapters, operation history and retained receipts.
-- Stop service, cancel/mark operations according to policy, remove package/firewall/service.
-- Secrets are deleted from DPAPI/Keychain only after explicit confirmation.
-- Audit export is optional and redacted.
-- Uninstall receipt states what was removed and what data was retained.
+The required graph is acyclic. Fallbacks are explicit and hash-pinned.
 
----
+## 11.4 Finalization order
 
-# 12. Observability, receipts, privacy and logging
+Dependency schema and validation land early, but package layout is not finalized until all family generators have emitted their actual module/dependency requirements.
 
-## 12.1 Durable operation schema
+- T012 establishes schema and generic validation.
+- Native, C++, COM/WinRT, managed and EXE generators produce family dependency facts.
+- T105 performs final cross-family graph resolution, relative-layout generation and load-order validation.
+- Packaging tasks depend on T105, not on a premature native-only layout.
 
-Fields include:
+## 11.5 Conditional reverse dependency
 
-- `operationId`, `type`, `actorFingerprint`, `targetIds`;
-- `createdAt`, `startedAt`, `updatedAt`, `completedAt`;
-- `status`: `queued|waiting|running|blocked|canceling|canceled|succeeded|failed|partial|expired|unknown`;
-- ordered stages with timestamps, status, redacted message/error and evidence IDs;
-- progress only when measurable;
-- attempt, idempotency key hash, retry/cancel/rerun capabilities;
-- artifact hashes, trace ID and receipt hash.
+`windows-proxy-to-mac` is not baseline support.
 
-## 12.2 Event model
+T086 evaluates the trigger after static inspection, family generation and authorized tracing. T087 always completes with exactly one signed outcome:
 
-- Append-only `events` table with monotonic sequence per operation.
-- Operation snapshots are derived under `BEGIN IMMEDIATE`.
-- Receipt/event insertion and terminal-state transition are atomic.
-- A bounded writer queue applies backpressure; audit is not silently dropped.
-- Crash recovery reconciles running operations against worker/process state.
+1. `implemented` — real evidence required reverse execution and the adapter/tests passed; or
+2. `not-applicable` — no real target trace/inspection established the need, feature remains disabled.
 
-## 12.3 Log policy
-
-Allowed by default:
-
-- protocol/message type, adapter/operation numeric ID;
-- durations, byte counts, queue depth;
-- redacted error codes;
-- target/build/receipt hashes;
-- peer public-key fingerprint prefix.
-
-Forbidden:
-
-- pairing code or derived secrets;
-- private keys;
-- raw payloads;
-- credentials, tokens, signatures, licenses;
-- account/profile identifiers;
-- unrestricted file paths, command lines or environment;
-- callback/context pointer values.
-
-Retention is configurable, bounded and documented. Diagnostic bundles show a manifest before export and use explicit redaction.
+T140 depends on T087, so no OR-dependency or unowned branch remains.
 
 ---
 
-# 13. Security, fuzzing, dependencies and signing
+# 12. Static inspection, dynamic inference and AI packets
 
-- Default-deny operation capability tokens are bound to client identity, adapter hash, operation IDs, expiry and rate limits.
-- Authorization occurs for every call, callback registration, trace, adapter install, pairing mutation, update and audit export.
-- Per-client and per-operation token buckets bound calls, bytes, callbacks and failed auth.
-- Fuzz targets cover the Noise record boundary, envelope, packed codec, all generated decoders, adapter validation, PE/CLR/PDB/TLB parsing, chunk reassembly and receipt import.
-- Corpus includes truncation, duplicate tags, integer overflow, decompression flags, alias bombs, deep nesting, stale handles, callback storms and conflicting chunks.
-- Dependency policy:
-  - lockfiles committed;
-  - `cargo deny` license/advisory/source policy;
-  - NuGet locked mode;
-  - pinned GitHub Actions by commit before release;
-  - SBOM in SPDX JSON;
-  - provenance attestation and source/archive hashes.
-- Unsigned artifacts are reproduced first. Signing runs in a separate protected release job using referenced secret-store keys; keys never materialize in repository/logs.
-- Release verifies signature, timestamp, certificate chain, unsigned hash linkage and loaded binary hash.
-- **Mandatory human approval:** pairing/identity design, firewall scope, signing configuration, any PII-sensitive adapter, and any destructive data migration.
+## 12.1 Static inspection
+
+Inputs:
+
+- C/C++ headers and pinned Clang options;
+- PE exports/imports/load configuration;
+- PDB symbols/types;
+- CLR ECMA-335 metadata and portable/Windows PDBs;
+- IDL, TLB/ITypeInfo and WinMD;
+- exact target hashes and architectures.
+
+Confidence:
+
+- `authoritative`;
+- `structural`;
+- `observed`;
+- `inferred`;
+- `unknown`.
+
+Observed/inferred evidence never silently becomes authoritative.
+
+## 12.2 Dynamic tracing
+
+- Explicitly authorized and target-hash-bound.
+- Detours for native Windows probes.
+- Frida only when explicitly activated.
+- Collects pseudonymous pointer identity, sizes, aliases, mutation ranges, allocator pairing, callback ordering, thread/apartment, handles, async/cancel sequence and loaded-path/hash evidence.
+- Excludes payload bodies, credentials, pairing material, account/profile IDs, signatures, tokens and private keys by default.
+- Contradictions block generation.
+
+## 12.3 Prompt-injection-safe AI packet
+
+Packet sections:
+
+1. trusted version-controlled instructions;
+2. target identity and contract hash;
+3. typed unresolved questions;
+4. exact files/symbols/functions;
+5. tests and deterministic commands;
+6. privacy/security constraints;
+7. hard stops;
+8. untrusted attachments.
+
+All inspected comments, names, metadata, documentation, paths and trace strings are untrusted data.
+
+They are:
+
+- JSON-escaped under `untrustedAttachments[]`;
+- base64-encoded if invalid UTF-8;
+- bounded and redacted;
+- prefixed by a fixed warning;
+- rendered using generated delimiters unrelated to content;
+- never copied into the trusted instruction section;
+- interpreted only through typed IR.
+
+Malicious comments, Markdown fences, shell commands, Unicode controls and instruction-like metadata are mandatory tests.
 
 ---
 
-# 14. Performance tiers and decision gates
+# 13. Target-family generation contracts
 
-## 14.1 Required benchmark matrix
+## 13.1 Native C
 
-Actual Mac host + QEMU/UTM Windows VM:
+- Exact export names/ordinals/calling convention.
+- Exact target architecture.
+- Struct packing/layout and scalar widths.
+- Generated proxy and dispatcher compile without manual edits.
+- Fresh-process local versus remote differential oracle.
 
-- payloads: tiny, 4 KiB, 64 KiB, 1 MiB;
-- cold and warm connection;
-- sequential and bounded concurrency;
-- p50/p95/p99 wall latency;
-- client/broker CPU, allocations and bytes on wire;
-- callback invocation and cancellation propagation;
-- chunk count and reassembly cost;
-- at least 1,000 measured iterations after warmup, raw samples retained;
-- machine, VM, networking, power and build metadata recorded.
+## 13.2 Native C++ initial subset
 
-Fixtures:
+Supported:
 
-- `core.ping`;
-- real `kernel32!GetTickCount64`;
-- deterministic native echo fixture;
-- callback fixture;
-- cancellable long operation;
-- native and managed EXE stream fixtures.
+- Windows x64 MSVC ABI only;
+- exact pinned v143 compiler and `/MD` CRT;
+- decorated exported free functions;
+- decorated exported static member functions that do not depend on object state;
+- POD/standard-layout parameters and results;
+- explicit opaque remote handles created through separately exported C-like factory functions;
+- no STL types across the boundary;
+- no caller-visible exception propagation.
 
-## 14.2 Acceptance
+Rejected before generation:
 
-- Every matrix cell completes without corruption, leak, protocol error or unbounded memory growth.
-- 1 MiB request and result both pass with verified whole-message hashes.
-- Cold and warm results are reported separately.
-- No external number is a pass threshold.
-- The release publishes measured results without implying universal performance.
-- The candidate is blocked if its warm p99, CPU or allocations regress by more than 20% from the immediately preceding canonical v2 baseline without an approved correctness/security justification.
-- A codec replacement requires same-machine paired A/B evidence showing either:
-  - at least 15% lower total CPU with no p99 or allocation regression over 5%; or
-  - at least 10% lower p99 with no CPU or allocation regression over 5%.
-- **[D]** Packed generated codecs remain canonical unless this gate is met through a protocol-major review. gRPC does not become primary through this gate; it requires a separate architectural decision.
+- exported constructors or destructors;
+- copy/move constructors or assignment operators;
+- non-static instance methods, including implicit `this`;
+- virtual methods and vtables;
+- multiple or virtual inheritance;
+- RTTI/`dynamic_cast` dependence;
+- member-pointer ABI;
+- shared allocator ownership;
+- STL strings/containers;
+- coroutine frames;
+- C++ exceptions expected by the caller.
+
+Inspection still records constructors, destructors, instance methods and vtables. Their presence produces a precise stop/AI packet. They are not partially proxied.
+
+Target exceptions are caught only inside the Windows dispatcher and mapped to a contract-declared native status. If no truthful mapping exists, generation stops.
+
+## 13.3 COM
+
+Caller proxy:
+
+- registration-free manifest;
+- `DllGetClassObject`;
+- `DllCanUnloadNow`;
+- generated `IClassFactory`;
+- aggregation rejected with `CLASS_E_NOAGGREGATION` unless explicitly proved.
+
+Identity:
+
+- one remote object ID per controlling `IUnknown`;
+- all QI-derived interfaces share controlling identity;
+- only declared IIDs;
+- unsupported IID returns `E_NOINTERFACE`.
+
+Refcount:
+
+- default local reference aggregation with one broker lease per controlling identity;
+- final release closes broker lease;
+- exact per-`AddRef/Release` mode only when required and tested.
+
+Apartments:
+
+- dedicated STA executor/message pump;
+- bounded MTA pool;
+- authoritative apartment declaration required;
+- custom `IMarshal` or undocumented pumping stops.
+
+Broker activation:
+
+- exact-hash registration-free activation context or exact class-factory export;
+- out-of-process server requires an EXE process contract.
+
+## 13.4 WinRT
+
+- Generated `DllGetActivationFactory`.
+- Runtime classes/IIDs from exact WinMD.
+- Exact HSTRING and `IInspectable` semantics.
+- Broker activation through pinned package activation context and `RoGetActivationFactory` or exact export.
+- Async completion/cancellation follows protocol state machines.
+
+## 13.5 .NET assembly
+
+Initial hosts:
+
+- `.NET Framework 4.8.1`;
+- `.NET 8.0 Windows`.
+
+Unsupported initially:
+
+- Mono caller runtime;
+- mixed-mode C++/CLI;
+- reflection-only undocumented API;
+- unsupported NativeAOT reflection behavior.
+
+Public API reproduction includes types, constructors, methods, properties, events, generics, nullable metadata and async methods.
+
+### Field policy
+
+Supported fields are limited to:
+
+1. compile-time constants (`literal`/`const`) copied exactly from metadata;
+2. local immutable metadata fields whose value is fully present in metadata or generated constants and does not depend on remote runtime state;
+3. private generated implementation fields not part of the target public API.
+
+Rejected before generation:
+
+- public/protected mutable instance fields;
+- public/protected mutable static fields;
+- instance `readonly` fields that represent target object state;
+- static `readonly` fields initialized by target code, configuration, environment, time, I/O or native calls;
+- fields requiring synchronization with a remote object;
+- thread-static/context-static fields;
+- field-backed state observed directly by caller IL.
+
+Such APIs require a contract redesign or exact custom implementation packet. The generator must not replace remotely stateful fields with stale local copies.
+
+### Binding and strong names
+
+- `net481`: application-local proxy and tested binding redirect only when authorized.
+- `net8.0-windows`: application-local `.deps.json`/runtimeconfig and isolated `AssemblyLoadContext`.
+- All dependencies hash-pinned.
+- Original public-key token requires authorized private strong-name key.
+- Without key, stop unless a new identity plus binding redirect is explicitly authorized and proven against the real caller.
+- Strong-name signing is distinct from Authenticode.
+
+## 13.6 Native and .NET EXEs
+
+Proxy preserves only declared:
+
+- command-line quoting and argv;
+- environment allowlist;
+- working-directory policy;
+- stdin/stdout/stderr;
+- exit code;
+- timeout/cancellation;
+- child process tree.
+
+Windows execution uses a Job Object with kill-on-close and resource limits. Interactive GUI/process-local IPC/shared memory requires a separate adapter.
 
 ---
 
-# 15. Complete test strategy and exact acceptance
+# 14. Guarded copying under Wine
 
-| Layer | Required coverage | Acceptance |
+Generated PE proxies use a dedicated native layer:
+
+```text
+wvb_guarded_copy_in
+wvb_guarded_copy_out
+wvb_guarded_read_scalar
+wvb_guarded_write_scalar
+```
+
+Mechanism:
+
+1. Build the proxy as a PE DLL with the pinned clang-cl/MSVC-compatible toolchain.
+2. Use `VirtualQuery` only for preliminary range/protection checks; never treat it as race-free validation.
+3. Snapshot input with `memcpy` inside Windows structured exception handling:
+   ```c
+   __try { memcpy(...); }
+   __except(EXCEPTION_EXECUTE_HANDLER) { ... }
+   ```
+4. Perform network work only on broker-owned snapshots.
+5. Stage complete output in proxy-owned memory.
+6. Copy output once through the same SEH boundary after full validation.
+7. Map access violations to the exact contract-declared error, normally `ERROR_NOACCESS`, `E_POINTER` or family-specific equivalent.
+8. Never use `IsBadReadPtr`/`IsBadWritePtr`.
+9. Never hold loader lock while copying or calling the network.
+
+TOCTOU cannot be eliminated when another thread concurrently changes mappings. Therefore:
+
+- SEH is the authoritative fault containment;
+- an output copy may have partially modified caller memory before a cross-page fault;
+- contracts requiring atomic no-change-on-invalid-pointer semantics stop unless a target-specific safe mechanism is proved;
+- concurrent caller mutation during input snapshot is undefined unless the source API defines synchronization.
+
+Mandatory tests:
+
+- null pointer;
+- zero length;
+- valid one-page buffer;
+- buffer crossing readable pages;
+- crossing into `PAGE_NOACCESS`;
+- decommitted second page;
+- guard page;
+- integer overflow in pointer+length;
+- concurrent `VirtualProtect`/decommit race;
+- output fault after staged result;
+- fault-to-native-error parity under Wine;
+- no broker invocation after failed input snapshot.
+
+---
+
+# 15. Marshalling matrix
+
+| Category | Canonical policy | Stop condition |
 |---|---|---|
-| Unit | envelope, codec, IDs, deadlines, limits, errors, normalization, hashes, state transitions | all pass on macOS/Windows; no ignored release tests |
-| Property | canonical encode/decode, unknown-field leniency, state-machine invariants, chunk reassembly | at least 100,000 generated cases per release seed set |
-| Contract | JSON schema, IR, generated API/export tables, error mapping | every fixture and released adapter validates; no unresolved fields |
-| Fuzz | protocol, parser, metadata readers, generated decoders | sanitizer-clean; each target runs at least 8 CPU-hours before release and continuous CI smoke |
-| Differential | local native/managed oracle versus bridged call in fresh processes | exact value/error/output/last-error parity for every supported operation |
-| Compatibility | current client/current broker, previous supported minor/current peer | all advertised minor combinations pass; no v1 compatibility claim |
-| Chaos | disconnect, half-close, delay, reorder at application streams, restart, disk full, queue full, worker crash | truthful terminal/unknown states; no duplicate effect; recovery receipt exists |
-| Security | auth failure, replay, downgrade, path substitution, DLL swap, callback flood, parser bombs | all rejected before side effect; specific redacted evidence |
-| E2E | generated proxy loaded by real Wine process; real Windows target result consumed | complete six-family fixture suite passes |
-| Clean-machine | fresh supported macOS and Windows VM from packages | setup, pair, generate/install, invoke, doctor, update rollback and uninstall pass |
-| Reproducibility | two isolated unsigned builds | byte-identical artifacts and receipts |
-| Held-out | frozen unseen headers/TLB/assemblies/EXEs and adversarial contracts | generator either produces passing artifact or exact AI packet; never false support |
-| Packaging smoke | install/upgrade/uninstall, service, firewall, Keychain/DPAPI | no orphan service/rule/secret unless retention explicitly selected |
-
-Mandatory adversarial cases include:
-
-1. 1 MiB final chunk truncated after receipt.
-2. Same idempotency key with a different request hash.
-3. Broker restart while a handle and callback are active.
-4. DLL replaced between preflight and load.
-5. Cancel races with native completion.
-6. COM `Release` during callback reentrancy.
-7. EXE spawns a child and parent exits.
-8. Managed target throws an exception containing sensitive text.
-9. PDB/header disagree about packing.
-10. Trace observations contradict an ownership annotation.
+| Scalar | explicit width/sign/IEEE bits | architecture-dependent width unknown |
+| Enum/flags | underlying width and unknown policy | missing width |
+| Record | size/alignment/packing/offsets | incomplete layout |
+| Union | explicit discriminator and arm | unknown active arm |
+| Bitfield | exact compiler layout | source spelling only |
+| UTF-8/ANSI | byte count/terminator/code page | unspecified code page |
+| UTF-16/BSTR/HSTRING | code units/embedded null/allocator | conflated forms |
+| Buffer | direction/capacity/required length/maximum | unbounded pointer |
+| Pointer graph | IDs, aliases, ownership, node/edge limits | unresolved graph |
+| Allocator | named allocation/free in same environment | unknown owner |
+| Handle | epoch/actor/slot/generation/type/close | raw handle transfer |
+| Callback | lease/thread/order/reentrancy/unregister | unknown lifetime/thread |
+| Async | begin/completion/result/cancel | timeout treated as completion |
+| COM | controlling identity/IIDs/ref/apartment | custom marshaling unresolved |
+| Exception | declared mapping only | caller-visible C++ exception |
+| `GetLastError` | immediate capture and caller-thread restore | intervening call |
+| File | content-addressed transfer | arbitrary path exposure |
+| Shared buffer | copied/chunked semantics | zero-copy claim |
+| Sensitive data | explicit privacy class | unauthorized export |
 
 ---
 
-# 16. Packaging, release, support matrix, docs and examples
+# 16. Runtime, operations, setup and migration
 
-- macOS package: universal where practical; supported macOS versions listed explicitly; notarized release package.
-- Windows package: x64 MSI initially; ARM64 only after native fixture and packaging gates pass.
-- Wine support is version-bounded and tested; unsupported versions receive an honest doctor result.
-- Release contains broker, CLI, client runtime, generator, schemas, docs, fixture contracts, SBOM, provenance and checksums.
-- Third-party DLLs/SDKs are never redistributed without license authorization.
-- Every target-family example must build a real fixture, generate a proxy, execute through the VM, and show the corresponding receipt.
-- Documentation must include architecture, exact protocol, adapter authoring, evidence/confidence, tracing authorization, setup/pairing, operations/diagnostics, security, reproducibility, rollback/uninstall, limitations and support matrix.
-- Status claims derive from test receipts. “Generated,” “experimental,” and “supported” are distinct.
-- A target family is `supported` only after its complete family acceptance passes; otherwise it is `unsupported` or `requires-contract-specific-completion`.
+## 16.1 Mac/Wine runtime
 
----
+- One process-wide connection pool per broker identity.
+- No network/blocking work in `DllMain`.
+- Guarded ABI copies as §14.
+- Thread-local last-error restore.
+- Explicit callback executors.
+- Forked child discards inherited session.
+- Bounded queues and honest resource errors.
 
-# 17. Phase ledger and ordered dependency-safe task graph
+## 16.2 Windows broker
 
-## 17.1 Program approval model
+- Least-privileged service.
+- Exact package ACLs.
+- Reparse/path escape rejection.
+- Pre-load and post-load path/hash verification.
+- Typed dispatcher boundary.
+- Worker isolation where required.
+- SQLite WAL with bounded writer queue.
+- Startup reconciliation and distinct health/readiness.
 
-The user explicitly requests implementation of all phases after this ledger receives independent adversarial review. Therefore this is an **approved-program** ledger rather than a one-phase roadmap.
+## 16.3 Durable operation schema
 
-- **Immediate phase:** P0 independent review and contract freeze.
-- P1–P16 remain `not-started` until P0 passes.
-- After P0 PASS and owner sign-off, P1–P16 become `approved-for-this-run` and may continue autonomously in dependency order.
-- Separate ordinary approval is not required between phases.
-- Mandatory human checkpoints remain for identity/secret/signing/PII/destructive-migration decisions; the P0 sign-off may satisfy them only if it explicitly approves those listed decisions without requested changes.
-- Any `[STOP]`, destructive migration, scope expansion, contract change, cryptographic redesign or hidden unknown returns to adversarial review.
+Every long-running/effecting operation includes:
 
-## 17.2 Phase ledger
+- operation UUID/type;
+- actor and targets;
+- created/started/updated/completed times;
+- full status enum;
+- ordered stages;
+- honest progress;
+- attempt and idempotency-key hash;
+- retry/cancel/rerun flags;
+- error/evidence/artifacts;
+- trace ID and terminal receipt.
 
-| Phase | Status now | Scope | Out of scope | Exit gate | Autonomous continuation |
-|---|---|---|---|---|---|
-| P0 Contract/adversarial freeze | `approved-for-this-run` | review this ledger, resolve ACs, freeze protocol/schema/security | product implementation | independent PASS plus owner sign-off | yes, into P1 |
-| P1 Repository/build foundation | `not-started` | pinned toolchains, workspace, gates, receipts | runtime features | clean portable build/test and reproducible fixture | yes after P0 |
-| P2 Protocol/security/state | `not-started` | protocol v2, Noise, SQLite operations/audit | target invocation | protocol/security/fuzz gates | yes |
-| P3 Inspection and IR | `not-started` | PE/Clang/PDB/CLR/TLB/WinMD and confidence | dynamic inference | held-out static classification gate | yes |
-| P4 Scalar native vertical path | `not-started` | compilable native C proxy and dispatcher | public merge/support claim | real Wine→VM DLL result | yes |
-| P5 Compound marshalling | `not-started` | records/strings/buffers/unions/errors | handles/callbacks | differential/bounds gate | yes |
-| P6 Handles/resources | `not-started` | opaque handles, generations, restart behavior | callbacks/COM | stale/owner/restart gate | yes |
-| P7 Callbacks/async/cancel | `not-started` | reverse RPC, leases, reentrancy, async | COM-specific identity | callback/cancel chaos gate | yes |
-| P8 COM/WinRT | `not-started` | typelib/WinMD proxies and apartments | custom IMarshal without contract | COM identity/apartment suite | yes |
-| P9 Managed DLL | `not-started` | .NET assembly proxy/dispatcher | C++/CLI | managed differential suite | yes |
-| P10 EXE families | `not-started` | native and .NET EXE process contracts | interactive GUI remoting | Job Object/process-tree suite | yes |
-| P11 Dynamic tracing/AI packets | `not-started` | authorized probes, inference, exact packets | automatic promotion of inference | redaction/conflict/held-out gate | yes |
-| P12 Setup/operations/update | `not-started` | packages, service, pairing, doctor, inventory, operations, diagnostics, rollback/uninstall | public release | clean-machine lifecycle | yes |
-| P13 Security/performance hardening | `not-started` | fuzz, rate limits, provenance, benchmark decision | new transport | security and benchmark gates | yes |
-| P14 Full compatibility/E2E | `not-started` | six-family matrix, chaos, held-out, real DLL path | docs-only completion | all test classes green | yes |
-| P15 Migration and cleanup | `not-started` | import secrets, remove v1/scaffolds/docs drift | main merge | no superseded path or false claim | yes |
-| P16 Release/final integration | `not-started` | signed packages, final receipts, atomic main merge | partial release | definition of done | no further phase |
+## 16.4 Two-command setup wrapper
 
-## 17.3 Ordered tasks
+After obtaining the signed release wrapper/package through the documented release channel, canonical clean-machine setup is accepted only if these two operator commands are sufficient:
 
-Each task status is `not-started` unless noted.
+**Windows VM, elevated:**
 
-| ID | Files | Dependencies | Implementation and deterministic tests | Acceptance | Rollback / risk |
-|---|---|---|---|---|---|
-| T000 | this ledger/review artifact | none | independent reviewer checks all ACs, schemas, limits, threats and task dependencies | PASS; no unresolved architectural decision | revise ledger only; **R4 identity/security** |
-| T010 | `Cargo.*`, toolchain, CMake, `global.json`, CI | T000 | create pinned workspaces and minimal real fixture builds; lock dependencies | macOS/Windows clean builds; two fixture builds identical | delete new foundation; medium dependency risk |
-| T011 | `schemas/*`, `wvb-ir` | T010 | encode adapter/evidence/operation/receipt schemas and canonical normalization | golden hashes stable; invalid/unknown contracts rejected specifically | schema unshipped; high drift risk |
-| T020 | `wvb-protocol`, `protocol/v2.md`, goldens | T011 | implement exact envelope, codec, limits, flow control and state machines | golden vectors cross-language identical; property tests pass | revert whole v2 crate; high caller impact |
-| T021 | `wvb-crypto`, pairing tests | T020 | implement Noise, identity storage interfaces, replay/downgrade rejection | official Noise vectors plus cross-platform handshake pass | no plaintext fallback; **R4 secrets/identity** |
-| T022 | `wvb-state/migrations`, state/receipt modules | T011 | create append-only events, snapshots, idempotency and reconciliation | crash/lock/duplicate tests pass; database invariant checker clean | restore backup/drop unactivated DB; data risk |
-| T023 | `wvb-client`, `wvb-broker` core | T020–T022 | persistent multiplexing, bounded queues, operation status and readiness | loopback call/cancel/reconnect/queue tests pass | revert both peers atomically |
-| T030 | `wvb-inspect/{pe,clang,pdb}` | T011 | migrate existing Clang behavior; add target ABI/export/layout evidence | existing fixtures plus conflicting PDB/header test pass | retain old inspector only on integration branch |
-| T031 | `wvb-inspect/{clr,typelib}` | T030 | add CLR/TLB/WinMD metadata and identity extraction | deterministic evidence on managed/COM fixtures | isolate readers; malformed metadata risk |
-| T032 | `evidence.rs`, `confidence.rs`, held-out static tests | T030–T031 | implement claim graph/conflict/expiry and supportability | no inferred claim becomes authoritative | rollback evidence DB schema before activation |
-| T040 | `wvb-generate`, native C templates, C fixture | T023,T030 | generate exact scalar proxy/dispatcher/codecs/exports | proxy compiles; export table exact; real DLL result consumed under Wine | delete generated artifact; ABI crash risk |
-| T041 | deterministic receipt/repro tests | T040 | normalize builds and emit `BuildReceiptV1` | two clean unsigned artifacts byte-identical | keep generation blocked if nondeterministic |
-| T050 | IR types and C/C++ templates | T040 | add enum/flags/records/packing/unions/bitfields | local/remote differential vectors exact | per-type feature remains unsupported |
-| T051 | string/buffer/file marshallers | T050,T020 | add UTF-8/16, BSTR/HSTRING forms, in/out/inout, 1 MiB chunking | null/embedded-null/insufficient/truncated/1 MiB pass | feature-gated contract rejection |
-| T052 | error bridge | T050 | preserve HRESULT/Win32/NTSTATUS/SEH/exception classification and last error | fresh-process parity for each domain | do not map to generic success/error |
-| T060 | handle table/client proxy | T023,T052 | implement owner/epoch/slot/generation/close/lease | wrong owner, double close, restart stale tests pass | invalidate all handles; external resource risk |
-| T070 | callback registry/reverse RPC | T060 | implement leases, ordering, concurrency, reentrancy and unregister | nested, storm, late callback and disconnect tests pass | unregister/close session |
-| T071 | async/cancel state machines | T070,T022 | implement begin/completion/result/cancel and durable states | cancel race never invents success; exact terminal receipt | reconcile to unknown; side-effect risk |
-| T080 | COM generator/runtime | T031,T070 | QI, identity, ref batching, STA/MTA execution, VARIANT/SAFEARRAY/BSTR | COM fixture passes identity/ref/apartment/reentrant tests | COM family remains unsupported; **R4 identity/data** |
-| T081 | WinRT projection | T080 | WinMD interfaces, HSTRING, async projection | WinRT fixture differential suite passes | disable family |
-| T090 | managed client/dispatch host/generator | T023,T031,T071 | generate public API, overloads, async, exceptions; isolate load contexts | API hash and fresh-process differential pass | managed family unsupported |
-| T100 | native EXE proxy/runner | T023,T022 | argv/env/stdin/out/err/exit plus Job Object process tree | quoting, streaming, timeout, child cleanup pass | terminate Job and mark receipt |
-| T101 | managed EXE proxy/runner | T090,T100 | managed entry/process contract | same plus managed exception/runtime identity | disable managed EXE family |
-| T110 | `wvb-trace` Detours/Frida | T032,T071 | authorization, probes, shape/lifecycle collection and redaction | target hash gate and zero forbidden fields in fixtures | uninstall probes/delete traces; privacy risk |
-| T111 | inference merger | T110 | correlate traces, preserve contradictions/unknowns | inferred claims never auto-approve ABI | discard inference output |
-| T112 | AI packet generator/template | T032,T111 | emit exact target, unknowns, files/symbols/tests/stops/build command | held-out unprovable targets yield complete packet, no TODO-only output | regenerate packet; no runtime risk |
-| T120 | Windows MSI/service/firewall | T021,T023,T022 | package least-privileged service, ACLs, private-profile rule | clean VM install/readiness/uninstall pass | MSI rollback removes service/rule; **R4 network** |
-| T121 | macOS package/Keychain/Wine client | T021,T023 | package CLI/runtime; Keychain identity | clean Mac install/pair/uninstall pass | package rollback removes binaries/key reference |
-| T122 | CLI setup/doctor/inventory/catalog | T120,T121 | preflight, pairing, adapter install/list, sourced/timestamped checks | no unconditional status; blocked/stale states truthful | no mutation without operation receipt |
-| T123 | operations/diagnostics/audit CLI | T022,T122 | list/show/watch/cancel/rerun/export with evidence | operation fields and append-only audit exposed | read-only commands safe; export privacy risk |
-| T124 | update/rollback/uninstall | T120–T123 | atomic inactive install, health activate, restore, impact summary | injected update failure restores prior version/state | backup restore; destructive action approval |
-| T130 | fuzz/security/rate-limit suite | T020–T124 | fuzz all boundaries; abuse and substitution tests | §15 security/fuzz gates pass | block release |
-| T131 | benchmark harness and packed-codec report | T023,T051,T071 | execute exact topology matrix | complete raw/report artifacts; regression rule passes | performance does not override correctness |
-| T132 | SBOM/provenance/signing pipeline | T010,T041,T124 | deterministic unsigned build then separate signing receipt | unsigned reproducibility and signature linkage pass | revoke/rebuild; **R4 signing secrets** |
-| T140 | six-family E2E/compat/chaos | all family tasks,T130 | run complete matrix on actual topology | every §15 gate green | no partial support claim |
-| T141 | held-out assessment | T140,T112 | immutable unseen inputs and false-support audit | compile/run or exact packet; zero false positives | revise generator and rerun all affected gates |
-| T150 | migration importer and backup | T124,T140 | import plaintext v1 capability into secure stores after re-pair confirmation; backup old state | new v2 pair works before old secret deletion | restore old package/config backup |
-| T151 | delete superseded source/docs | T150 | remove Python v1, YAML duplicate, skeleton/TODO docs, fake doctors and caches | repository search finds no v1 wire path or unsupported working claim | revert cleanup commit before merge |
-| T152 | final docs/support matrix/examples | T151,T141 | bind every claim to receipt; publish limitations and rollback | docs and generated schemas match code | documentation-only revert |
-| T160 | clean-machine release candidate | T132,T152 | install/pair/all-family examples/update rollback/uninstall | all clean-machine receipts pass | discard RC |
-| T161 | final independent review | T160 | adversarial rubric, security and capability-honesty review | PASS; zero blockers/majors | return to owning task |
-| T162 | atomic main integration | T161 | merge complete canonical tree only; tag signed release | main CI/release reality checks green; no partial merge | revert merge/tag/package to prior release |
+```powershell
+wvb-bootstrap-windows setup
+```
 
----
+This command:
 
-# 18. Migration from public main and `canonical-runtime`
+- verifies the signed release manifest;
+- installs the MSI;
+- creates service/firewall/TPM anchor;
+- starts the service;
+- opens a ten-minute pairing window;
+- displays the one-time pairing code locally.
 
-## 18.1 Expand
+**Mac:**
 
-1. Branch from `canonical-runtime`; record `main` and branch hashes.
-2. Add v2 workspace, schemas, tests and packages without changing public `main`.
-3. Add v2 database and secure identity stores under versioned paths.
-4. Preserve v1 files only as reference while v2 is incomplete; do not expose both protocols from one installed broker.
+```bash
+wvb-bootstrap-macos setup --broker <guest-address>
+```
 
-## 18.2 Migrate
+This command:
 
-1. Build the v2 vertical path and all family gates entirely on integration.
-2. On upgrade, back up v1 config and capability with owner-only permissions.
-3. Require explicit v2 pairing/identity confirmation.
-4. Import only non-secret preferences automatically.
-5. After v2 E2E succeeds, delete plaintext capability files from Mac and Windows and record presence-only deletion receipts.
-6. Move historical evidence to `docs/historical/`; do not rewrite it as v2 evidence.
+- verifies the signed/notarized package;
+- installs CLI/runtime;
+- prompts interactively for the pairing code without placing it in argv, shell history or logs;
+- completes pairing;
+- runs doctor and the real core call.
 
-## 18.3 Contract
+Acceptance requires no manual file copy, service editing, firewall editing, config editing or UTM protocol substitution. If the topology requires an explicit UTM port-forward, the wrapper must detect and provide one exact preflight instruction; setup is not declared two-command-ready until the supported UTM network mode needs no undisclosed manual step.
 
-Before final merge delete:
+The wrappers are convenience orchestrators over the same receipted package operations, not alternate installers or protocols.
 
-- `winapi_vm_bridge/`;
-- Python `sdk` generator/inspector after parity;
-- `config.example.yml`;
-- `adapters/example-math.yaml`;
-- shell `bin/winapi-vm-bridge`;
-- old setup scripts and fake doctor scripts;
-- scaffold templates and generic TODO prompt;
-- stale public claims and `__pycache__`.
+## 16.5 Platform/toolchain matrix
 
-No destructive data step occurs until:
+Product classes are frozen now:
 
-- backup restoration has been tested;
-- v2 pairing and core/family E2E have passed;
-- uninstall/rollback receipts are verified;
-- adversarial review approves secret deletion.
+- Apple Silicon host;
+- macOS 15 family;
+- UTM/QEMU backend;
+- Windows 11 24H2 x64 guest with TPM 2.0/vTPM;
+- Wine x86_64 environment;
+- MSVC v143;
+- Windows SDK 10.0.26100 family;
+- .NET Framework 4.8.1;
+- .NET 8 LTS;
+- pinned Rust/CMake/Ninja.
 
-## 18.4 Rollback
+Exact patch versions, package hashes, compiler binaries, SDK hashes, UTM/QEMU build IDs, Wine build and OS patch versions are blocking T010 inputs. T010 cannot pass, and no toolchain/platform receipt may be claimed, until those values are observed, selected, downloaded from approved sources and recorded. No placeholder is accepted in a release receipt.
 
-- Before activation: remove v2 inactive package/state.
-- After activation but before old-secret deletion: restore v1 package/config backup and firewall/task state.
-- After old-secret deletion: rollback requires re-pairing v1; this consequence must appear in preflight and requires explicit confirmation.
-- Never downgrade the v2 database in place. Restore the pre-upgrade snapshot.
-- No v1/v2 dual listener is permitted.
+## 16.6 Migration
+
+- Back up v1 state.
+- Pair v2 from scratch.
+- Never import or derive from the v1 capability secret.
+- Import only validated non-secret preferences.
+- Verify v2 and restoration backup.
+- Preflight old-secret deletion.
+- Delete plaintext v1 secret with presence-only destruction receipt.
+- Never run v1 and v2 simultaneously.
+- After deletion, v1 rollback requires fresh v1 pairing.
 
 ---
 
-# 19. Release gates and final definition of done
+# 17. Audit integrity and privacy
 
-The project is done only when all are true:
+## 17.1 Hash chain
 
-1. Protocol v2 is the only runtime protocol.
-2. JSON/v1 and its plaintext capability exchange are absent.
-3. Packed codec golden/property/fuzz tests pass.
-4. Noise pairing, identity storage, replay/downgrade and revocation tests pass.
-5. Unsigned proxy and dispatcher artifacts reproduce byte-for-byte.
-6. The loaded target path/hash equals the contract.
-7. Native C, native C++, COM/WinRT, .NET assembly, native EXE and .NET EXE family fixture suites pass.
-8. All marshalling matrix rows are implemented or cause explicit contract rejection/AI packets; no silent partial support exists.
-9. A real Wine process loads a generated proxy and consumes a real Windows DLL result.
-10. Handles, callbacks, cancellation, disconnect and broker restart behave according to their state machines.
-11. 1 MiB request and result transfers pass end-to-end.
-12. Setup, pairing reuse, doctor, catalog, operations, diagnostics, audit, update rollback and uninstall pass on clean machines.
-13. Operations have durable state; action submission is never represented as completion.
-14. Secret/PII scans, fuzzing, dependency policy, SBOM and provenance pass.
-15. Benchmark matrix is published from the actual topology without external thresholds.
-16. Held-out assessment has zero false support claims.
-17. No mock, scaffold, TODO, fake result or unimplemented generated path is labeled supported.
-18. Every public capability claim maps to a test and receipt.
-19. Independent adversarial review passes with zero Blockers/Majors.
-20. Only then may the complete integration branch merge atomically to `main`.
+```text
+eventHash = SHA-256(
+  "WVB-AUDIT-V1" ||
+  previousEventHash ||
+  sequence_u64_be ||
+  RFC8785(eventWithoutHashFields)
+)
+```
+
+Signed checkpoints occur at:
+
+- pairing/actor/grant/key mutations;
+- every terminal effecting operation;
+- every 1,024 events;
+- before update/uninstall;
+- release/export.
+
+Checkpoint includes event hash, sequence, database generation and TPM signature. TPM NV anchor is updated before durable success is reported.
+
+## 17.2 Privacy
+
+| Class | Examples | Handling |
+|---|---|---|
+| Public | schemas, public ledger, public tool versions | publishable |
+| Internal | hashes, relative logical paths, timings | restricted; redact public export |
+| Confidential | private contracts, headers, PDB metadata, traces, AI packets, held-out data | encrypted restricted storage |
+| Secret | keys, pairing code, credentials, tokens, sensitive payloads | OS secret store/memory only |
+
+Default retention:
+
+- logs 14 days;
+- audit/receipts 90 days;
+- diagnostic bundles 30 days;
+- traces 7 days;
+- AI packets 30 days or until resolved;
+- private contract evidence while adapter installed plus 30 days;
+- held-out corpus while maintained;
+- pairing PSK until commit/expiry only.
+
+Destruction creates a signed presence-only receipt.
 
 ---
 
-# 20. Do-not-build and rejected alternatives
+# 18. Security, testing and performance
 
-| Rejected alternative | Evidence/reason |
+## 18.1 Security controls
+
+- Boundary validation before allocation and target invocation.
+- Actor ACL on every operation.
+- Pair attempts: five/source/ten minutes, twenty globally.
+- Per-actor calls/bytes/callbacks/diagnostics limits.
+- Exact target/load-path/hash checks.
+- Dependency lockfiles, advisory/license/source checks.
+- SPDX SBOM and provenance.
+- Signing keys referenced externally.
+- `runtime.key` ignored and forbidden from commits.
+- Unknown exposure causes rotation.
+
+## 18.2 Test classes
+
+| Layer | Acceptance |
 |---|---|
-| QEMU `vhost-vsock` on macOS | depends on Linux vhost facilities; unavailable for the target QEMU/UTM topology |
-| `ivshmem`/cross-VM shared-memory ring | documented Linux-host orientation and unavailable canonical macOS path |
-| Apple Virtualization.framework Windows vsock | Windows/UTM support and host interaction remain unverified; not a release dependency |
-| Named pipes, ALPC or UDS as cross-VM transport | scoped to one kernel/host unless another bridge is added |
-| DCOM/MIDL RPC as primary transport | no supported custom protocol-sequence plug-in for this data plane; custom marshaling remains necessary |
-| gRPC primary | no topology-specific advantage; channel/HTTP2/allocation complexity; not selected without project benchmark and new ADR |
-| FlatBuffers primary | stale non-topology benchmark; verifier/runtime dependency not justified; packed generated codec selected |
-| Protobuf/MessagePack/Cap’n Proto parallel codecs | violate one canonical protocol and add negotiation/test surface |
-| JSON/v1 compatibility listener | prohibited temporary parallel protocol and 65,535-byte hard gap |
-| OpenCode/subprocess polling | Whiny provides process/evidence patterns, not a suitable low-latency transport |
-| SPICE WebDAV primary bulk path | HTTP/WebDAV overhead and path/security semantics; files use canonical chunk streams |
-| PE import-table patching | side-by-side generated proxy placement is safer and deterministic |
-| Arbitrary `LoadLibrary`/`GetProcAddress` API | binary exports do not encode pointer ownership, bounds, callbacks or lifetime |
-| Automatic ownership inference | impossible to prove from C ABI/TLB alone; dynamic observations preserve uncertainty |
-| Custom `IMarshal` automatic support | wire semantics are invisible to TLB and require an explicit adapter |
-| Forced thread termination for cancellation | can corrupt target state and cannot prove rollback |
-| Interactive GUI/desktop EXE remoting | message loops, desktop identity and process-local IPC require explicit application-specific work |
-| Shared-memory/zero-copy support claim | not available across the selected topology; v2 uses bounded copy/chunk semantics |
-| Deterministic signed hash claim | signing timestamps/signatures are intentionally separate from deterministic unsigned payloads |
-| Partial merge after scalar success | scalar is an internal checkpoint, not the requested canonical completion |
+| Unit | all protocol/authz/dependency/state/canonicalization logic passes |
+| Property | 100,000 cases per frozen seed set |
+| Fuzz | sanitizer-clean, eight CPU-hours/target before release |
+| Contract | every supported contract has zero unresolved semantics |
+| Differential | fresh-process local and remote parity |
+| Compatibility | advertised v2 minors only |
+| Chaos | disconnect, suspend/resume, DB corruption, disk full, keystore denial, worker crash |
+| E2E | real Wine process consumes real Windows result |
+| Reproducibility | two isolated unsigned builds byte-identical |
+| Clean machine | two-command setup through uninstall |
+| Security | replay/downgrade/path/DLL/packet-injection attacks rejected |
+
+## 18.3 Held-out sets
+
+### Expected-supported
+
+- Frozen before evaluation.
+- Entirely inside documented supported subsets.
+- **100%** must generate compilable artifacts without manual source edits.
+- **100%** must pass family contract/export/API tests.
+- At least one held-out target per required family must complete applicable E2E.
+- Any false stop or false support blocks release.
+
+### Expected-stop
+
+- **100%** stop before support artifact generation.
+- **100%** emit exact valid AI packets.
+- **100%** preserve prompt-injection boundary.
+- Any unsupported case labeled supported blocks release.
+
+## 18.4 Performance
+
+T131 is a release dependency and measures:
+
+- tiny, 4 KiB, 64 KiB and 1 MiB;
+- cold/warm;
+- p50/p95/p99;
+- CPU, allocation and bytes;
+- callback and cancellation;
+- native/managed EXE streams.
+
+First release:
+
+- correctness and bounded-resource gates are mandatory;
+- results from three complete topology runs are published;
+- no external threshold is invented;
+- accepted results become the signed v2.0 baseline.
+
+The packed codec is immutable for v2. FlatBuffers or another codec may be benchmarked only as research for a separately approved v3 proposal. T131 cannot alter v2 negotiation, schemas or implementation.
 
 ---
 
-# Human-approval checklist
+# 19. Deterministic builds and gates
 
-The owner and independent reviewer shall record explicit `GO` or `NO-GO` for each item:
+## 19.1 Canonical build records
 
-- [ ] **GO:** Outcome, non-goals, terminology and six target families are complete.
-- [ ] **GO:** Candidate B and the ordered P0–P16 sequence are approved.
-- [ ] **GO:** Protocol v2 envelope, packed codec, limits, state machines and error model are frozen.
-- [ ] **GO:** Persistent framed TCP with `TCP_NODELAY` is approved as the canonical transport.
-- [ ] **GO:** Noise XXpsk3, Keychain, DPAPI, pairing window, client revocation and firewall scope are approved.
-- [ ] **GO:** Packed generated codecs are approved over FlatBuffers; replacement requires the stated measured gate and protocol-major review.
-- [ ] **GO:** Adapter schema, confidence model and AI packet stop behavior are approved.
-- [ ] **GO:** Dynamic tracing is opt-in, authorized, hash-bound and redacted as specified.
-- [ ] **GO:** Durable operation/event/receipt storage precedes setup and action-completion claims.
-- [ ] **GO:** Expand → migrate → contract and complete-package rollback are approved.
-- [ ] **GO:** Deletion of plaintext v1 secrets requires successful v2 pairing, backup validation and explicit destructive preflight.
-- [ ] **GO:** Signing remains separate from deterministic unsigned builds.
-- [ ] **GO:** PII-, identity-, secret-, firewall- and signing-sensitive slices receive the mandatory review described above.
-- [ ] **GO:** No v1/v2 dual listener, partial main merge, mock support claim or TODO-backed capability is permitted.
-- [ ] **GO:** P0 is the immediate approved phase.
-- [ ] **GO:** After independent P0 PASS and this owner sign-off, P1–P16 are approved for autonomous dependency-ordered execution without ordinary phase-by-phase approval.
-- [ ] **GO:** Any contract change, destructive migration not described here, cryptographic redesign, new transport, scope expansion or `[STOP]` condition returns to independent review.
-- [ ] **GO:** Final merge is authorized only after T161 PASS and every definition-of-done item is evidenced.
+Hash-bearing JSON uses RFC 8785. Deterministic epoch is the newest committed source input timestamp. Wall-clock build time exists only in an outer execution receipt.
 
-**Program decision:** `GO / NO-GO`  
-**Approved by:** ____________________  
-**Independent review receipt:** ____________________  
-**Date:** ____________________
+Unsigned artifacts record:
+
+- source/input hashes;
+- exact toolchain package hashes;
+- contract/dependency graph hashes;
+- compiler/linker flags;
+- virtualized paths;
+- target/API/export hashes;
+- generated/object/final hashes;
+- tests;
+- unresolved list.
+
+Strong-name signing is part of managed identity when authorized. Authenticode/notarization is separate.
+
+## 19.2 Exact planned commands
+
+No command is claimed green until a matching gate receipt exists.
+
+```bash
+python3 tools/run_gate.py validate .architrave/runs/wvb-canonical-v2/architrave.run.v2.json
+python3 tools/gate.py schemas
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --workspace --all-features --locked
+cargo deny check
+cmake --preset windows-x64-release
+cmake --build --preset windows-x64-release
+ctest --preset windows-x64-release --output-on-failure
+dotnet restore managed/Wvb.sln --locked-mode
+dotnet build managed/Wvb.sln -c Release --no-restore
+dotnet test managed/Wvb.sln -c Release --no-build
+python3 tools/gate.py protocol-golden
+python3 tools/gate.py dependency-layout
+python3 tools/gate.py guarded-copy
+python3 tools/gate.py prompt-injection
+python3 tools/gate.py audit-anchor
+python3 tools/gate.py receipts
+python3 tools/verify_reproducible.py --preset release
+python3 tools/gate.py differential
+python3 tools/gate.py chaos
+python3 tools/gate.py held-out
+python3 tools/gate.py topology-benchmark
+python3 tools/gate.py clean-machine
+python3 tools/gate.py secret-scan --include-history
+python3 tools/gate.py release
+```
+
+---
+
+# 20. Durable Run and phase ledger
+
+## 20.1 Run artifacts
+
+```text
+.architrave/runs/wvb-canonical-v2/
+  architrave.run.v2.json
+  intake.md
+  acceptance-matrix.json
+  tournament.md
+  candidate-ledger.md
+  ledger-reconciliation.json
+  owner-approval.json
+  reviews/review-loop-1-revise.md
+  reviews/review-loop-2-revise.md
+  reviews/follow-up-pass.md
+  events.jsonl
+  holds.json
+  gates/
+  receipts/
+  summary.md
+```
+
+The Run records user approval timestamp, candidate hash, public ledger hash, live-status reconciliation hashes, review receipts, exact task graph and phase state.
+
+Typed events:
+
+```text
+run-created
+ledger-candidate-recorded
+owner-approved
+review-revise
+review-pass
+ledger-published
+hold-created
+hold-released
+phase-started
+task-started
+task-blocked
+task-completed
+gate-started
+gate-passed
+gate-failed
+checkpoint
+release-candidate
+main-integrated
+```
+
+## 20.2 Phase ledger
+
+| Phase | Current status | Exit |
+|---|---|---|
+| P0 ledger reconciliation, approval and independent review | `approved-for-this-run` | follow-up PASS, Run validated, public ledger-only commit recorded |
+| P1 platform/toolchain foundation | `not-started`, held | exact patches/hashes frozen; build foundation green |
+| P2 protocol/crypto/authz/state | `not-started` | protocol/security/property gates |
+| P3 inspection/IR | `not-started` | static held-out classification |
+| P4 early native vertical path | `not-started` | generated DLL real topology parity |
+| P5 marshalling/guarded copy | `not-started` | ABI/buffer/error gates |
+| P6 handles/callbacks/async | `not-started` | lifecycle/chaos gates |
+| P7 C++ | `not-started` | exact subset differential suite |
+| P8 COM/WinRT | `not-started` | activation/identity/apartment suite |
+| P9 managed | `not-started` | binding/API/field/strong-name suite |
+| P10 EXE and final dependency layout | `not-started` | process/layout gates |
+| P11 tracing/AI packets/reverse trigger | `not-started` | redaction/injection/trigger outcome |
+| P12 packaging/setup/operations | `not-started` | clean-machine lifecycle |
+| P13 security/performance/provenance | `not-started` | fuzz/benchmark/SBOM/signing |
+| P14 complete E2E/held-out | `not-started` | all family/held-out gates |
+| P15 migration/cleanup/docs | `not-started` | no v1/scaffold/false claims |
+| P16 release/final integration | `not-started` | independent PASS and atomic product merge |
+
+---
+
+# 21. Dependency-safe task graph
+
+| ID | Files/owner | Dependencies | Acceptance | Rollback/risk |
+|---|---|---|---|---|
+| T000 | Run candidate, approval, reconciliation | none | record this ledger hash, user approval, review-loop receipts, current live-status hash and hold | revise artifacts only |
+| T001 | `docs/research-sources.md`, source receipt | T000 | stable URLs/versions/dates and Whiny source hashes recorded | docs-only |
+| T002 | public `docs/implementation-ledger.md` | T000,T001,independent follow-up PASS | redacted ledger-only commit on `main`; no implementation files | revert with new public commit, never rewrite |
+| T005 | old real topology proof receipt | T002 | current real `GetTickCount64` path captured before replacement | stop rewrite if unavailable |
+| T010 | toolchain/platform locks, `.gitignore`, build files | T005 | exact patch versions/hashes frozen; `runtime.key` ignored before key creation | revert foundation |
+| T011 | schemas and canonical IR | T010 | RFC 8785 and complete adapter/type schemas | no activation |
+| T012 | dependency schema/validator | T011 | path, collision, duplicate, cycle, architecture and placement tests | reject invalid graph |
+| T020 | physical protocol | T011 | exact Noise fragmentation/sequence tests | no fallback |
+| T021 | logical protocol | T020 | all messages/nested schemas/enums/flags/features/errors golden | revert protocol unit |
+| T022 | pairing/session crypto | T020,T010 | XXpsk3 bootstrap, IK sessions, pending recovery, key rotation | no plaintext fallback |
+| T023 | actor authorization | T022,T011 | roles/grants/revocation/ACL tests | deny by default |
+| T024 | state/audit/TPM anchor | T010,T011,T023 | crash windows, chain, signed checkpoints, rollback detection | restore unactivated DB |
+| T025 | core client/broker | T021–T024 | persistent connection, bounded queues and readiness | atomically revert peers |
+| T026 | early v2 topology parity | T025,T005 | v2 real `GetTickCount64` matches reference semantics | keep old proof until pass |
+| T030 | PE/Clang/PDB inspection | T011 | parity plus target-layout evidence | branch-only old inspector |
+| T031 | CLR/TLB/WinMD inspection | T030 | deterministic managed/COM evidence | stop malformed input |
+| T032 | confidence/evidence graph | T030,T031 | no inferred auto-promotion | block generation |
+| T040 | native C generator | T026,T030 | compilable exact scalar proxy/dispatcher | internal checkpoint only |
+| T041 | reproducible receipts | T040,T024 | two identical isolated unsigned builds | block support |
+| T043 | generated DLL topology path | T041 | Wine app loads proxy and consumes real result | no family claims if fail |
+| T050 | compound types | T043 | records/enums/unions/bitfields parity | reject unsupported type |
+| T051 | strings/buffers/transfers | T050,T021 | null/bounds/insufficient/1 MiB tests | reject unbounded type |
+| T052 | guarded copy | T043,T010 | exact SEH/TOCTOU/error tests under Wine | block native support |
+| T053 | native error mapping | T050,T052 | HRESULT/Win32/NTSTATUS/SEH/last-error parity | no generic collapse |
+| T060 | handles | T024,T053 | owner/epoch/generation/restart tests | invalidate safely |
+| T070 | callbacks | T060,T021 | executor/order/reentrancy/shutdown tests | unregister/close |
+| T071 | async/cancel/reconciliation | T070,T024 | cancel races and crash windows truthful | unknown remains unknown |
+| T075 | native C++ | T050,T053,T060,T071 | exact free/static subset; constructor/instance/vtable stops | unsupported yields packet |
+| T080 | COM | T031,T070 | class factory/QI/ref/apartment suite | family unsupported |
+| T081 | WinRT | T080 | activation factory/HSTRING/async suite | family unsupported |
+| T090 | .NET assembly | T031,T071 | host/binding/API/field/strong-name suite | stop on identity/state |
+| T100 | native EXE | T025,T024 | argv/env/I/O/exit/Job Object suite | kill job and receipt |
+| T101 | .NET EXE | T090,T100 | managed host/process suite | family unsupported |
+| T105 | final cross-family dependency layout | T012,T075,T081,T090,T100,T101 | complete module graph, relative placement and load gates | reject package |
+| T110 | tracing/redaction | T032,T071,T105 | authorized probes and privacy tests | uninstall/delete traces |
+| T111 | inference merger | T110 | contradictions preserved | discard inference |
+| T112 | AI packet generator | T032,T111 | exact packets and malicious metadata tests | packet only |
+| T086 | reverse trigger evaluator | T105,T110 | signed trigger result from real evidence | default no assumption |
+| T087 | reverse outcome | T086,T070,T112 | either fully implemented/tested or signed `not-applicable`; always terminal | feature disabled if N/A |
+| T120 | Windows MSI/service/firewall | T105,T024,T087 | least-privileged install and rollback | MSI rollback |
+| T121 | macOS package/Keychain | T105,T022 | signed package and identity storage | package rollback |
+| T122 | setup/pair/doctor/catalog/two wrappers | T120,T121,T023 | exact two-command clean setup and truthful checks | no unreceipted mutation |
+| T123 | operations/diagnostics/audit | T024,T122 | operation fields, audit verification and redacted export | read-only safe |
+| T124 | update/rollback/uninstall | T120–T123 | inactive update, health activation, restoration and impact preflight | restore snapshot |
+| T130 | fuzz/security/rate limits | T020–T124 | complete abuse/security suite | block release |
+| T131 | topology benchmark | T051,T071,T075,T081,T090,T101,T124 | three-run v2 baseline; advisory only for possible v3 codec research | no v2 codec change |
+| T132 | SBOM/provenance/signing | T041,T124,T130 | unsigned reproducibility then separate signatures | withdraw/revoke |
+| T140 | full E2E/compat/chaos | T075,T081,T090,T101,T112,T124,T130,T087 | six-family and reverse-outcome complete | no partial support |
+| T141 | held-out assessment | T140,T112 | 100% expected-supported and 100% expected-stop | any miss blocks |
+| T150 | v2 migration/backup | T124,T140,T141,T131 | fresh pair, non-secret preference import, restore test | restore v1 snapshot |
+| T151 | old-secret deletion | T150 | explicit preflight and presence-only destruction receipt | v1 re-pair after deletion |
+| T152 | remove superseded source/docs | T151 | no Python v1, scaffold, fake doctor or stale support claim | revert cleanup before merge |
+| T153 | final docs/examples/support matrix | T152,T141,T131 | every claim maps to receipt | docs-only rollback |
+| T160 | clean-machine release candidate | T132,T153 | full two-command lifecycle on frozen matrix | withdraw candidate |
+| T161 | final independent review | T160 | zero Blockers/Majors and all gate receipts valid | return to owner task |
+| T162 | product integration to `main` | T161 | product implementation merged atomically after ledger already public | new revert commit/package withdrawal only |
+
+---
+
+# 22. Release gates and definition of done
+
+Release requires:
+
+1. follow-up independent `PASS` on this ledger;
+2. Run validation and ledger/status reconciliation;
+3. public ledger-only commit on `main`;
+4. exact toolchain/platform hashes;
+5. preserved old topology proof;
+6. coherent XXpsk3 pair transaction;
+7. future IK session and HELLO activation;
+8. exact physical fragmentation and sequence ownership;
+9. all schemas/enums/errors/golden vectors;
+10. monotonic deadlines and skew diagnostics;
+11. actor ACL/revocation;
+12. independent TPM rollback anchor;
+13. tamper-evident receipts;
+14. exact dependency layout and loaded-path gates;
+15. native C and bounded native C++ support;
+16. guarded-copy parity under Wine;
+17. COM/WinRT activation and identity;
+18. .NET field/binding/strong-name honesty;
+19. native/.NET EXE process contracts;
+20. handles/callbacks/async/cancellation;
+21. exact transfer lifecycle;
+22. injection-safe AI packets;
+23. signed reverse-adapter outcome;
+24. 100% expected-supported held-out results;
+25. 100% expected-stop packet results;
+26. complete fuzz/security/chaos suite;
+27. T131 topology baseline;
+28. deterministic unsigned outputs;
+29. separate signing receipts;
+30. two-command clean-machine setup;
+31. safe update/rollback/uninstall;
+32. fresh v2 pairing and no v1 secret import;
+33. removal of v1/scaffolds/false claims;
+34. final independent implementation `PASS`;
+35. only then atomic product merge to `main`.
+
+---
+
+# 23. Rejected alternatives
+
+| Alternative | Decision |
+|---|---|
+| Noise plaintext above 65,519 bytes | Rejected; physical fragmentation required |
+| JSON/v1 compatibility listener | Rejected |
+| Multiple v2 codecs | Rejected; packed codec immutable |
+| gRPC primary | Rejected |
+| FlatBuffers negotiated in v2 | Rejected; possible v3 research only |
+| Generic CBOR ABI plane | Rejected |
+| Named pipe/ALPC/UDS cross-VM | Rejected |
+| QEMU macOS vsock/ivshmem | Rejected for initial topology |
+| OpenCode polling transport | Rejected |
+| Arbitrary export invocation | Rejected |
+| Automatic ownership inference | Rejected |
+| Automatic custom `IMarshal` | Rejected |
+| C++ constructors/destructors/instance methods/vtables | Rejected in initial subset |
+| C++ exception propagation | Rejected |
+| Remotely stateful .NET fields | Rejected |
+| Strong-name spoofing | Rejected |
+| Raw pointer/HANDLE/shared-memory transfer | Rejected |
+| Automatic reverse dependency proxy | Rejected; evidence-triggered only |
+| Forced thread termination | Rejected |
+| Partial scalar product merge | Rejected |
+| Key files in repository | Rejected |
+| Imported v1 pairing secret | Rejected |
+| Rewriting published signed history | Rejected |
+
+---
+
+# 24. Human approval and hold checklist
+
+## 24.1 Recorded owner approval
+
+T000 shall record:
+
+- source timestamp: `2026-10-18T17:45:31.294+03:00`;
+- scope: complete Revision 3 canonical implementation;
+- authorized phases: P1–P16 after independent follow-up `PASS`;
+- implementation location: integration branch;
+- public exception: ledger-only `docs/implementation-ledger.md` commit to `main` after follow-up `PASS`;
+- no ordinary phase-by-phase approval;
+- mandatory re-review only for:
+  - protocol-major change;
+  - new codec or transport;
+  - scope expansion;
+  - unspecified destructive migration;
+  - unavailable identity/signing authority;
+  - confidential-data policy expansion;
+  - any `[STOP]`.
+
+## 24.2 Checklist
+
+- [x] Full corrected canonical program is user-approved.
+- [x] Run ID is exactly `wvb-canonical-v2`.
+- [x] P1 is held until independent follow-up `PASS`.
+- [x] Public ledger destination is exact and ledger-only.
+- [x] Live-status and ledger hashes require durable reconciliation.
+- [x] Pairing bootstrap and future session ordering are complete.
+- [x] Per-sender sequence/logical ownership is complete.
+- [x] Nested schemas and enum registries are complete.
+- [x] Transfer begin/data/end/cancel/receipt are specified.
+- [x] Optional/ACK behavior is specified.
+- [x] Trusted rollback anchor is independent of database and broker metadata.
+- [x] .NET stateful fields are rejected.
+- [x] Held-out acceptance is 100% for both classes.
+- [x] Packed codec is immutable for v2.
+- [x] Reverse-adapter outcome is dependency-safe.
+- [x] `runtime.key` is ignored before key creation and no key may be committed.
+- [x] C++ constructors/destructors/copy/instance methods are rejected.
+- [x] Guarded Wine copy and TOCTOU tests are exact.
+- [x] Final dependency layout follows all family generation.
+- [x] Deadlines use monotonic budgets.
+- [x] Toolchain patch versions/hashes are blocking T010 inputs.
+- [x] Exact 65,536 rejection semantics are specified.
+- [x] Two-command wrapper acceptance is specified.
+- [ ] Independent follow-up review returns `PASS`.
+- [ ] T000 records the approved ledger hash and reconciled live-status hashes.
+- [ ] T002 publishes the redacted ledger-only commit.
+- [ ] P1 hold is released.
+- [ ] All implementation and release receipts pass.
+- [ ] Final independent implementation review returns `PASS`.
+- [ ] Product implementation merges atomically to `main`.
+
+**Current decision:** `USER-APPROVED; P0 ACTIVE; P1–P16 HELD FOR INDEPENDENT FOLLOW-UP PASS`

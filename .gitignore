@@ -7,3 +7,5 @@ out/
 *.token
 *.secret
 config.local.*
+.architrave/runtime.key
+.architrave/runs/*/.run.lock
