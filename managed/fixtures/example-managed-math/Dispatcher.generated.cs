@@ -1,13 +1,9 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Wvb.Generated
 {
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    public unsafe delegate int ManagedDispatchDelegate(
-        uint operationId, byte* request, nuint requestLength,
-        byte* response, nuint responseCapacity, nuint* responseLength);
-
     public static class ManagedDispatcher
     {
         public const int Ok = 0;
@@ -19,6 +15,7 @@ namespace Wvb.Generated
             if (!BitConverter.IsLittleEndian)
                 throw new PlatformNotSupportedException("WinAPI VM Bridge scalar encoding requires little-endian Windows");
         }
+        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static unsafe int DispatchUnmanaged(
             uint operationId, byte* request, nuint requestLength,
             byte* response, nuint responseCapacity, nuint* responseLength)

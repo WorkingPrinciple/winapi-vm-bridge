@@ -38,7 +38,6 @@ typedef struct WvbManagedHostConfig {
   uint8_t target_assembly_sha256[32];
   const wchar_t *dispatcher_type_name;
   const wchar_t *dispatcher_method_name;
-  const wchar_t *dispatcher_delegate_type_name;
 } WvbManagedHostConfig;
 
 typedef struct WvbManagedHost WvbManagedHost;

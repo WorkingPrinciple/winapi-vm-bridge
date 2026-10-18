@@ -217,12 +217,8 @@ fn generate_managed_assembly(
              }}\n\n",
     );
     let mut dispatcher = String::from(
-        "using System;\nusing System.Runtime.InteropServices;\n\n\
+        "using System;\nusing System.Runtime.CompilerServices;\nusing System.Runtime.InteropServices;\n\n\
          namespace Wvb.Generated\n{\n\
-         \x20   [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n\
-         \x20   public unsafe delegate int ManagedDispatchDelegate(\n\
-         \x20       uint operationId, byte* request, nuint requestLength,\n\
-         \x20       byte* response, nuint responseCapacity, nuint* responseLength);\n\n\
          \x20   public static class ManagedDispatcher\n\
          \x20   {\n\
          \x20       public const int Ok = 0;\n\
@@ -234,6 +230,7 @@ fn generate_managed_assembly(
          \x20           if (!BitConverter.IsLittleEndian)\n\
          \x20               throw new PlatformNotSupportedException(\"WinAPI VM Bridge scalar encoding requires little-endian Windows\");\n\
          \x20       }\n\
+         \x20       [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]\n\
          \x20       public static unsafe int DispatchUnmanaged(\n\
          \x20           uint operationId, byte* request, nuint requestLength,\n\
          \x20           byte* response, nuint responseCapacity, nuint* responseLength)\n\

@@ -21,7 +21,6 @@ pub struct ManagedHostConfig {
     pub target_assembly_sha256: [u8; 32],
     pub dispatcher_type_name: String,
     pub dispatcher_method_name: String,
-    pub dispatcher_delegate_type_name: String,
 }
 
 #[derive(Debug)]
@@ -85,7 +84,6 @@ mod windows {
         target_assembly_sha256: [u8; 32],
         dispatcher_type_name: *const u16,
         dispatcher_method_name: *const u16,
-        dispatcher_delegate_type_name: *const u16,
     }
 
     unsafe extern "system" {
@@ -112,7 +110,6 @@ mod windows {
             let target_assembly_path = wide_path(&config.target_assembly_path)?;
             let dispatcher_type_name = wide_text(&config.dispatcher_type_name)?;
             let dispatcher_method_name = wide_text(&config.dispatcher_method_name)?;
-            let dispatcher_delegate_type_name = wide_text(&config.dispatcher_delegate_type_name)?;
             let struct_size = u32::try_from(std::mem::size_of::<NativeConfig>())
                 .map_err(|_| ManagedHostError::InvalidPath)?;
             let module = unsafe {
@@ -150,7 +147,6 @@ mod windows {
                 target_assembly_sha256: config.target_assembly_sha256,
                 dispatcher_type_name: dispatcher_type_name.as_ptr(),
                 dispatcher_method_name: dispatcher_method_name.as_ptr(),
-                dispatcher_delegate_type_name: dispatcher_delegate_type_name.as_ptr(),
             };
             let mut host = ptr::null_mut();
             let status = unsafe { create(&raw const native, &raw mut host) };
@@ -302,7 +298,6 @@ mod tests {
                 target_assembly_sha256: [0; 32],
                 dispatcher_type_name: String::new(),
                 dispatcher_method_name: String::new(),
-                dispatcher_delegate_type_name: String::new(),
             };
             assert!(matches!(
                 NativeManagedDispatcher::load(&config),

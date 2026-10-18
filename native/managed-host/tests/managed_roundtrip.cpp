@@ -39,9 +39,6 @@ int wmain(int argc, wchar_t **argv) {
   config.dispatcher_type_name =
       L"Wvb.Generated.ManagedDispatcher, Example.ManagedMath.WvbDispatcher";
   config.dispatcher_method_name = L"DispatchUnmanaged";
-  config.dispatcher_delegate_type_name =
-      L"Wvb.Generated.ManagedDispatchDelegate, "
-      L"Example.ManagedMath.WvbDispatcher";
   if (!decode_hash(argv[3], config.nethost_sha256) ||
       !decode_hash(argv[4], config.hostfxr_sha256) ||
       !decode_hash(argv[6], config.runtime_config_sha256) ||

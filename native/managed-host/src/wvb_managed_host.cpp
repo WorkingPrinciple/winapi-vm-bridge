@@ -33,6 +33,8 @@ enum hostfxr_delegate_type {
   hdt_com_activation,
   hdt_load_in_memory_assembly,
   hdt_winrt_activation,
+  hdt_com_register,
+  hdt_com_unregister,
   hdt_load_assembly_and_get_function_pointer
 };
 
@@ -191,7 +193,6 @@ wvb_managed_host_create(const WvbManagedHostConfig *config,
       !absolute_path(config->target_assembly_path) ||
       !nonempty(config->dispatcher_type_name) ||
       !nonempty(config->dispatcher_method_name) ||
-      !nonempty(config->dispatcher_delegate_type_name) ||
       !same_directory(config->dispatcher_assembly_path,
                       config->target_assembly_path)) {
     return WVB_MANAGED_HOST_INVALID_ARGUMENT;
@@ -269,7 +270,7 @@ wvb_managed_host_create(const WvbManagedHostConfig *config,
   if (load_assembly(config->dispatcher_assembly_path,
                     config->dispatcher_type_name,
                     config->dispatcher_method_name,
-                    config->dispatcher_delegate_type_name, nullptr,
+                    reinterpret_cast<const wchar_t *>(-1), nullptr,
                     &dispatch) != 0 ||
       dispatch == nullptr) {
     return WVB_MANAGED_HOST_RUNTIME_FAILED;
