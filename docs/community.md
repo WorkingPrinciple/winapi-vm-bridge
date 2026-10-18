@@ -2,33 +2,23 @@
 
 ## Publication status
 
-Reddit publication is intentionally deferred until X Ode's public presentation
-is ready. The technical bridge and X Ode should be introduced together in
-threads specifically asking about Game Pass/Xbox titles under CrossOver.
-No Reddit post has been published from this repository work.
+Community promotion should describe **WinAPI VM Bridge only**: a generic SDK
+for purpose-built Windows DLL/API calls from Wine-hosted applications through a
+Windows VM. Do not bundle it with a particular game, store, vendor, SDK, X Ode,
+or Xodus announcement. No Reddit post has been published from this work.
 
 Short reusable introduction:
 
-> I have my own use cases, but I've been working on a proof of concept for
-> purpose-built Windows API calls from Wine/CrossOver on macOS through a Windows
-> VM. A real game `XUserAddAsync` call completed Mac → VM → Mac and the game's
-> own result handler received `S_OK` in about 13 ms on a warm path. This is not
-> arbitrary DLL remoting, graphics virtualization, anti-cheat support, or proof
-> of gameplay improvement; each API needs an exact adapter. I’m sharing the
-> transport, evidence, and limitations in case it helps similar Windows-only SDK
-> gaps.
+> I have my own use cases, but I've been working on a generic bridge for
+> purpose-built Windows DLL/API calls from Wine-hosted applications through a
+> Windows VM. The public SDK includes an authenticated transport, strict adapter
+> manifests, generated shim/dispatcher skeletons, conformance tests, and an
+> AI-ready implementation task. It is not transparent arbitrary-DLL remoting:
+> each library needs an explicit ABI contract and, for complex pointers or
+> callbacks, custom marshalling. Repository:
+> https://github.com/dragoshont/winapi-vm-bridge
 
 Only post this where it directly answers the thread. Adjust it to the user's
 problem and avoid cross-posting identical promotional text.
 
-Suggested combined version for later:
-
-> I have my own use cases, but I've been working on X Ode, a Mac-side runtime
-> project for legitimately owned Windows/Xbox PC titles, plus a generic VM bridge
-> for the Windows-only SDK calls Wine cannot perform itself. In a real Abiotic
-> Factor test, the game's own user-add call completed Mac → Windows VM → Mac in
-> about 13 ms on a warm path, and corrected adapters returned the genuine user
-> ID and profile result. This does not make the full Game Pass catalogue work
-> yet—each API and title still needs exact compatibility work—but the transport,
-> adapter SDK, evidence, and limitations are public:
-> https://github.com/dragoshont/winapi-vm-bridge
+Keep X Ode and any adapter-specific case studies for their own announcements.

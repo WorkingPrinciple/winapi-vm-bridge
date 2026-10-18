@@ -4,13 +4,11 @@ A generic RPC framework for calling **Windows DLL exports** from an application
 running through Wine/CrossOver on macOS, using a Windows VM as the API
 coprocessor.
 
-> Status: research proof, not a general DLL remoter. A real Abiotic Factor
-> `XUserAddAsync` call crossed Mac → Windows VM → Mac and the real game consumed
-> `XUserAddResult(S_OK)` in about 13 ms on a warm path. A corrected run also
-> returned the genuine remote XUID and gamertag. This does not prove gameplay,
-> online services, graphics acceleration, anti-cheat support, or CrossOver
-> replacement. Xbox/GDK is the first evidence-backed adapter, not a hard-coded
-> project scope.
+> Status: research proof and adapter SDK, not transparent arbitrary-DLL
+> remoting. A real application request crossed Mac → Windows VM → Mac and the
+> original caller consumed the native result. This does not prove compatibility
+> for every DLL, graphics acceleration, kernel-driver support, anti-cheat, or
+> Wine/CrossOver replacement.
 
 ## Three-command quickstart
 
@@ -128,12 +126,12 @@ The toolchain generates:
 
 See [generic adapter design](docs/generic-adapters.md).
 
-## First proven adapter: Xbox/GDK through Xodus
+## Adapter independence
 
-Xbox/GDK is the first proven adapter, not the scope of the core project.
-The proof used an owned title and account. The public repository does not ship
-Microsoft SDK headers, libraries, title configuration, credentials, or game
-files.
+The core repository is vendor- and application-neutral. Case studies belong in
+evidence documents or separate adapter repositories. The core does not ship
+third-party SDK headers, libraries, credentials, application files, or private
+configuration.
 
 ## Project status
 
@@ -141,10 +139,10 @@ files.
 |---|---|
 | Framed authenticated RPC | Proven |
 | Real game user-add round trip | Proven |
-| Genuine remote XUID | Proven in real game |
-| Genuine remote gamertag | Implemented; real-game verification in progress |
-| Token/signature adapter | Not implemented |
-| Gameplay improvement | Not proven |
+| Generated adapter review bundle | Implemented |
+| Portable authenticated `core.ping` | Implemented |
+| Compilable generated scalar shim/dispatcher | Tracked in issue #1 |
+| Sensitive async-result pattern | Tracked in issue #2 |
 | Arbitrary Windows DLL remoting | Out of scope |
 
 ## Legal
