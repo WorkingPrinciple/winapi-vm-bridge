@@ -9,6 +9,10 @@ use tokio::sync::{Semaphore, mpsc};
 use wvb_authz::{ActorId, AuthorizationError, Registry};
 use wvb_call::{CallAssembler, CallRequest, CallResult};
 use wvb_protocol::{Envelope, EnvelopeFlags, MessageType};
+use wvb_transfer::{
+    ActorId as TransferActorId, TransferCancelAck, TransferLimits, TransferMessage,
+    TransferReceipt, TransferReceiptMessage, TransferRegistry,
+};
 use wvb_transport::{SecureConnection, TransportError};
 
 #[derive(Debug)]
@@ -55,6 +59,14 @@ pub trait CallHandler: Send + Sync + 'static {
 
 pub trait TypedDispatchModule: Send + Sync + 'static {
     fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome;
+}
+
+pub trait TransferSink: Send + Sync + 'static {
+    fn completed(&self, receipt: &TransferReceipt, bytes: &[u8]) -> Result<Vec<u8>, String>;
+
+    fn cancelled(&self, _receipt: &TransferReceipt) -> Result<Option<Vec<u8>>, String> {
+        Ok(None)
+    }
 }
 
 pub struct DispatchOutcome {
@@ -270,6 +282,7 @@ where
                         drop(permit);
                     });
                 }
+
             }
             completed = completed_receiver.recv() => {
                 let Some(completed) = completed else { return Ok(()); };
@@ -277,6 +290,150 @@ where
             }
         }
     }
+}
+
+pub async fn serve_transfers<S>(
+    mut connection: SecureConnection<S>,
+    actor_id: TransferActorId,
+    limits: TransferLimits,
+    sink: Arc<dyn TransferSink>,
+) -> Result<(), BrokerError>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let mut registry = TransferRegistry::new(limits);
+    let mut streams = BTreeMap::<u32, ([u8; 16], u32)>::new();
+    loop {
+        let (envelope, payload) = connection.receive().await?;
+        if !envelope.flags.contains(EnvelopeFlags::REQUEST)
+            || envelope.stream_id == 0
+            || envelope.stream_id.is_multiple_of(2)
+        {
+            return Err(BrokerError::Handler(
+                "invalid transfer stream envelope".into(),
+            ));
+        }
+        let message_type = MessageType::try_from(envelope.message_type)
+            .map_err(|_| BrokerError::Handler("unknown transfer message".into()))?;
+        let message = TransferMessage::decode(message_type, &payload)
+            .map_err(|error| BrokerError::Handler(format!("invalid transfer: {error}")))?;
+        let response = match message {
+            TransferMessage::Begin(begin) => {
+                if envelope.stream_sequence != 0 {
+                    return Err(BrokerError::Handler("transfer sequence mismatch".into()));
+                }
+                if streams
+                    .insert(envelope.stream_id, (begin.transfer_id, 1))
+                    .is_some()
+                {
+                    return Err(BrokerError::Handler("duplicate transfer stream".into()));
+                }
+                registry
+                    .begin(actor_id, begin)
+                    .map_err(|error| BrokerError::Handler(format!("transfer begin: {error}")))?;
+                None
+            }
+            TransferMessage::Data(data) => {
+                let (transfer_id, next_sequence) = streams
+                    .get_mut(&envelope.stream_id)
+                    .ok_or_else(|| BrokerError::Handler("unknown transfer stream".into()))?;
+                if *transfer_id != data.transfer_id || envelope.stream_sequence != *next_sequence {
+                    return Err(BrokerError::Handler("transfer stream mismatch".into()));
+                }
+                *next_sequence = next_sequence
+                    .checked_add(1)
+                    .ok_or_else(|| BrokerError::Handler("transfer sequence exhausted".into()))?;
+                registry
+                    .data(actor_id, &data)
+                    .map_err(|error| BrokerError::Handler(format!("transfer data: {error}")))?;
+                None
+            }
+            TransferMessage::End(end) => {
+                verify_transfer_terminal(&mut streams, &envelope, end.transfer_id)?;
+                let (bytes, receipt) = registry
+                    .finish(actor_id, &end)
+                    .map_err(|error| BrokerError::Handler(format!("transfer end: {error}")))?;
+                let receipt_bytes = sink
+                    .completed(&receipt, &bytes)
+                    .map_err(BrokerError::Handler)?;
+                Some(TransferMessage::Receipt(TransferReceiptMessage {
+                    transfer_id: receipt.transfer_id,
+                    receipt: receipt_bytes,
+                }))
+            }
+            TransferMessage::Cancel(cancel) => {
+                verify_transfer_terminal(&mut streams, &envelope, cancel.transfer_id)?;
+                let receipt = registry
+                    .cancel(actor_id, cancel)
+                    .map_err(|error| BrokerError::Handler(format!("transfer cancel: {error}")))?;
+                Some(TransferMessage::CancelAck(TransferCancelAck {
+                    transfer_id: receipt.transfer_id,
+                    disposition: 1,
+                    receipt: sink.cancelled(&receipt).map_err(BrokerError::Handler)?,
+                }))
+            }
+            TransferMessage::CancelAck(_) | TransferMessage::Receipt(_) => {
+                return Err(BrokerError::Handler(
+                    "client transfer response is invalid".into(),
+                ));
+            }
+        };
+        if let Some(response) = response {
+            send_transfer_response(&mut connection, &envelope, response).await?;
+        } else if envelope.flags.contains(EnvelopeFlags::END_STREAM) {
+            return Err(BrokerError::Handler(
+                "transfer stream ended before terminal message".into(),
+            ));
+        }
+    }
+}
+
+fn verify_transfer_terminal(
+    streams: &mut BTreeMap<u32, ([u8; 16], u32)>,
+    envelope: &Envelope,
+    transfer_id: [u8; 16],
+) -> Result<(), BrokerError> {
+    let (expected_id, expected_sequence) = streams
+        .remove(&envelope.stream_id)
+        .ok_or_else(|| BrokerError::Handler("unknown transfer stream".into()))?;
+    if expected_id != transfer_id
+        || envelope.stream_sequence != expected_sequence
+        || !envelope.flags.contains(EnvelopeFlags::END_STREAM)
+    {
+        return Err(BrokerError::Handler(
+            "invalid transfer terminal frame".into(),
+        ));
+    }
+    Ok(())
+}
+
+async fn send_transfer_response<S>(
+    connection: &mut SecureConnection<S>,
+    request: &Envelope,
+    response: TransferMessage,
+) -> Result<(), BrokerError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let (message_type, payload) = response
+        .encode()
+        .map_err(|error| BrokerError::Handler(format!("transfer receipt: {error}")))?;
+    let payload_length = u32::try_from(payload.len())
+        .map_err(|_| BrokerError::Handler("transfer receipt too large".into()))?;
+    let envelope = Envelope {
+        minor: request.minor,
+        message_type: message_type as u16,
+        flags: EnvelopeFlags::RESPONSE | EnvelopeFlags::END_STREAM,
+        connection_epoch: request.connection_epoch,
+        stream_id: request.stream_id,
+        stream_sequence: 0,
+        message_id: response_message_id(request.message_id),
+        correlation_id: request.message_id,
+        remaining_budget_ms: request.remaining_budget_ms,
+        payload_length,
+    };
+    connection.send(&envelope, &payload).await?;
+    Ok(())
 }
 
 fn receive_call_frame(
@@ -393,6 +550,8 @@ fn unix_time_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::Digest;
+    use std::sync::Mutex;
     use std::time::Duration;
 
     use tokio::io::duplex;
@@ -400,6 +559,10 @@ mod tests {
     use wvb_client::Client;
     use wvb_crypto::{Handshake, PairingPsk, StaticPrivateKey, Transport};
     use wvb_exe::{Limits, ProcessRequest, ProcessResult};
+    use wvb_transfer::{
+        TransferBegin, TransferData, TransferEnd, TransferKind, TransferMessage,
+        TransferReceiptMessage,
+    };
 
     struct Echo;
     struct EchoCall;
@@ -407,6 +570,8 @@ mod tests {
     struct ProcessFixture {
         limits: Limits,
     }
+    #[derive(Default)]
+    struct CaptureTransfer(Mutex<Vec<u8>>);
 
     #[async_trait]
     impl Handler for Echo {
@@ -453,6 +618,16 @@ mod tests {
         }
     }
 
+    impl TransferSink for CaptureTransfer {
+        fn completed(&self, _receipt: &TransferReceipt, bytes: &[u8]) -> Result<Vec<u8>, String> {
+            *self
+                .0
+                .lock()
+                .map_err(|_| String::from("capture poisoned"))? = bytes.to_vec();
+            Ok(b"runtime-receipt".to_vec())
+        }
+    }
+
     impl TypedDispatchModule for ProcessFixture {
         fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome {
             let Ok(request) = ProcessRequest::decode(request, &self.limits) else {
@@ -467,6 +642,7 @@ mod tests {
                     body: Vec::new(),
                 };
             }
+
             let result = ProcessResult {
                 exit_code: 17,
                 timed_out: false,
@@ -650,6 +826,93 @@ mod tests {
         assert_eq!(process.exit_code, 17);
         assert_eq!(process.stdout, b"fixture-stdout");
         assert_eq!(process.stderr, b"fixture-stderr");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn compound_transfer_runs_through_canonical_broker() {
+        let (client_crypto, broker_crypto) = paired_transports();
+        let (client_io, broker_io) = duplex(1 << 20);
+        let mut client_connection = SecureConnection::new(client_io, client_crypto, 99);
+        let broker_connection = SecureConnection::new(broker_io, broker_crypto, 99);
+        let actor = [5; 16];
+        let transfer_id = [6; 16];
+        let body = b"content-addressed-transfer".to_vec();
+        let sink = Arc::new(CaptureTransfer::default());
+        let server_sink = sink.clone();
+        let server = tokio::spawn(serve_transfers(
+            broker_connection,
+            actor,
+            TransferLimits {
+                maximum_bytes: 1024,
+                maximum_chunk_bytes: 1024,
+                maximum_active: 2,
+                maximum_metadata_bytes: 256,
+                maximum_receipt_bytes: 4096,
+            },
+            server_sink,
+        ));
+        let messages = [
+            TransferMessage::Begin(TransferBegin {
+                transfer_id,
+                kind: TransferKind::RequestInput,
+                parent_message_id: None,
+                parent_operation_id: None,
+                declared_length: body.len(),
+                content_hash: sha2::Sha256::digest(&body).into(),
+                media_type: None,
+                file_name: None,
+                sensitivity: 1,
+            }),
+            TransferMessage::Data(TransferData {
+                transfer_id,
+                chunk_index: 0,
+                offset: 0,
+                chunk_hash: sha2::Sha256::digest(&body).into(),
+                bytes: body.clone(),
+            }),
+            TransferMessage::End(TransferEnd {
+                transfer_id,
+                chunk_count: 1,
+                total_length: body.len(),
+                total_hash: sha2::Sha256::digest(&body).into(),
+                terminal_status: 1,
+                receipt: b"sender-receipt".to_vec(),
+            }),
+        ];
+        for (index, message) in messages.into_iter().enumerate() {
+            let (message_type, payload) = message.encode().unwrap();
+            let terminal = index == 2;
+            let envelope = Envelope {
+                minor: 0,
+                message_type: message_type as u16,
+                flags: if terminal {
+                    EnvelopeFlags::REQUEST | EnvelopeFlags::END_STREAM
+                } else {
+                    EnvelopeFlags::REQUEST
+                },
+                connection_epoch: 99,
+                stream_id: 1,
+                stream_sequence: u32::try_from(index).unwrap(),
+                message_id: [u8::try_from(index + 1).unwrap(); 16],
+                correlation_id: [0; 16],
+                remaining_budget_ms: 1_000,
+                payload_length: u32::try_from(payload.len()).unwrap(),
+            };
+            client_connection.send(&envelope, &payload).await.unwrap();
+        }
+        let (envelope, payload) = client_connection.receive().await.unwrap();
+        assert_eq!(envelope.message_type, MessageType::TransferReceipt as u16);
+        let TransferMessage::Receipt(TransferReceiptMessage {
+            transfer_id: receipt_transfer_id,
+            receipt,
+        }) = TransferMessage::decode(MessageType::TransferReceipt, &payload).unwrap()
+        else {
+            panic!("expected receipt");
+        };
+        assert_eq!(receipt_transfer_id, transfer_id);
+        assert_eq!(receipt, b"runtime-receipt");
+        assert_eq!(*sink.0.lock().unwrap(), body);
         server.abort();
     }
 

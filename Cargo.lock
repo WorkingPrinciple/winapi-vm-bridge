@@ -1118,6 +1118,7 @@ name = "wvb-broker"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "sha2",
  "tokio",
  "wvb-authz",
  "wvb-call",
@@ -1125,6 +1126,7 @@ dependencies = [
  "wvb-crypto",
  "wvb-exe",
  "wvb-protocol",
+ "wvb-transfer",
  "wvb-transport",
 ]
 

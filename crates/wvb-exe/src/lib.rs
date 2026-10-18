@@ -332,4 +332,20 @@ mod tests {
             Err(CodecError::Trailing)
         );
     }
+
+    #[test]
+    fn malformed_process_corpus_never_panics_or_allocates_unboundedly() {
+        let mut state = 0xa076_1d64_78bd_642f_u64;
+        for length in 0..1024 {
+            let mut bytes = vec![0_u8; length];
+            for byte in &mut bytes {
+                state ^= state >> 12;
+                state ^= state << 25;
+                state ^= state >> 27;
+                *byte = state.wrapping_mul(0x2545_f491_4f6c_dd1d).to_le_bytes()[3];
+            }
+            let _ = ProcessRequest::decode(&bytes, &limits());
+            let _ = ProcessResult::decode(&bytes, &limits());
+        }
+    }
 }

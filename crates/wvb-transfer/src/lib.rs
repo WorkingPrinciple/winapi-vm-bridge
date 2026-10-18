@@ -1,6 +1,6 @@
-//! Bounded content-addressed transfer lifecycle for the runtime plane.
+//! Bounded content-addressed transfer lifecycle and protocol messages.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 use wvb_protocol::{
@@ -17,6 +17,8 @@ pub struct TransferLimits {
     pub maximum_bytes: usize,
     pub maximum_chunk_bytes: usize,
     pub maximum_active: usize,
+    pub maximum_metadata_bytes: usize,
+    pub maximum_receipt_bytes: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,10 +33,62 @@ pub enum TransferKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferBegin {
     pub transfer_id: TransferId,
-    pub actor_id: ActorId,
     pub kind: TransferKind,
-    pub total_bytes: usize,
-    pub sha256: [u8; 32],
+    pub parent_message_id: Option<[u8; 16]>,
+    pub parent_operation_id: Option<[u8; 16]>,
+    pub declared_length: usize,
+    pub content_hash: [u8; 32],
+    pub media_type: Option<String>,
+    pub file_name: Option<String>,
+    pub sensitivity: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferData {
+    pub transfer_id: TransferId,
+    pub chunk_index: u32,
+    pub offset: usize,
+    pub chunk_hash: [u8; 32],
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferEnd {
+    pub transfer_id: TransferId,
+    pub chunk_count: u32,
+    pub total_length: usize,
+    pub total_hash: [u8; 32],
+    pub terminal_status: u16,
+    pub receipt: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransferCancel {
+    pub transfer_id: TransferId,
+    pub reason: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferCancelAck {
+    pub transfer_id: TransferId,
+    pub disposition: u16,
+    pub receipt: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferReceiptMessage {
+    pub transfer_id: TransferId,
+    pub receipt: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransferMessage {
+    Begin(TransferBegin),
+    Data(TransferData),
+    End(TransferEnd),
+    Cancel(TransferCancel),
+    CancelAck(TransferCancelAck),
+    Receipt(TransferReceiptMessage),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,23 +99,6 @@ pub struct TransferReceipt {
     pub total_bytes: usize,
     pub sha256: [u8; 32],
     pub terminal: TransferTerminal,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransferData {
-    pub transfer_id: TransferId,
-    pub sequence: u32,
-    pub offset: usize,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransferMessage {
-    Begin(TransferBegin),
-    Data(TransferData),
-    End(TransferId),
-    Cancel(TransferId),
-    Receipt(TransferReceipt),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +117,6 @@ pub enum TransferError {
     BoundExceeded,
     InvalidOrder,
     HashMismatch,
-    Cancelled,
     Terminal,
     Protocol,
 }
@@ -99,77 +135,179 @@ impl From<ProtocolError> for TransferError {
     }
 }
 
+#[derive(Debug)]
+struct ActiveTransfer {
+    actor_id: ActorId,
+    begin: TransferBegin,
+    next_chunk: u32,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct TransferRegistry {
+    limits: TransferLimits,
+    active: BTreeMap<TransferId, ActiveTransfer>,
+    terminal: BTreeSet<TransferId>,
+}
+
+impl TransferRegistry {
+    #[must_use]
+    pub fn new(limits: TransferLimits) -> Self {
+        Self {
+            limits,
+            active: BTreeMap::new(),
+            terminal: BTreeSet::new(),
+        }
+    }
+
+    pub fn begin(&mut self, actor_id: ActorId, begin: TransferBegin) -> Result<(), TransferError> {
+        if self.active.len() >= self.limits.maximum_active {
+            return Err(TransferError::Capacity);
+        }
+        if self.active.contains_key(&begin.transfer_id)
+            || self.terminal.contains(&begin.transfer_id)
+        {
+            return Err(TransferError::Replay);
+        }
+        if begin.declared_length > self.limits.maximum_bytes {
+            return Err(TransferError::BoundExceeded);
+        }
+        validate_optional_text(
+            begin.media_type.as_deref(),
+            self.limits.maximum_metadata_bytes,
+        )?;
+        validate_optional_text(
+            begin.file_name.as_deref(),
+            self.limits.maximum_metadata_bytes,
+        )?;
+        self.active.insert(
+            begin.transfer_id,
+            ActiveTransfer {
+                actor_id,
+                bytes: Vec::with_capacity(begin.declared_length),
+                begin,
+                next_chunk: 0,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn data(&mut self, actor_id: ActorId, data: &TransferData) -> Result<(), TransferError> {
+        let active = self
+            .active
+            .get_mut(&data.transfer_id)
+            .ok_or(TransferError::Unknown)?;
+        if active.actor_id != actor_id {
+            return Err(TransferError::WrongActor);
+        }
+        if data.chunk_index != active.next_chunk || data.offset != active.bytes.len() {
+            return Err(TransferError::InvalidOrder);
+        }
+        if data.bytes.len() > self.limits.maximum_chunk_bytes
+            || hash(&data.bytes) != data.chunk_hash
+        {
+            return Err(TransferError::HashMismatch);
+        }
+        let new_length = active
+            .bytes
+            .len()
+            .checked_add(data.bytes.len())
+            .ok_or(TransferError::BoundExceeded)?;
+        if new_length > active.begin.declared_length || new_length > self.limits.maximum_bytes {
+            return Err(TransferError::BoundExceeded);
+        }
+        active.bytes.extend_from_slice(&data.bytes);
+        active.next_chunk = active
+            .next_chunk
+            .checked_add(1)
+            .ok_or(TransferError::BoundExceeded)?;
+        Ok(())
+    }
+
+    pub fn finish(
+        &mut self,
+        actor_id: ActorId,
+        end: &TransferEnd,
+    ) -> Result<(Vec<u8>, TransferReceipt), TransferError> {
+        let active = self
+            .active
+            .remove(&end.transfer_id)
+            .ok_or(TransferError::Unknown)?;
+        if active.actor_id != actor_id {
+            self.active.insert(end.transfer_id, active);
+            return Err(TransferError::WrongActor);
+        }
+        self.terminal.insert(end.transfer_id);
+        if end.receipt.len() > self.limits.maximum_receipt_bytes {
+            return Err(TransferError::BoundExceeded);
+        }
+        let observed_hash = hash(&active.bytes);
+        if active.bytes.len() != active.begin.declared_length
+            || active.next_chunk != end.chunk_count
+            || active.bytes.len() != end.total_length
+            || active.begin.content_hash != observed_hash
+            || end.total_hash != observed_hash
+        {
+            return Err(TransferError::HashMismatch);
+        }
+        let terminal = match end.terminal_status {
+            1 => TransferTerminal::Completed,
+            2 => TransferTerminal::Cancelled,
+            3 => TransferTerminal::Failed,
+            _ => return Err(TransferError::Terminal),
+        };
+        Ok((
+            active.bytes,
+            TransferReceipt {
+                transfer_id: end.transfer_id,
+                actor_id,
+                kind: active.begin.kind,
+                total_bytes: end.total_length,
+                sha256: observed_hash,
+                terminal,
+            },
+        ))
+    }
+
+    pub fn cancel(
+        &mut self,
+        actor_id: ActorId,
+        cancel: TransferCancel,
+    ) -> Result<TransferReceipt, TransferError> {
+        let active = self
+            .active
+            .remove(&cancel.transfer_id)
+            .ok_or(TransferError::Unknown)?;
+        if active.actor_id != actor_id {
+            self.active.insert(cancel.transfer_id, active);
+            return Err(TransferError::WrongActor);
+        }
+        self.terminal.insert(cancel.transfer_id);
+        Ok(TransferReceipt {
+            transfer_id: cancel.transfer_id,
+            actor_id,
+            kind: active.begin.kind,
+            total_bytes: active.bytes.len(),
+            sha256: hash(&active.bytes),
+            terminal: TransferTerminal::Cancelled,
+        })
+    }
+
+    #[must_use]
+    pub fn active_count(&self) -> usize {
+        self.active.len()
+    }
+}
+
 impl TransferMessage {
     pub fn encode(&self) -> Result<(MessageType, Vec<u8>), TransferError> {
         match self {
-            Self::Begin(begin) => Ok((
-                MessageType::TransferBegin,
-                PackedEncoder::new(top_level_schema_id(MessageType::TransferBegin), 1)
-                    .field(1, WireType::Uuid128, REQUIRED, begin.transfer_id)?
-                    .field(2, WireType::Uuid128, REQUIRED, begin.actor_id)?
-                    .field(
-                        3,
-                        WireType::U16,
-                        REQUIRED,
-                        kind_value(begin.kind).to_le_bytes(),
-                    )?
-                    .field(
-                        4,
-                        WireType::U64,
-                        REQUIRED,
-                        u64::try_from(begin.total_bytes)
-                            .map_err(|_| TransferError::BoundExceeded)?
-                            .to_le_bytes(),
-                    )?
-                    .field(5, WireType::Bytes, REQUIRED, begin.sha256)?
-                    .encode()?,
-            )),
-            Self::Data(data) => Ok((
-                MessageType::TransferData,
-                PackedEncoder::new(top_level_schema_id(MessageType::TransferData), 1)
-                    .field(1, WireType::Uuid128, REQUIRED, data.transfer_id)?
-                    .field(2, WireType::U32, REQUIRED, data.sequence.to_le_bytes())?
-                    .field(
-                        3,
-                        WireType::U64,
-                        REQUIRED,
-                        u64::try_from(data.offset)
-                            .map_err(|_| TransferError::BoundExceeded)?
-                            .to_le_bytes(),
-                    )?
-                    .field(4, WireType::Bytes, REQUIRED, data.bytes.clone())?
-                    .encode()?,
-            )),
-            Self::End(transfer_id) => encode_id(MessageType::TransferEnd, *transfer_id),
-            Self::Cancel(transfer_id) => encode_id(MessageType::TransferCancel, *transfer_id),
-            Self::Receipt(receipt) => Ok((
-                MessageType::TransferReceipt,
-                PackedEncoder::new(top_level_schema_id(MessageType::TransferReceipt), 1)
-                    .field(1, WireType::Uuid128, REQUIRED, receipt.transfer_id)?
-                    .field(2, WireType::Uuid128, REQUIRED, receipt.actor_id)?
-                    .field(
-                        3,
-                        WireType::U16,
-                        REQUIRED,
-                        kind_value(receipt.kind).to_le_bytes(),
-                    )?
-                    .field(
-                        4,
-                        WireType::U64,
-                        REQUIRED,
-                        u64::try_from(receipt.total_bytes)
-                            .map_err(|_| TransferError::BoundExceeded)?
-                            .to_le_bytes(),
-                    )?
-                    .field(5, WireType::Bytes, REQUIRED, receipt.sha256)?
-                    .field(
-                        6,
-                        WireType::U16,
-                        REQUIRED,
-                        terminal_value(receipt.terminal).to_le_bytes(),
-                    )?
-                    .encode()?,
-            )),
+            Self::Begin(begin) => encode_begin(begin),
+            Self::Data(data) => encode_data(data),
+            Self::End(end) => encode_end(end),
+            Self::Cancel(cancel) => encode_cancel(*cancel),
+            Self::CancelAck(ack) => encode_cancel_ack(ack),
+            Self::Receipt(receipt) => encode_receipt(receipt),
         }
     }
 
@@ -181,49 +319,165 @@ impl TransferMessage {
         match message_type {
             MessageType::TransferBegin => Ok(Self::Begin(TransferBegin {
                 transfer_id: uuid(&decoder, 1)?,
-                actor_id: uuid(&decoder, 2)?,
-                kind: decode_kind(u16_value(&decoder, 3)?)?,
-                total_bytes: usize::try_from(u64_value(&decoder, 4)?)
-                    .map_err(|_| TransferError::BoundExceeded)?,
-                sha256: bytes(&decoder, 5)?
-                    .try_into()
-                    .map_err(|_| TransferError::Protocol)?,
+                kind: decode_kind(u16_value(&decoder, 2)?)?,
+                parent_message_id: optional_uuid(&decoder, 3)?,
+                parent_operation_id: optional_uuid(&decoder, 4)?,
+                declared_length: usize_value(&decoder, 5)?,
+                content_hash: hash_value(&decoder, 6)?,
+                media_type: optional_text(&decoder, 7)?,
+                file_name: optional_text(&decoder, 8)?,
+                sensitivity: u16_value(&decoder, 9)?,
             })),
             MessageType::TransferData => Ok(Self::Data(TransferData {
                 transfer_id: uuid(&decoder, 1)?,
-                sequence: u32_value(&decoder, 2)?,
-                offset: usize::try_from(u64_value(&decoder, 3)?)
-                    .map_err(|_| TransferError::BoundExceeded)?,
-                bytes: bytes(&decoder, 4)?.to_vec(),
+                chunk_index: u32_value(&decoder, 2)?,
+                offset: usize_value(&decoder, 3)?,
+                chunk_hash: hash_value(&decoder, 4)?,
+                bytes: bytes(&decoder, 5)?.to_vec(),
             })),
-            MessageType::TransferEnd => Ok(Self::End(uuid(&decoder, 1)?)),
-            MessageType::TransferCancel => Ok(Self::Cancel(uuid(&decoder, 1)?)),
-            MessageType::TransferReceipt => Ok(Self::Receipt(TransferReceipt {
+            MessageType::TransferEnd => Ok(Self::End(TransferEnd {
                 transfer_id: uuid(&decoder, 1)?,
-                actor_id: uuid(&decoder, 2)?,
-                kind: decode_kind(u16_value(&decoder, 3)?)?,
-                total_bytes: usize::try_from(u64_value(&decoder, 4)?)
-                    .map_err(|_| TransferError::BoundExceeded)?,
-                sha256: bytes(&decoder, 5)?
-                    .try_into()
-                    .map_err(|_| TransferError::Protocol)?,
-                terminal: decode_terminal(u16_value(&decoder, 6)?)?,
+                chunk_count: u32_value(&decoder, 2)?,
+                total_length: usize_value(&decoder, 3)?,
+                total_hash: hash_value(&decoder, 4)?,
+                terminal_status: u16_value(&decoder, 5)?,
+                receipt: nested(&decoder, 6)?.to_vec(),
+            })),
+            MessageType::TransferCancel => Ok(Self::Cancel(TransferCancel {
+                transfer_id: uuid(&decoder, 1)?,
+                reason: u16_value(&decoder, 2)?,
+            })),
+            MessageType::TransferCancelAck => Ok(Self::CancelAck(TransferCancelAck {
+                transfer_id: uuid(&decoder, 1)?,
+                disposition: u16_value(&decoder, 2)?,
+                receipt: optional_nested(&decoder, 3)?.map(<[u8]>::to_vec),
+            })),
+            MessageType::TransferReceipt => Ok(Self::Receipt(TransferReceiptMessage {
+                transfer_id: uuid(&decoder, 1)?,
+                receipt: nested(&decoder, 2)?.to_vec(),
             })),
             _ => Err(TransferError::Protocol),
         }
     }
 }
 
-fn encode_id(
-    message_type: MessageType,
-    transfer_id: TransferId,
-) -> Result<(MessageType, Vec<u8>), TransferError> {
+fn encode_begin(begin: &TransferBegin) -> Result<(MessageType, Vec<u8>), TransferError> {
+    let mut encoder = PackedEncoder::new(top_level_schema_id(MessageType::TransferBegin), 1)
+        .field(1, WireType::Uuid128, REQUIRED, begin.transfer_id)?
+        .field(
+            2,
+            WireType::U16,
+            REQUIRED,
+            kind_value(begin.kind).to_le_bytes(),
+        )?
+        .field(
+            5,
+            WireType::U64,
+            REQUIRED,
+            u64::try_from(begin.declared_length)
+                .map_err(|_| TransferError::BoundExceeded)?
+                .to_le_bytes(),
+        )?
+        .field(6, WireType::Bytes, REQUIRED, begin.content_hash)?
+        .field(9, WireType::U16, REQUIRED, begin.sensitivity.to_le_bytes())?;
+    if let Some(value) = begin.parent_message_id {
+        encoder = encoder.field(3, WireType::Uuid128, 0, value)?;
+    }
+    if let Some(value) = begin.parent_operation_id {
+        encoder = encoder.field(4, WireType::Uuid128, 0, value)?;
+    }
+    if let Some(value) = &begin.media_type {
+        encoder = encoder.field(7, WireType::Utf8, 0, value.as_bytes())?;
+    }
+    if let Some(value) = &begin.file_name {
+        encoder = encoder.field(8, WireType::Utf8, 0, value.as_bytes())?;
+    }
+    Ok((MessageType::TransferBegin, encoder.encode()?))
+}
+
+fn encode_data(data: &TransferData) -> Result<(MessageType, Vec<u8>), TransferError> {
     Ok((
-        message_type,
-        PackedEncoder::new(top_level_schema_id(message_type), 1)
-            .field(1, WireType::Uuid128, REQUIRED, transfer_id)?
+        MessageType::TransferData,
+        PackedEncoder::new(top_level_schema_id(MessageType::TransferData), 1)
+            .field(1, WireType::Uuid128, REQUIRED, data.transfer_id)?
+            .field(2, WireType::U32, REQUIRED, data.chunk_index.to_le_bytes())?
+            .field(
+                3,
+                WireType::U64,
+                REQUIRED,
+                u64::try_from(data.offset)
+                    .map_err(|_| TransferError::BoundExceeded)?
+                    .to_le_bytes(),
+            )?
+            .field(4, WireType::Bytes, REQUIRED, data.chunk_hash)?
+            .field(5, WireType::Bytes, REQUIRED, data.bytes.clone())?
             .encode()?,
     ))
+}
+
+fn encode_end(end: &TransferEnd) -> Result<(MessageType, Vec<u8>), TransferError> {
+    Ok((
+        MessageType::TransferEnd,
+        PackedEncoder::new(top_level_schema_id(MessageType::TransferEnd), 1)
+            .field(1, WireType::Uuid128, REQUIRED, end.transfer_id)?
+            .field(2, WireType::U32, REQUIRED, end.chunk_count.to_le_bytes())?
+            .field(
+                3,
+                WireType::U64,
+                REQUIRED,
+                u64::try_from(end.total_length)
+                    .map_err(|_| TransferError::BoundExceeded)?
+                    .to_le_bytes(),
+            )?
+            .field(4, WireType::Bytes, REQUIRED, end.total_hash)?
+            .field(
+                5,
+                WireType::U16,
+                REQUIRED,
+                end.terminal_status.to_le_bytes(),
+            )?
+            .field(6, WireType::Nested, REQUIRED, end.receipt.clone())?
+            .encode()?,
+    ))
+}
+
+fn encode_cancel(cancel: TransferCancel) -> Result<(MessageType, Vec<u8>), TransferError> {
+    Ok((
+        MessageType::TransferCancel,
+        PackedEncoder::new(top_level_schema_id(MessageType::TransferCancel), 1)
+            .field(1, WireType::Uuid128, REQUIRED, cancel.transfer_id)?
+            .field(2, WireType::U16, REQUIRED, cancel.reason.to_le_bytes())?
+            .encode()?,
+    ))
+}
+
+fn encode_cancel_ack(ack: &TransferCancelAck) -> Result<(MessageType, Vec<u8>), TransferError> {
+    let mut encoder = PackedEncoder::new(top_level_schema_id(MessageType::TransferCancelAck), 1)
+        .field(1, WireType::Uuid128, REQUIRED, ack.transfer_id)?
+        .field(2, WireType::U16, REQUIRED, ack.disposition.to_le_bytes())?;
+    if let Some(receipt) = &ack.receipt {
+        encoder = encoder.field(3, WireType::Nested, 0, receipt.clone())?;
+    }
+    Ok((MessageType::TransferCancelAck, encoder.encode()?))
+}
+
+fn encode_receipt(
+    receipt: &TransferReceiptMessage,
+) -> Result<(MessageType, Vec<u8>), TransferError> {
+    Ok((
+        MessageType::TransferReceipt,
+        PackedEncoder::new(top_level_schema_id(MessageType::TransferReceipt), 1)
+            .field(1, WireType::Uuid128, REQUIRED, receipt.transfer_id)?
+            .field(2, WireType::Nested, REQUIRED, receipt.receipt.clone())?
+            .encode()?,
+    ))
+}
+
+fn validate_optional_text(value: Option<&str>, maximum: usize) -> Result<(), TransferError> {
+    if value.is_some_and(|value| value.len() > maximum || value.as_bytes().contains(&0)) {
+        return Err(TransferError::BoundExceeded);
+    }
+    Ok(())
 }
 
 const fn kind_value(kind: TransferKind) -> u16 {
@@ -247,23 +501,6 @@ fn decode_kind(value: u16) -> Result<TransferKind, TransferError> {
     }
 }
 
-const fn terminal_value(terminal: TransferTerminal) -> u16 {
-    match terminal {
-        TransferTerminal::Completed => 1,
-        TransferTerminal::Cancelled => 2,
-        TransferTerminal::Failed => 3,
-    }
-}
-
-fn decode_terminal(value: u16) -> Result<TransferTerminal, TransferError> {
-    match value {
-        1 => Ok(TransferTerminal::Completed),
-        2 => Ok(TransferTerminal::Cancelled),
-        3 => Ok(TransferTerminal::Failed),
-        _ => Err(TransferError::Protocol),
-    }
-}
-
 fn required<'a>(
     decoder: &'a PackedDecoder<'a>,
     tag: u16,
@@ -276,14 +513,63 @@ fn required<'a>(
     Ok(field.value)
 }
 
+fn optional<'a>(
+    decoder: &'a PackedDecoder<'a>,
+    tag: u16,
+    wire_type: WireType,
+) -> Result<Option<&'a [u8]>, TransferError> {
+    decoder
+        .field(tag)
+        .map(|field| {
+            if field.wire_type != wire_type || field.flags & REQUIRED != 0 {
+                return Err(TransferError::Protocol);
+            }
+            Ok(field.value)
+        })
+        .transpose()
+}
+
 fn uuid(decoder: &PackedDecoder<'_>, tag: u16) -> Result<[u8; 16], TransferError> {
     required(decoder, tag, WireType::Uuid128)?
         .try_into()
         .map_err(|_| TransferError::Protocol)
 }
 
+fn optional_uuid(decoder: &PackedDecoder<'_>, tag: u16) -> Result<Option<[u8; 16]>, TransferError> {
+    optional(decoder, tag, WireType::Uuid128)?
+        .map(|value| value.try_into().map_err(|_| TransferError::Protocol))
+        .transpose()
+}
+
 fn bytes<'a>(decoder: &'a PackedDecoder<'a>, tag: u16) -> Result<&'a [u8], TransferError> {
     required(decoder, tag, WireType::Bytes)
+}
+
+fn nested<'a>(decoder: &'a PackedDecoder<'a>, tag: u16) -> Result<&'a [u8], TransferError> {
+    required(decoder, tag, WireType::Nested)
+}
+
+fn optional_nested<'a>(
+    decoder: &'a PackedDecoder<'a>,
+    tag: u16,
+) -> Result<Option<&'a [u8]>, TransferError> {
+    optional(decoder, tag, WireType::Nested)
+}
+
+fn optional_text(decoder: &PackedDecoder<'_>, tag: u16) -> Result<Option<String>, TransferError> {
+    optional(decoder, tag, WireType::Utf8)?
+        .map(|value| {
+            std::str::from_utf8(value)
+                .map(str::to_owned)
+                .map_err(|_| TransferError::Protocol)
+        })
+        .transpose()
+}
+
+fn hash_value(decoder: &PackedDecoder<'_>, tag: u16) -> Result<[u8; 32], TransferError> {
+    bytes(decoder, tag)?
+        .try_into()
+        .map_err(|_| TransferError::Protocol)
 }
 
 fn u16_value(decoder: &PackedDecoder<'_>, tag: u16) -> Result<u16, TransferError> {
@@ -302,156 +588,13 @@ fn u32_value(decoder: &PackedDecoder<'_>, tag: u16) -> Result<u32, TransferError
     ))
 }
 
-fn u64_value(decoder: &PackedDecoder<'_>, tag: u16) -> Result<u64, TransferError> {
-    Ok(u64::from_le_bytes(
+fn usize_value(decoder: &PackedDecoder<'_>, tag: u16) -> Result<usize, TransferError> {
+    usize::try_from(u64::from_le_bytes(
         required(decoder, tag, WireType::U64)?
             .try_into()
             .map_err(|_| TransferError::Protocol)?,
     ))
-}
-
-#[derive(Debug)]
-struct ActiveTransfer {
-    begin: TransferBegin,
-    next_sequence: u32,
-    bytes: Vec<u8>,
-}
-
-#[derive(Debug)]
-pub struct TransferRegistry {
-    limits: TransferLimits,
-    active: std::collections::BTreeMap<TransferId, ActiveTransfer>,
-    terminal: BTreeSet<TransferId>,
-}
-
-impl TransferRegistry {
-    #[must_use]
-    pub fn new(limits: TransferLimits) -> Self {
-        Self {
-            limits,
-            active: std::collections::BTreeMap::new(),
-            terminal: BTreeSet::new(),
-        }
-    }
-
-    pub fn begin(&mut self, begin: TransferBegin) -> Result<(), TransferError> {
-        if self.active.len() >= self.limits.maximum_active {
-            return Err(TransferError::Capacity);
-        }
-        if self.active.contains_key(&begin.transfer_id)
-            || self.terminal.contains(&begin.transfer_id)
-        {
-            return Err(TransferError::Replay);
-        }
-        if begin.total_bytes > self.limits.maximum_bytes {
-            return Err(TransferError::BoundExceeded);
-        }
-        self.active.insert(
-            begin.transfer_id,
-            ActiveTransfer {
-                bytes: Vec::with_capacity(begin.total_bytes),
-                begin,
-                next_sequence: 0,
-            },
-        );
-        Ok(())
-    }
-
-    pub fn data(
-        &mut self,
-        actor_id: ActorId,
-        transfer_id: TransferId,
-        sequence: u32,
-        offset: usize,
-        bytes: &[u8],
-    ) -> Result<(), TransferError> {
-        let active = self
-            .active
-            .get_mut(&transfer_id)
-            .ok_or(TransferError::Unknown)?;
-        if active.begin.actor_id != actor_id {
-            return Err(TransferError::WrongActor);
-        }
-        if sequence != active.next_sequence || offset != active.bytes.len() {
-            return Err(TransferError::InvalidOrder);
-        }
-        if bytes.len() > self.limits.maximum_chunk_bytes {
-            return Err(TransferError::BoundExceeded);
-        }
-        let new_length = active
-            .bytes
-            .len()
-            .checked_add(bytes.len())
-            .ok_or(TransferError::BoundExceeded)?;
-        if new_length > active.begin.total_bytes || new_length > self.limits.maximum_bytes {
-            return Err(TransferError::BoundExceeded);
-        }
-        active.bytes.extend_from_slice(bytes);
-        active.next_sequence = active
-            .next_sequence
-            .checked_add(1)
-            .ok_or(TransferError::BoundExceeded)?;
-        Ok(())
-    }
-
-    pub fn finish(
-        &mut self,
-        actor_id: ActorId,
-        transfer_id: TransferId,
-    ) -> Result<(Vec<u8>, TransferReceipt), TransferError> {
-        let active = self
-            .active
-            .remove(&transfer_id)
-            .ok_or(TransferError::Unknown)?;
-        if active.begin.actor_id != actor_id {
-            self.active.insert(transfer_id, active);
-            return Err(TransferError::WrongActor);
-        }
-        self.terminal.insert(transfer_id);
-        if active.bytes.len() != active.begin.total_bytes
-            || hash(&active.bytes) != active.begin.sha256
-        {
-            return Err(TransferError::HashMismatch);
-        }
-        let receipt = TransferReceipt {
-            transfer_id,
-            actor_id,
-            kind: active.begin.kind,
-            total_bytes: active.bytes.len(),
-            sha256: active.begin.sha256,
-            terminal: TransferTerminal::Completed,
-        };
-        Ok((active.bytes, receipt))
-    }
-
-    pub fn cancel(
-        &mut self,
-        actor_id: ActorId,
-        transfer_id: TransferId,
-    ) -> Result<TransferReceipt, TransferError> {
-        let active = self
-            .active
-            .remove(&transfer_id)
-            .ok_or(TransferError::Unknown)?;
-        if active.begin.actor_id != actor_id {
-            self.active.insert(transfer_id, active);
-            return Err(TransferError::WrongActor);
-        }
-        self.terminal.insert(transfer_id);
-        Ok(TransferReceipt {
-            transfer_id,
-            actor_id,
-            kind: active.begin.kind,
-            total_bytes: active.bytes.len(),
-            sha256: hash(&active.bytes),
-            terminal: TransferTerminal::Cancelled,
-        })
-    }
-
-    #[must_use]
-    pub fn active_count(&self) -> usize {
-        self.active.len()
-    }
+    .map_err(|_| TransferError::BoundExceeded)
 }
 
 fn hash(bytes: &[u8]) -> [u8; 32] {
@@ -467,6 +610,22 @@ mod tests {
             maximum_bytes: 1024 * 1024,
             maximum_chunk_bytes: 64 * 1024,
             maximum_active: 2,
+            maximum_metadata_bytes: 256,
+            maximum_receipt_bytes: 4096,
+        }
+    }
+
+    fn begin(id: TransferId, body: &[u8]) -> TransferBegin {
+        TransferBegin {
+            transfer_id: id,
+            kind: TransferKind::RequestInput,
+            parent_message_id: Some([8; 16]),
+            parent_operation_id: None,
+            declared_length: body.len(),
+            content_hash: hash(body),
+            media_type: Some(String::from("application/octet-stream")),
+            file_name: None,
+            sensitivity: 1,
         }
     }
 
@@ -476,30 +635,36 @@ mod tests {
         let id = [2; 16];
         let body = vec![0xa5; 70_000];
         let mut transfers = TransferRegistry::new(limits());
-        transfers
-            .begin(TransferBegin {
-                transfer_id: id,
-                actor_id: actor,
-                kind: TransferKind::RequestInput,
-                total_bytes: body.len(),
-                sha256: hash(&body),
-            })
-            .unwrap();
-        transfers.data(actor, id, 0, 0, &body[..64 * 1024]).unwrap();
-        transfers
-            .data(actor, id, 1, 64 * 1024, &body[64 * 1024..])
-            .unwrap();
-        let (completed, receipt) = transfers.finish(actor, id).unwrap();
+        transfers.begin(actor, begin(id, &body)).unwrap();
+        let first = TransferData {
+            transfer_id: id,
+            chunk_index: 0,
+            offset: 0,
+            chunk_hash: hash(&body[..64 * 1024]),
+            bytes: body[..64 * 1024].to_vec(),
+        };
+        let second = TransferData {
+            transfer_id: id,
+            chunk_index: 1,
+            offset: 64 * 1024,
+            chunk_hash: hash(&body[64 * 1024..]),
+            bytes: body[64 * 1024..].to_vec(),
+        };
+        transfers.data(actor, &first).unwrap();
+        transfers.data(actor, &second).unwrap();
+        let end = TransferEnd {
+            transfer_id: id,
+            chunk_count: 2,
+            total_length: body.len(),
+            total_hash: hash(&body),
+            terminal_status: 1,
+            receipt: b"sender-receipt".to_vec(),
+        };
+        let (completed, receipt) = transfers.finish(actor, &end).unwrap();
         assert_eq!(completed, body);
         assert_eq!(receipt.terminal, TransferTerminal::Completed);
         assert_eq!(
-            transfers.begin(TransferBegin {
-                transfer_id: id,
-                actor_id: actor,
-                kind: TransferKind::RequestInput,
-                total_bytes: 0,
-                sha256: hash(&[]),
-            }),
+            transfers.begin(actor, begin(id, &[])),
             Err(TransferError::Replay)
         );
     }
@@ -508,38 +673,36 @@ mod tests {
     fn transfer_rejects_order_actor_hash_and_bounds() {
         let actor = [1; 16];
         let id = [2; 16];
+        let body = b"data";
         let mut transfers = TransferRegistry::new(limits());
-        transfers
-            .begin(TransferBegin {
-                transfer_id: id,
-                actor_id: actor,
-                kind: TransferKind::ResponseOutput,
-                total_bytes: 4,
-                sha256: [0; 32],
-            })
-            .unwrap();
+        transfers.begin(actor, begin(id, body)).unwrap();
+        let mut data = TransferData {
+            transfer_id: id,
+            chunk_index: 0,
+            offset: 0,
+            chunk_hash: hash(body),
+            bytes: body.to_vec(),
+        };
         assert_eq!(
-            transfers.data([9; 16], id, 0, 0, b"data"),
+            transfers.data([9; 16], &data),
             Err(TransferError::WrongActor)
         );
+        data.chunk_index = 1;
         assert_eq!(
-            transfers.data(actor, id, 1, 0, b"data"),
+            transfers.data(actor, &data),
             Err(TransferError::InvalidOrder)
         );
-        transfers.data(actor, id, 0, 0, b"data").unwrap();
+        data.chunk_index = 0;
+        data.chunk_hash = [0; 32];
         assert_eq!(
-            transfers.finish(actor, id),
+            transfers.data(actor, &data),
             Err(TransferError::HashMismatch)
         );
         let mut transfers = TransferRegistry::new(limits());
+        let mut oversized = begin(id, &[]);
+        oversized.declared_length = limits().maximum_bytes + 1;
         assert_eq!(
-            transfers.begin(TransferBegin {
-                transfer_id: id,
-                actor_id: actor,
-                kind: TransferKind::ResponseOutput,
-                total_bytes: limits().maximum_bytes + 1,
-                sha256: [0; 32],
-            }),
+            transfers.begin(actor, oversized),
             Err(TransferError::BoundExceeded)
         );
     }
@@ -549,59 +712,66 @@ mod tests {
         let actor = [1; 16];
         let mut transfers = TransferRegistry::new(limits());
         for value in [1_u8, 2] {
-            transfers
-                .begin(TransferBegin {
-                    transfer_id: [value; 16],
-                    actor_id: actor,
-                    kind: TransferKind::ProcessStdout,
-                    total_bytes: 0,
-                    sha256: hash(&[]),
-                })
-                .unwrap();
+            transfers.begin(actor, begin([value; 16], &[])).unwrap();
         }
         assert_eq!(
-            transfers.begin(TransferBegin {
-                transfer_id: [3; 16],
-                actor_id: actor,
-                kind: TransferKind::ProcessStdout,
-                total_bytes: 0,
-                sha256: hash(&[]),
-            }),
+            transfers.begin(actor, begin([3; 16], &[])),
             Err(TransferError::Capacity)
         );
-        let receipt = transfers.cancel(actor, [1; 16]).unwrap();
+        let receipt = transfers
+            .cancel(
+                actor,
+                TransferCancel {
+                    transfer_id: [1; 16],
+                    reason: 1,
+                },
+            )
+            .unwrap();
         assert_eq!(receipt.terminal, TransferTerminal::Cancelled);
         assert_eq!(
-            transfers.cancel(actor, [1; 16]),
+            transfers.cancel(
+                actor,
+                TransferCancel {
+                    transfer_id: [1; 16],
+                    reason: 1,
+                },
+            ),
             Err(TransferError::Unknown)
         );
     }
 
     #[test]
-    fn transfer_messages_round_trip_and_reject_wrong_schema() {
+    fn transfer_messages_match_the_frozen_protocol_shapes() {
+        let body = b"data";
         let messages = [
-            TransferMessage::Begin(TransferBegin {
-                transfer_id: [1; 16],
-                actor_id: [2; 16],
-                kind: TransferKind::ProcessStdin,
-                total_bytes: 4,
-                sha256: [3; 32],
-            }),
+            TransferMessage::Begin(begin([1; 16], body)),
             TransferMessage::Data(TransferData {
                 transfer_id: [1; 16],
-                sequence: 2,
+                chunk_index: 2,
                 offset: 4,
-                bytes: b"data".to_vec(),
+                chunk_hash: hash(body),
+                bytes: body.to_vec(),
             }),
-            TransferMessage::End([1; 16]),
-            TransferMessage::Cancel([1; 16]),
-            TransferMessage::Receipt(TransferReceipt {
+            TransferMessage::End(TransferEnd {
                 transfer_id: [1; 16],
-                actor_id: [2; 16],
-                kind: TransferKind::ProcessStdout,
-                total_bytes: 4,
-                sha256: [3; 32],
-                terminal: TransferTerminal::Completed,
+                chunk_count: 1,
+                total_length: 4,
+                total_hash: hash(body),
+                terminal_status: 1,
+                receipt: b"receipt".to_vec(),
+            }),
+            TransferMessage::Cancel(TransferCancel {
+                transfer_id: [1; 16],
+                reason: 2,
+            }),
+            TransferMessage::CancelAck(TransferCancelAck {
+                transfer_id: [1; 16],
+                disposition: 1,
+                receipt: Some(b"receipt".to_vec()),
+            }),
+            TransferMessage::Receipt(TransferReceiptMessage {
+                transfer_id: [1; 16],
+                receipt: b"receipt".to_vec(),
             }),
         ];
         for message in messages {
@@ -611,10 +781,29 @@ mod tests {
                 message
             );
         }
-        let (_, payload) = TransferMessage::End([1; 16]).encode().unwrap();
-        assert_eq!(
-            TransferMessage::decode(MessageType::TransferCancel, &payload),
-            Err(TransferError::Protocol)
-        );
+    }
+
+    #[test]
+    fn malformed_transfer_corpus_never_panics_or_allocates_unboundedly() {
+        let mut state = 0x4d59_5df4_d0f3_3173_u64;
+        for length in 0..512 {
+            let mut input = vec![0_u8; length];
+            for byte in &mut input {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                *byte = state.to_le_bytes()[4];
+            }
+            for message_type in [
+                MessageType::TransferBegin,
+                MessageType::TransferData,
+                MessageType::TransferEnd,
+                MessageType::TransferCancel,
+                MessageType::TransferCancelAck,
+                MessageType::TransferReceipt,
+            ] {
+                let _ = TransferMessage::decode(message_type, &input);
+            }
+        }
     }
 }

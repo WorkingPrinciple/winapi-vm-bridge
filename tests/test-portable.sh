@@ -6,7 +6,8 @@ set -eu
 python3 -m unittest \
   tests.test_sdk \
   tests.test_runtime_acceptance \
-  tests.test_runtime_metadata
+  tests.test_runtime_metadata \
+  tests.test_topology_benchmark
 cargo test -q -p wvb-admission -p wvb-integrity -p wvb-operations \
   -p wvb-package -p wvb-state -p wvb-transfer -p wvb-exe
 tmp=$(mktemp -d)
@@ -101,6 +102,7 @@ python3 -c 'compile(open("setup/run_utm_deploy.py", encoding="utf-8").read(), "s
 python3 -c 'compile(open("setup/run_utm_managed_e2e.py", encoding="utf-8").read(), "setup/run_utm_managed_e2e.py", "exec")'
 python3 -c 'compile(open("setup/run_utm_acceptance.py", encoding="utf-8").read(), "setup/run_utm_acceptance.py", "exec")'
 python3 -c 'compile(open("setup/generate_runtime_metadata.py", encoding="utf-8").read(), "setup/generate_runtime_metadata.py", "exec")'
+python3 -c 'compile(open("setup/run_topology_benchmark.py", encoding="utf-8").read(), "setup/run_topology_benchmark.py", "exec")'
 test -x native/managed-host/run-managed-roundtrip.sh
 test -x setup/provision_windows_dotnet_runtime.py
 test -x setup/run_cross_platform_managed_e2e.py
@@ -108,6 +110,7 @@ test -x setup/run_utm_deploy.py
 test -x setup/run_utm_managed_e2e.py
 test -x setup/run_utm_acceptance.py
 test -x setup/generate_runtime_metadata.py
+test -x setup/run_topology_benchmark.py
 grep -q 'runtime and execution plane' README.md
 grep -q 'kernel drivers' docs/generic-adapters.md
 if grep -R -E '(xuid|gamertag|token|signature).*[=:][[:space:]]*[0-9A-Za-z+/]{20,}' \
