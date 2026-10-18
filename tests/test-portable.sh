@@ -2,6 +2,7 @@
 set -eu
 ./mac/doctor.sh | grep -q 'doctor=ok'
 ./bin/winapi-vm-bridge adapters --json | grep -q '"core"'
+./bin/winapi-vm-bridge adapters --json | grep -q '"windows.kernel32"'
 python3 -m unittest tests.test_sdk
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

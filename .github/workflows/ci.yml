@@ -10,3 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/test-portable.sh
+  windows-real-dll:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: powershell
+        run: ./tests/windows-roundtrip.ps1

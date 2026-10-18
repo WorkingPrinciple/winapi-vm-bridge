@@ -21,14 +21,15 @@ irm https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-win
 curl -fsSL https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-mac.sh | bash
 ```
 
-**Round trip**
+**Call a real Windows DLL**
 
 ```bash
-winapi-vm-bridge call core.ping --json
+winapi-vm-bridge call windows.kernel32.GetTickCount64 --json
 ```
 
 Windows prints a pairing code once. Paste it into the Mac setup prompt. The
-third command then performs a real private Mac → VM → Mac RPC call.
+third command then calls the real `kernel32.dll!GetTickCount64` export inside
+the Windows VM and returns its native unsigned 64-bit result to the Mac.
 
 Here, **paired** means the Mac client and Windows broker prove they share the
 same random capability. It prevents an unrelated local process from using the
@@ -106,7 +107,8 @@ Best for coarse request/result calls:
 | Capability | Status |
 |---|---|
 | Paired Mac ↔ Windows VM RPC | Working |
-| Portable `core.ping` round trip | Working |
+| Real `kernel32.dll!GetTickCount64` round trip | Working on Windows |
+| Portable `core.ping` health check | Working |
 | Adapter schema and patch generator | Working |
 | Generated review/test bundle | Working |
 | Compilable scalar shim/dispatcher generation | [Planned](https://github.com/dragoshont/winapi-vm-bridge/issues/1) |

@@ -24,7 +24,7 @@ Short reusable introduction:
 >
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/dragoshont/winapi-vm-bridge/main/setup-mac.sh | bash
-> winapi-vm-bridge call core.ping --json
+> winapi-vm-bridge call windows.kernel32.GetTickCount64 --json
 > ```
 >
 > The public repo includes the paired transport, adapter schema/generator,
@@ -41,8 +41,10 @@ Short reusable introduction:
 > - scientific, industrial, or device-management SDK queries that do not need a
 >   kernel driver.
 >
-> The core ping works today. Each real DLL still needs a documented ABI and an
-> adapter. Simple C functions are straightforward; pointers, callbacks, COM,
+> The third command calls the real `kernel32.dll!GetTickCount64` export in the
+> Windows VM and returns its native 64-bit result. Each additional DLL still
+> needs a documented ABI and adapter. Simple C functions are straightforward;
+> pointers, callbacks, COM,
 > handles, and async APIs need explicit marshalling. Kernel drivers, anti-cheat,
 > and per-frame graphics are the wrong fit.
 

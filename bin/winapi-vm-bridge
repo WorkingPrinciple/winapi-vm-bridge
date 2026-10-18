@@ -13,7 +13,7 @@ if [ "${1:-}" = generate ] && [ -n "${2:-}" ]; then
   exec python3 "$root/sdk/generate.py" "$@"
 fi
 if [ "${1:-}" = adapters ]; then
-  printf '{"adapters":["core"],"note":"Install generated manifests to add Windows DLL adapters."}\n'
+  printf '{"adapters":["core","windows.kernel32"],"note":"Install generated manifests to add Windows DLL adapters."}\n'
   exit 0
 fi
 if [ "${1:-}" = call ]; then
@@ -24,6 +24,7 @@ Usage:
   winapi-vm-bridge init vendor.library [adapter.json]
   winapi-vm-bridge generate adapter.json --out generated
   winapi-vm-bridge call core.ping --json
+  winapi-vm-bridge call windows.kernel32.GetTickCount64 --json
   winapi-vm-bridge adapters --json
 
 The public bootstrap includes the paired core ping adapter. Native DLL

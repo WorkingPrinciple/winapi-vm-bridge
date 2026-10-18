@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sdk.generate import generate, validate
 from winapi_vm_bridge.client import call
-from winapi_vm_bridge.server import serve
+from winapi_vm_bridge.server import invoke, serve
 import secrets
 import socket
 import threading
@@ -49,6 +49,14 @@ class GeneratorTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         with self.assertRaises(PermissionError):
             call("127.0.0.1", port, "0" * 64, "core", "ping", {})
+
+    def test_kernel32_adapter_is_explicitly_windows_only(self):
+        result = invoke("windows.kernel32", "GetTickCount64", {})
+        if result["ok"]:
+            self.assertEqual(result["resultType"], "u64")
+            self.assertGreater(result["result"], 0)
+        else:
+            self.assertIn("requires Windows", result["error"])
 
     def test_unbounded_buffer_rejected(self):
         data = json.loads(Path("examples/example-math/adapter.json").read_text())

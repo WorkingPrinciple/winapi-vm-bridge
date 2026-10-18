@@ -1,12 +1,36 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hmac
 import json
+import os
 import socket
 from pathlib import Path
 
 from .protocol import PING, decode_json, encode_json, receive_exact, receive_frame, send_frame, valid_capability
+
+
+def invoke(adapter: str, operation: str, arguments: object) -> dict:
+    if adapter == "core" and operation == "ping":
+        return {"ok": True, "adapter": "core", "operation": "ping", "broker": "windows"}
+    if adapter == "windows.kernel32" and operation == "GetTickCount64":
+        if arguments not in ({}, None):
+            return {"ok": False, "error": "GetTickCount64 takes no arguments"}
+        if os.name != "nt":
+            return {"ok": False, "error": "windows.kernel32 adapter requires Windows"}
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        function = kernel32.GetTickCount64
+        function.argtypes = []
+        function.restype = ctypes.c_uint64
+        return {
+            "ok": True,
+            "adapter": adapter,
+            "operation": operation,
+            "result": int(function()),
+            "resultType": "u64"
+        }
+    return {"ok": False, "error": "adapter or operation not installed"}
 
 
 def handle(connection: socket.socket, capability: str) -> None:
@@ -20,10 +44,10 @@ def handle(connection: socket.socket, capability: str) -> None:
         send_frame(connection, kind + 1, encode_json({"ok": False, "error": "unsupported operation type"}))
         return
     request = decode_json(payload)
-    if not isinstance(request, dict) or request.get("adapter") != "core" or request.get("operation") != "ping":
+    if not isinstance(request, dict):
         result = {"ok": False, "error": "adapter or operation not installed"}
     else:
-        result = {"ok": True, "adapter": "core", "operation": "ping", "broker": "windows"}
+        result = invoke(request.get("adapter"), request.get("operation"), request.get("arguments"))
     send_frame(connection, kind + 1, encode_json(result))
 
 
@@ -56,4 +80,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
