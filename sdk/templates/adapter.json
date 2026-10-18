@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "adapter": "vendor.library",
+  "windows": {
+    "dll": "vendor.dll",
+    "sha256": "replace-at-install"
+  },
+  "operations": {
+    "Query": {
+      "export": "VendorQuery",
+      "callingConvention": "winapi",
+      "timeoutMs": 15000,
+      "parameters": [
+        {
+          "name": "request",
+          "type": "bytes",
+          "direction": "in",
+          "maxBytes": 4096,
+          "notes": "Replace with the authoritative ABI."
+        }
+      ],
+      "returns": "hresult",
+      "notes": "Do not infer pointer ownership."
+    }
+  }
+}
+

@@ -1,5 +1,17 @@
 #!/bin/sh
 set -eu
+root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+if [ "${1:-}" = init ] && [ -n "${2:-}" ]; then
+  name=$2
+  target=${3:-adapter.json}
+  sed "s/vendor\\.library/$name/g" "$root/sdk/templates/adapter.json" > "$target"
+  echo "$target"
+  exit 0
+fi
+if [ "${1:-}" = generate ] && [ -n "${2:-}" ]; then
+  shift
+  exec python3 "$root/sdk/generate.py" "$@"
+fi
 if [ "${1:-}" = call ] && [ "${2:-}" = core.ping ]; then
   printf '{"ok":true,"adapter":"core.mock","operation":"ping","note":"Configure a Windows adapter for native calls."}\n'
   exit 0
@@ -10,6 +22,8 @@ if [ "${1:-}" = adapters ]; then
 fi
 cat >&2 <<'EOF'
 Usage:
+  winapi-vm-bridge init vendor.library [adapter.json]
+  winapi-vm-bridge generate adapter.json --out generated
   winapi-vm-bridge call core.ping --json
   winapi-vm-bridge adapters --json
 
