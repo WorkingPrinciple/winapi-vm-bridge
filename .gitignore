@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 build/
 out/
+target/
 *.log
 *.token
 *.secret
