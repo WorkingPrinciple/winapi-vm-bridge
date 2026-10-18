@@ -1132,6 +1132,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wvb-client-ffi"
+version = "0.2.0"
+dependencies = [
+ "tokio",
+ "wvb-call",
+ "wvb-crypto",
+ "wvb-runtime",
+ "wvb-session",
+]
+
+[[package]]
 name = "wvb-crypto"
 version = "0.2.0"
 dependencies = [
