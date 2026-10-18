@@ -8,7 +8,7 @@
 > **Implementation destination:** reviewable checkpoints on the active branch until the complete release path passes
 > **Revision date:** 2026-10-18  
 > **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation; three adversarial revise loops were completed, their consolidated findings are binding, and the owner directed implementation to continue after those findings were corrected  
-> **Current state:** runtime ownership/admission review passed; durable admission, receipts, operations, transfers, native process execution, package lifecycle, readiness/replay controls and acceptance preflight are implemented on the active branch; Whiny bundle/dispatcher vectors remain an external cutover hold; the isolated Windows target is snapshot-protected but blocked on guest-agent readiness
+> **Current state:** frozen Whiny v0.3.0 native and managed scalar bundles are independently verified, pinned and admitted; duplicate VM-owned inspection/IR/generation source has been removed atomically; the native frozen bundle executes under CrossOver; managed frozen bundle build and VM topology acceptance remain pending
 > **Execution mode:** approved repository edit/build/test program; no publish, signing-secret access, production deployment or infrastructure mutation is authorized
 > **Notation:** **[D]** binding decision; **[GATE]** deterministic acceptance; **[STOP]** no inference or implementation beyond this point; **[CONDITIONAL]** implemented only after its specified evidence trigger
 
@@ -198,14 +198,14 @@ The release shall not claim:
 
 ---
 
-# 3. Current-state inventory and disposition
+# 3. Cutover inventory and disposition
 
-The following binding split overrides the earlier full-stack disposition table
-for ownership and cutover. No listed path is removed before the Whiny validator,
-package and frozen native/managed bundle vectors are available and the runtime
-consumer suite passes.
+The following binding split records the completed atomic cutover. The Whiny
+validator package and frozen native/managed bundle vectors were independently
+verified, the runtime consumer/admission suite passed, and MOVE/DROP paths were
+then removed in the same checkpoint.
 
-| Current path | Disposition | Runtime cutover rule |
+| Pre-cutover path | Disposition | Completed runtime cutover |
 |---|---|---|
 | `crates/wvb-ir/**` | **MOVE to Whiny** | Replace with pinned `whiny-contract` v0.3.0 / `whiny.adapter-contract.v3`; delete only in the atomic cutover |
 | `crates/wvb-inspect/**` | **MOVE to Whiny** | Whiny owns all native inspection and evidence; remove after validator parity |
@@ -369,9 +369,8 @@ Application under Wine
 ```
 
 `crates/wvb-ir`, `crates/wvb-inspect`, `crates/wvb-generate`, the source-plane
-SDK and generated fixtures remain temporarily in the working tree only to keep
-the current vertical paths green. They are not part of the final runtime source
-tree and are removed together at R120.
+SDK, Python v1 proof and generated fixtures are no longer present. Runtime
+acceptance consumes the pinned files under `external/whiny/v0.3.0/`.
 
 No UI or IaC product is introduced.
 
@@ -2408,12 +2407,12 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R040 | Handle ownership, generation and restart invalidation | VM Bridge | `R020`, `R011` | actor/epoch/type/generation/close/restart/crash tests | primitives and exact handle close/status protocol complete; dispatcher integration waits for frozen profiles |
 | R041 | Callback reverse RPC lifecycle | VM Bridge | `R030`, `R040` | thread/order/reentrancy/unregister/disconnect/resource-bound tests | exact protocol codec and actor/epoch/lease/thread/concurrency service complete; broker reverse-stream integration pending |
 | R042 | Async cancellation and unknown-outcome receipts | VM Bridge | `R041`, `R011` | first terminal outcome wins; cancel races; disconnect/crash remains `unknown` | durable transitions plus exact cancel/operation/receipt/audit protocol controls complete |
-| R050 | Native dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; frozen native vector | exact export/ABI/load-path/hash and pre/post-load checks | external-hold |
-| R051 | CLR dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; existing CLR host; frozen managed vector | host/runtime/dispatcher/target hashes, binding and crash isolation | external-hold |
+| R050 | Native dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; frozen native vector | exact export/ABI/load-path/hash and pre/post-load checks | generic loader and deterministic frozen native CrossOver oracle complete |
+| R051 | CLR dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; existing CLR host; frozen managed vector | host/runtime/dispatcher/target hashes, binding and crash isolation | frozen bundle admitted and encrypted CLR host CrossOver round trip complete |
 | R052 | Native/.NET process execution and Job Object lifecycle | VM Bridge | `R011`, `R020`; clean native-EXE migration artifact | argv/env/stdin/stdout/stderr/exit/timeout/cancel/tree-kill/receipt tests | native codec/broker/CrossOver Job Object oracle complete; managed process pending |
 | R060 | Broker service composition and bounded queues | VM Bridge | `R011`, `R030`–`R052` | least privilege, package ACL, worker containment, restart reconciliation | ready |
 | R061 | Readiness, health and redacted diagnostics | VM Bridge | `R060`, receipt store | truthful distinct states, source versions, no unconditional success, privacy tests | readiness/resource controls and runtime doctor complete; service export pending |
-| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | durable receipts/operations complete; Whiny receipt serialization and retention pending |
+| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS chain, anchored-prefix recovery and authenticated receipt v1 emission complete; native receipt `08890bcd…fd79`, managed `3f3727c6…6dcf` |
 | R070 | macOS Keychain identity consumption | VM Bridge | `R020` | `SecItem` store/load/delete, access denial, zeroization, no argv/log secret | partial |
 | R071 | Safe Wine automatic configuration alternative | VM Bridge | `R070`; new evidence beyond failed by-name route | supported API/process boundary, exact bottle identity, no plaintext registry secret | official source confirms loader-initialized unixlib handle direction; implementation held because Wine build tooling/bundle is unavailable |
 | R080 | Windows service/MSI/firewall and macOS package setup | VM Bridge | `R060`, `R070`, admitted bundle catalog | clean install/pair/doctor/core call with receipted rollback | fail-closed bootstrap wrappers and runtime doctor complete; deterministic platform installers pending |
@@ -2423,7 +2422,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | deterministic unsigned SPDX/provenance generator complete; release artifacts/signing pending |
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | target UUID verified and snapshot created; blocked because QEMU guest agent is unavailable |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | pending |
-| R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | external-hold |
+| R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
 | R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R120` | configured quality/build/test, real evidence, zero blocking review findings | pending |
 
 Rejected or conditional scope:

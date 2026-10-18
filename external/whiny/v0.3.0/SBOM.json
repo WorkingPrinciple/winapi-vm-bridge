@@ -1,0 +1,692 @@
+{
+  "inputs": {
+    "cargo_lock_sha256": "c2468c004cb18558ab05ad598cf0b08d113c1adf8d59a06d497b22728ea3a867",
+    "pyproject_sha256": "bcfd2298e220f7bb2692550dc78b87033ec94ea3c22a33f1a3969284fdbd471c"
+  },
+  "license_status": {
+    "publication_allowed": false,
+    "third_party_notices": "THIRD_PARTY_NOTICES.md",
+    "whiny_authored_material": "NO_REPOSITORY_WIDE_LICENSE"
+  },
+  "migrated_source_components": [
+    {
+      "component": "whiny-generate",
+      "license": "Apache-2.0",
+      "source_commit": "d5b8e8999298282e5ff3e272a6e70a5c0d8c9525",
+      "source_path": "crates/wvb-generate/src/main.rs",
+      "source_repository": "https://github.com/dragoshont/winapi-vm-bridge",
+      "source_sha256": "d5738370ae3de3a72476dc8733f1828655b46e1ac2f0c7c99e03175b0c63bcf3"
+    },
+    {
+      "component": "whiny-inspect",
+      "license": "Apache-2.0",
+      "source_commit": "d5b8e8999298282e5ff3e272a6e70a5c0d8c9525",
+      "source_path": "crates/wvb-inspect/src/main.rs",
+      "source_repository": "https://github.com/dragoshont/winapi-vm-bridge",
+      "source_sha256": "0a64d56257fb5212375cfbdc93a747714b388ab6ef33491349af4cd15d27bedc"
+    },
+    {
+      "component": "Whiny.ManagedInspector",
+      "license": "Apache-2.0",
+      "source_commit": "c7bffd81ab8f3ccfac144e28651393d85d2be2e0",
+      "source_path": "managed/tools/Wvb.ManagedInspector/Program.cs",
+      "source_repository": "https://github.com/dragoshont/winapi-vm-bridge",
+      "source_sha256": "8fe631460452f295d59b4ab3a090394d75f58490379c783f70f9ea27a08da038"
+    }
+  ],
+  "project": {
+    "name": "whiny",
+    "version": "0.3.0"
+  },
+  "python_optional_requirements": [
+    {
+      "ecosystem": "pypi",
+      "group": "investigation",
+      "requirement": "pefile>=2024.8.26,<2025",
+      "resolution_status": "optional-unresolved"
+    },
+    {
+      "ecosystem": "pypi",
+      "group": "investigation",
+      "requirement": "dnfile>=0.17,<1",
+      "resolution_status": "optional-unresolved"
+    },
+    {
+      "ecosystem": "pypi",
+      "group": "investigation",
+      "requirement": "dncil>=1,<2",
+      "resolution_status": "optional-unresolved"
+    },
+    {
+      "ecosystem": "pypi",
+      "group": "research",
+      "requirement": "mcp>=1.20,<2",
+      "resolution_status": "optional-unresolved"
+    }
+  ],
+  "rust_components": [
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
+      },
+      "ecosystem": "cargo",
+      "name": "anstream",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+      },
+      "ecosystem": "cargo",
+      "name": "anstyle",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.14"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
+      },
+      "ecosystem": "cargo",
+      "name": "anstyle-parse",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
+      },
+      "ecosystem": "cargo",
+      "name": "anstyle-query",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.5"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
+      },
+      "ecosystem": "cargo",
+      "name": "anstyle-wincon",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "3.0.11"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+      },
+      "ecosystem": "cargo",
+      "name": "bitflags",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.13.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
+      },
+      "ecosystem": "cargo",
+      "name": "block-buffer",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.10.4"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+      },
+      "ecosystem": "cargo",
+      "name": "cfg-if",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.5"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "aa8876b300ab35ba921adea3dfd70157a46249b33f95c9084ae5709785478946"
+      },
+      "ecosystem": "cargo",
+      "name": "clap",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "4.6.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "ec0797fb7aeb1406c84efac526901f7ec3ead2124f946b494e72879d4b54704d"
+      },
+      "ecosystem": "cargo",
+      "name": "clap_builder",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "4.6.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "f9c751b79415d4e559e3d1fcf128e09e720eb673a06d26cf6f392d37d75b66e0"
+      },
+      "ecosystem": "cargo",
+      "name": "clap_derive",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "4.6.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
+      },
+      "ecosystem": "cargo",
+      "name": "clap_lex",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.1"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
+      },
+      "ecosystem": "cargo",
+      "name": "colorchoice",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.5"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+      },
+      "ecosystem": "cargo",
+      "name": "cpufeatures",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.17"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
+      },
+      "ecosystem": "cargo",
+      "name": "crypto-common",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.1.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
+      },
+      "ecosystem": "cargo",
+      "name": "digest",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.10.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+      },
+      "ecosystem": "cargo",
+      "name": "errno",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.3.14"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+      },
+      "ecosystem": "cargo",
+      "name": "fastrand",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.5.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
+      },
+      "ecosystem": "cargo",
+      "name": "generic-array",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.14.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+      },
+      "ecosystem": "cargo",
+      "name": "getrandom",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.4.3"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "17582616a7718cca54cec18e534a76c7c4aec11a8b9a85695712f262fd15a4c8"
+      },
+      "ecosystem": "cargo",
+      "name": "goblin",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.10.7"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+      },
+      "ecosystem": "cargo",
+      "name": "heck",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.5.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+      },
+      "ecosystem": "cargo",
+      "name": "is_terminal_polyfill",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.70.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+      },
+      "ecosystem": "cargo",
+      "name": "itoa",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.18"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+      },
+      "ecosystem": "cargo",
+      "name": "libc",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.191"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+      },
+      "ecosystem": "cargo",
+      "name": "linux-raw-sys",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.12.1"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+      },
+      "ecosystem": "cargo",
+      "name": "log",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.4.34"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+      },
+      "ecosystem": "cargo",
+      "name": "memchr",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.8.3"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+      },
+      "ecosystem": "cargo",
+      "name": "once_cell",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.21.4"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+      },
+      "ecosystem": "cargo",
+      "name": "once_cell_polyfill",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.70.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+      },
+      "ecosystem": "cargo",
+      "name": "plain",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.3"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
+      },
+      "ecosystem": "cargo",
+      "name": "proc-macro2",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.107"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
+      },
+      "ecosystem": "cargo",
+      "name": "quote",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.47"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+      },
+      "ecosystem": "cargo",
+      "name": "r-efi",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "6.0.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d"
+      },
+      "ecosystem": "cargo",
+      "name": "rustix",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.1.5"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "6518fc26bced4d53678a22d6e423e9d8716377def84545fe328236e3af070e7f"
+      },
+      "ecosystem": "cargo",
+      "name": "ryu-js",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "c1257cd4248b4132760d6524d6dda4e053bc648c9070b960929bf50cfb1e7add"
+      },
+      "ecosystem": "cargo",
+      "name": "scroll",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.13.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "e1a36a382ed65dbcc0ab47fd5e9a94112417ccd34560a392ef3b7b0f0ec39148"
+      },
+      "ecosystem": "cargo",
+      "name": "scroll_derive",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.13.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
+      },
+      "ecosystem": "cargo",
+      "name": "serde",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.229"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
+      },
+      "ecosystem": "cargo",
+      "name": "serde_core",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.229"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+      },
+      "ecosystem": "cargo",
+      "name": "serde_derive",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.229"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "d3a60f3fda61525e439ef6d67422118f11e986566997d9021c56867ad814a0aa"
+      },
+      "ecosystem": "cargo",
+      "name": "serde_jcs",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
+      },
+      "ecosystem": "cargo",
+      "name": "serde_json",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.154"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+      },
+      "ecosystem": "cargo",
+      "name": "sha2",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.10.9"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+      },
+      "ecosystem": "cargo",
+      "name": "strsim",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.11.1"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
+      },
+      "ecosystem": "cargo",
+      "name": "syn",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "3.0.9"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+      },
+      "ecosystem": "cargo",
+      "name": "tempfile",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "3.27.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+      },
+      "ecosystem": "cargo",
+      "name": "typenum",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.20.1"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+      },
+      "ecosystem": "cargo",
+      "name": "unicode-ident",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.27"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+      },
+      "ecosystem": "cargo",
+      "name": "utf8parse",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+      },
+      "ecosystem": "cargo",
+      "name": "version_check",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.9.5"
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "whiny-bundle",
+      "resolution_status": "locked",
+      "source": "workspace",
+      "version": "0.3.0"
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "whiny-contract",
+      "resolution_status": "locked",
+      "source": "workspace",
+      "version": "0.3.0"
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "whiny-generate",
+      "resolution_status": "locked",
+      "source": "workspace",
+      "version": "0.3.0"
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "whiny-inspect",
+      "resolution_status": "locked",
+      "source": "workspace",
+      "version": "0.3.0"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+      },
+      "ecosystem": "cargo",
+      "name": "windows-link",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.1"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+      },
+      "ecosystem": "cargo",
+      "name": "windows-sys",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.61.2"
+    },
+    {
+      "checksum": {
+        "algorithm": "sha256",
+        "value": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+      },
+      "ecosystem": "cargo",
+      "name": "zmij",
+      "resolution_status": "locked",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.23"
+    }
+  ],
+  "schema": "whiny.sbom.v1"
+}

@@ -7,9 +7,13 @@ target/
 *.log
 *.token
 *.secret
+runtime.key
+*.runtime.key
 config.local.*
 .architrave/runtime.key
 .architrave/resources.lock
 .architrave/runs/*/.run.lock
 managed/**/bin/
 managed/**/obj/
+external/**/bin/
+external/**/obj/

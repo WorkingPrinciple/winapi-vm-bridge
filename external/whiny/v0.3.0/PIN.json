@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "repository": "dragoshont/whiny",
+  "revision": "870da868f3d3d48f1da1a36123a9aaf1a6435e53",
+  "clean": true,
+  "sourceSnapshotSha256": "eeda5b2569a75a6c746334962cf52c18fa1bd9e8a553d0d75f5fe8bdc44640fa",
+  "handoffManifestSha256": "11dd56f11e9f46b5099fd8b842a3b4455298698d570706fb267f329598da2731",
+  "validatorPackage": {
+    "coordinate": "whiny-validator-package-v0.3.0.tar",
+    "sha256": "e95244e9056997a1887052744c1e235403f8e560cc2fa80d23ad14a4094c7a6f",
+    "size": 337920
+  },
+  "formats": {
+    "contract": "whiny.adapter-contract.v3",
+    "bundle": "whiny.adapter-bundle.v1",
+    "dispatcher": "whiny.dispatch.v1",
+    "runtimeReceipt": "whiny.runtime-receipt.v1"
+  },
+  "bundles": {
+    "native-scalar": {
+      "bundleSha256": "67330e6444fdb8876d8c162692b544a891cc47d15d8140c3bd92f0ab6e51d828",
+      "contractSha256": "b40ca13272e1b0ce29a8dd489a22e727db287981a7d2d2d2e48301e5d6e96c47",
+      "dispatcherSha256": "42a171bba5d2dc8aa278177f9911c27de99ed54ad6c98b230d7472265cb8e8a3",
+      "targetSha256": "f1c49f073076e540e43592f7d12ecc27d8cb5a8c5983c6b6fd81f2924d4f60ee"
+    },
+    "managed-scalar": {
+      "bundleSha256": "0086d567312afc118e0e4b31dad37ac108af7428c0b718bf329b6115ed773678",
+      "contractSha256": "490ad75fcf53f28215e8464740ff7e5995b38a8cbef2f8f0626ef5a7ec2c5414",
+      "dispatcherSha256": "94e7351496d09ad87f87cc8c7b710710b90f71a961cea4f3710ee32a7b354082",
+      "targetSha256": "23cacc61dcebbab73d78aa8e4c97b08f8f664bae4c7af0603b2a1c4beea2a0f5"
+    }
+  }
+}

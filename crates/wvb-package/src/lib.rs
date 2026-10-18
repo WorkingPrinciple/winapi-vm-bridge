@@ -211,12 +211,12 @@ impl PackageManager {
             return Err(PackageError::RollbackUnavailable);
         }
         let prior = decode_slot(&previous)?;
-        let prior_path = self.root.join("versions").join(&prior.package_version);
-        if !prior_path.is_dir() {
-            return Err(PackageError::RollbackUnavailable);
-        }
+        let prior_path = controlled_version_path(&self.root, &prior.package_version)
+            .map_err(|_| PackageError::RollbackUnavailable)?;
         let prior_manifest = read_staged_manifest(&prior_path)?;
-        if prior_manifest.sha256()? != prior.manifest_sha256 {
+        if prior_manifest.package_version != prior.package_version
+            || prior_manifest.sha256()? != prior.manifest_sha256
+        {
             return Err(PackageError::RollbackUnavailable);
         }
         verify_staged_manifest(&prior_path, &prior_manifest)?;
@@ -504,6 +504,26 @@ mod tests {
                 "staged manifest identity mismatch"
             ))
         ));
+    }
+
+    #[test]
+    fn rollback_rejects_traversing_previous_slot() {
+        let install = tempdir().unwrap();
+        let manager = PackageManager::open(install.path()).unwrap();
+        let malicious = ActiveSlot {
+            package_version: String::from(".."),
+            manifest_sha256: [0; 32],
+        };
+        fs::write(
+            install.path().join("previous.jcs"),
+            serde_jcs::to_vec(&malicious).unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            manager.rollback(),
+            Err(PackageError::RollbackUnavailable)
+        ));
+        assert!(install.path().join("versions").is_dir());
     }
 
     #[cfg(unix)]

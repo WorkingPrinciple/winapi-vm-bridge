@@ -11,7 +11,7 @@
     <RollForward>Major</RollForward>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../example-managed-math/Dispatcher.generated.cs"
+    <Compile Include="../../../external/whiny/v0.3.0/frozen-bundles/managed-scalar/Dispatcher.generated.cs"
              Link="Dispatcher.generated.cs" />
     <ProjectReference Include="../vendor-managed-math-local/Vendor.ManagedMath.LocalOracle.csproj" />
   </ItemGroup>

@@ -4,6 +4,7 @@ root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 cd "$root"
 out="$root/out/acceptance/managed-roundtrip"
 runtime="$root/out/acceptance/windows-dotnet8-x64"
+bundle="$root/external/whiny/v0.3.0/frozen-bundles/managed-scalar"
 pin="$root/setup/runtime-pins/windows-dotnet8-x64.json"
 bottle=${WVB_CROSSOVER_BOTTLE:-XOdeLabRPC}
 wine=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
@@ -21,29 +22,10 @@ cargo build --target x86_64-pc-windows-gnu \
   -p wvb-managed-host --example windows_dispatch --release
 cargo build -p wvb-managed-e2e --release
 cargo build --target x86_64-pc-windows-gnu -p wvb-managed-e2e --release
-DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
-  dotnet build \
-    "$root/managed/fixtures/vendor-managed-math/Vendor.ManagedMath.csproj" \
-    -c Release --nologo
-
-target_source="$root/managed/fixtures/vendor-managed-math/bin/Release/net8.0-windows/Example.ManagedMath.dll"
 rm -rf "$out"
 mkdir -p "$out"
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
-  dotnet run \
-    --project "$root/managed/tools/Wvb.ManagedInspector/Wvb.ManagedInspector.csproj" \
-    -c Release --no-build -- \
-    --assembly "$target_source" \
-    --adapter-id example.managed_math \
-    --relative-path lib/Example.ManagedMath.dll \
-    --out "$out/adapter.json"
-cargo run -q -p wvb-generate -- \
-  --contract "$out/adapter.json" \
-  --out "$out/generated"
-mkdir -p "$out/generated/lib"
-cp "$target_source" "$out/generated/lib/Example.ManagedMath.dll"
-DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
-  dotnet build "$out/generated/Example.ManagedMath.WvbDispatcher.csproj" \
+  dotnet build "$bundle/ExampleManagedMath.WhinyDispatcher.csproj" \
     -c Release --nologo
 cp "$root/out/managed-host/a/managed_roundtrip.exe" "$out/"
 cp "$root/out/managed-host/a/wvb_managed_host.dll" "$out/"
@@ -55,14 +37,14 @@ winpath() {
 }
 dotnet_root=$(winpath "$runtime/dotnet")
 nethost=$(winpath "$runtime/host/nethost.dll")
-runtime_dir="$out/generated/bin/Release/net8.0-windows"
-runtimeconfig=$(winpath "$runtime_dir/Example.ManagedMath.WvbDispatcher.runtimeconfig.json")
-dispatcher=$(winpath "$runtime_dir/Example.ManagedMath.WvbDispatcher.dll")
+runtime_dir="$bundle/bin/Release/net8.0-windows"
+runtimeconfig=$(winpath "$runtime_dir/ExampleManagedMath.WhinyDispatcher.runtimeconfig.json")
+dispatcher=$(winpath "$runtime_dir/ExampleManagedMath.WhinyDispatcher.dll")
 target=$(winpath "$runtime_dir/Example.ManagedMath.dll")
 nethost_hash=$(shasum -a 256 "$runtime/host/nethost.dll" | cut -d' ' -f1)
 hostfxr_hash=$(shasum -a 256 "$runtime/dotnet/host/fxr/$version/hostfxr.dll" | cut -d' ' -f1)
-runtime_hash=$(shasum -a 256 "$runtime_dir/Example.ManagedMath.WvbDispatcher.runtimeconfig.json" | cut -d' ' -f1)
-dispatcher_hash=$(shasum -a 256 "$runtime_dir/Example.ManagedMath.WvbDispatcher.dll" | cut -d' ' -f1)
+runtime_hash=$(shasum -a 256 "$runtime_dir/ExampleManagedMath.WhinyDispatcher.runtimeconfig.json" | cut -d' ' -f1)
+dispatcher_hash=$(shasum -a 256 "$runtime_dir/ExampleManagedMath.WhinyDispatcher.dll" | cut -d' ' -f1)
 target_hash=$(shasum -a 256 "$runtime_dir/Example.ManagedMath.dll" | cut -d' ' -f1)
 host_hash=$(shasum -a 256 "$root/out/managed-host/a/wvb_managed_host.dll" | cut -d' ' -f1)
 rust_adapter_hash=$(shasum -a 256 "$out/windows_dispatch.exe" | cut -d' ' -f1)
@@ -84,7 +66,7 @@ host_dll=$(winpath "$out/wvb_managed_host.dll")
   "$dispatcher" "$dispatcher_hash" \
   "$target" "$target_hash"
 
-adapter_hash=$(shasum -a 256 "$out/generated/contract.canonical.json" | cut -d' ' -f1)
+adapter_hash=$(shasum -a 256 "$bundle/contract.canonical.json" | cut -d' ' -f1)
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
 python3 -c 'import json,sys; from pathlib import Path; keys=["hostDll","hostDllSha256","dotnetRoot","nethostPath","nethostSha256","hostfxrSha256","runtimeConfigPath","runtimeConfigSha256","dispatcherAssemblyPath","dispatcherAssemblySha256","targetAssemblyPath","targetAssemblySha256"]; data={"address":sys.argv[2],"adapterHash":sys.argv[3]}; data.update(dict(zip(keys,sys.argv[4:]))); Path(sys.argv[1]).write_text(json.dumps(data,indent=2)+"\n",encoding="utf-8")' \
   "$out/e2e-config.json" "127.0.0.1:$port" "$adapter_hash" \

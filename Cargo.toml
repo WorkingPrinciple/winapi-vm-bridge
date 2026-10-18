@@ -11,18 +11,17 @@ members = [
   "crates/wvb-crypto",
   "crates/wvb-control",
   "crates/wvb-exe",
-  "crates/wvb-generate",
-  "crates/wvb-inspect",
   "crates/wvb-integrity",
-  "crates/wvb-ir",
   "crates/wvb-lifecycle",
   "crates/wvb-managed-host",
   "crates/wvb-managed-e2e",
   "crates/wvb-marshal",
+  "crates/wvb-native-host",
   "crates/wvb-operations",
   "crates/wvb-package",
   "crates/wvb-protocol",
   "crates/wvb-registry",
+  "crates/wvb-receipt",
   "crates/wvb-runtime",
   "crates/wvb-session",
   "crates/wvb-state",
@@ -54,6 +53,7 @@ sha2 = "0.10.9"
 snow = { version = "0.10.0", default-features = true }
 zeroize = { version = "1.8.2", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+ring = "0.17.14"
 tempfile = "3.23.0"
 tokio = { version = "1.48.0", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 async-trait = "0.1.89"

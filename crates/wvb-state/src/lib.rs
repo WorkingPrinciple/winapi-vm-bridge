@@ -147,6 +147,7 @@ impl Store {
     fn migrate(&self) -> Result<(), StateError> {
         self.create_schema()?;
         let mut schema_version = self.metadata("schema_version")?;
+        let rebuild_audit_chain = schema_version < 4;
         if schema_version == 1 {
             self.migrate_v1_to_v2()?;
             schema_version = 2;
@@ -163,6 +164,55 @@ impl Store {
             return Err(StateError::Corrupt("unsupported schema version"));
         }
         self.create_current_tables()?;
+        if rebuild_audit_chain {
+            self.rebuild_audit_chain()?;
+        }
+        Ok(())
+    }
+
+    fn rebuild_audit_chain(&self) -> Result<(), StateError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT sequence,kind,payload FROM events ORDER BY sequence")?;
+        let events = statement
+            .query_map([], |row| {
+                Ok((
+                    sql_u64(row, 0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(StateError::Sql)?;
+        for (sequence, _, _) in &events {
+            let temporary = migration_hash(*sequence);
+            transaction.execute(
+                "UPDATE events SET previous_hash=?2,event_hash=?3 WHERE sequence=?1",
+                params![
+                    sql_i64(*sequence)?,
+                    ZERO_HASH.as_slice(),
+                    temporary.as_slice()
+                ],
+            )?;
+        }
+        let mut previous = ZERO_HASH;
+        for (sequence, kind, payload) in events {
+            let hash = event_hash(previous, sequence, &kind, &payload);
+            transaction.execute(
+                "UPDATE events SET previous_hash=?2,event_hash=?3 WHERE sequence=?1",
+                params![sql_i64(sequence)?, previous.as_slice(), hash.as_slice()],
+            )?;
+            transaction.execute(
+                "UPDATE receipts SET event_hash=?2 WHERE event_sequence=?1",
+                params![sql_i64(sequence)?, hash.as_slice()],
+            )?;
+            previous = hash;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -976,6 +1026,13 @@ fn event_hash(previous: [u8; 32], sequence: u64, kind: &str, payload: &[u8]) -> 
     digest.finalize().into()
 }
 
+fn migration_hash(sequence: u64) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"WVB-AUDIT-MIGRATION-TEMP");
+    digest.update(sequence.to_be_bytes());
+    digest.finalize().into()
+}
+
 fn fixed_hash(value: &[u8]) -> Result<[u8; 32], StateError> {
     value
         .try_into()
@@ -1193,6 +1250,22 @@ mod tests {
             self.0 = Some(state);
             Ok(())
         }
+    }
+
+    fn legacy_event_hash(
+        previous: [u8; 32],
+        sequence: u64,
+        kind: &str,
+        payload: &[u8],
+    ) -> [u8; 32] {
+        let mut digest = Sha256::new();
+        digest.update(previous);
+        digest.update(sequence.to_le_bytes());
+        digest.update((kind.len() as u64).to_le_bytes());
+        digest.update(kind.as_bytes());
+        digest.update((payload.len() as u64).to_le_bytes());
+        digest.update(payload);
+        digest.finalize().into()
     }
 
     #[test]
@@ -1535,7 +1608,7 @@ mod tests {
                 ",
             )
             .unwrap();
-        let hash = event_hash(ZERO_HASH, 1, "pair-committed", b"pair");
+        let hash = legacy_event_hash(ZERO_HASH, 1, "pair-committed", b"pair");
         connection
             .execute(
                 "INSERT INTO events VALUES(?1,?2,?3,?4,?5)",

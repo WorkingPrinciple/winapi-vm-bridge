@@ -94,7 +94,7 @@ async fn run_server(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
         target_assembly_path: config.target_assembly_path,
         target_assembly_sha256: hash(&config.target_assembly_sha256)?,
         dispatcher_type_name: String::from(
-            "Wvb.Generated.ManagedDispatcher, Example.ManagedMath.WvbDispatcher",
+            "Whiny.Generated.ManagedDispatcher, ExampleManagedMath.WhinyDispatcher",
         ),
         dispatcher_method_name: String::from("DispatchUnmanaged"),
     })?;

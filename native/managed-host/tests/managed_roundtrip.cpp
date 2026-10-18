@@ -37,7 +37,7 @@ int wmain(int argc, wchar_t **argv) {
   config.dispatcher_assembly_path = argv[7];
   config.target_assembly_path = argv[9];
   config.dispatcher_type_name =
-      L"Wvb.Generated.ManagedDispatcher, Example.ManagedMath.WvbDispatcher";
+      L"Whiny.Generated.ManagedDispatcher, ExampleManagedMath.WhinyDispatcher";
   config.dispatcher_method_name = L"DispatchUnmanaged";
   if (!decode_hash(argv[3], config.nethost_sha256) ||
       !decode_hash(argv[4], config.hostfxr_sha256) ||

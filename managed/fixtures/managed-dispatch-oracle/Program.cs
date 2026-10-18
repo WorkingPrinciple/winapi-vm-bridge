@@ -1,5 +1,5 @@
 using System;
-using Wvb.Generated;
+using Whiny.Generated;
 
 byte[] request = new byte[8];
 BitConverter.GetBytes(20).CopyTo(request, 0);

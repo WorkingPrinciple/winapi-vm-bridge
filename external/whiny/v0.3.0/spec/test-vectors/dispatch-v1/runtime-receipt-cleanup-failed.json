@@ -1,0 +1,40 @@
+{
+  "schema": "whiny.runtime-receipt.v1",
+  "receipt_id": "receipt-native-scalar-cleanup-failed",
+  "bundle_sha256": "430ac7de755c9ced6a851a5a6b9dc758ebc5dc954e5e2423f7a64633c7f9f285",
+  "contract_sha256": "ca5e1bc6ddbdf66b638106977990d72e662809c0c312c527c4230dac125b48b1",
+  "dispatcher_abi": "whiny.dispatch.v1",
+  "operation_id": 1,
+  "request_sha256": "c61fe7375a82316dd2e92b13470811dbce6b4a7c20efa3068a9ed1799d2ba383",
+  "response_sha256": "7c9bf6a88aed1539a3276462bb9e977bede22cf2c89f96bf61f590da5504ccc7",
+  "status": "ok",
+  "runtime_identity": {
+    "host_id": "windows-x64-reference",
+    "os_build": "unqualified-test-vector",
+    "architecture": "x86-64",
+    "bridge_version": "unqualified-test-vector"
+  },
+  "loaded_files": [
+    {
+      "path": "target/native_math.dll",
+      "sha256": "636252464ad31f510b48264940576d77d4e6449454ce60f58ec31edc24f6a4bc"
+    }
+  ],
+  "authorization_receipt_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "challenge_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "sequence": 2,
+  "started_at": "2026-10-18T00:00:00Z",
+  "completed_at": "2026-10-18T00:00:02Z",
+  "cleanup": {
+    "status": "failed",
+    "diagnostics": [
+      "owned child remained active"
+    ]
+  },
+  "authentication": {
+    "scheme": "ed25519",
+    "key_id": "abababababababababababababababababababababababababababababababab",
+    "signed_payload_sha256": "ccc01c5d1b63df47898533f68ae9aca250cf17320528174e92d357895ada1285",
+    "signature": "02020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202"
+  }
+}

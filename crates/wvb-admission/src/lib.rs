@@ -1,6 +1,6 @@
 //! Admission of immutable, operator-approved Whiny bundles into the runtime.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -47,6 +47,13 @@ pub struct BundleFile {
     pub sha256: [u8; 32],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationAdmission {
+    pub operation_id: u32,
+    pub request_schema_id: u32,
+    pub response_schema_id: u32,
+}
+
 /// Runtime-owned approval record created by an authorized operator after a
 /// Whiny validator has frozen the bundle. It is not the Whiny contract schema.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,7 +62,7 @@ pub struct OperatorAdmission {
     pub contract_sha256: [u8; 32],
     pub bundle_descriptor_sha256: [u8; 32],
     pub files: Vec<BundleFile>,
-    pub operation_ids: Vec<u32>,
+    pub operations: Vec<OperationAdmission>,
 }
 
 #[derive(Clone, Copy)]
@@ -78,7 +85,7 @@ pub struct AdmittedBundle {
     contract_sha256: [u8; 32],
     bundle_descriptor_sha256: [u8; 32],
     files: Vec<AdmittedFile>,
-    operation_ids: BTreeSet<u32>,
+    operations: BTreeMap<u32, OperationAdmission>,
 }
 
 impl AdmittedBundle {
@@ -104,12 +111,17 @@ impl AdmittedBundle {
         operation_id: u32,
         now_unix_ms: u64,
     ) -> Result<(), AdmissionError> {
-        if !self.operation_ids.contains(&operation_id) {
+        if !self.operations.contains_key(&operation_id) {
             return Err(AdmissionError::OperationNotInBundle);
         }
         registry
             .authorize_invoke(actor_id, self.contract_sha256, operation_id, now_unix_ms)
             .map_err(AdmissionError::Authorization)
+    }
+
+    #[must_use]
+    pub fn operation(&self, operation_id: u32) -> Option<OperationAdmission> {
+        self.operations.get(&operation_id).copied()
     }
 
     pub fn reverify_files(&self) -> Result<(), AdmissionError> {
@@ -230,17 +242,23 @@ impl AdmissionEngine {
         if approval.files.len() > MAX_FILES {
             return Err(AdmissionError::FileBoundExceeded);
         }
-        if approval.operation_ids.is_empty() {
+        if approval.operations.is_empty() {
             return Err(AdmissionError::EmptyOperations);
         }
-        if approval.operation_ids.len() > MAX_OPERATIONS {
+        if approval.operations.len() > MAX_OPERATIONS {
             return Err(AdmissionError::OperationBoundExceeded);
         }
 
-        let mut operation_ids = BTreeSet::new();
-        for operation_id in &approval.operation_ids {
-            if !operation_ids.insert(*operation_id) {
-                return Err(AdmissionError::DuplicateOperation(*operation_id));
+        let mut operations = BTreeMap::new();
+        for operation in &approval.operations {
+            if operation.operation_id == 0
+                || operation.request_schema_id == 0
+                || operation.response_schema_id == 0
+                || operations
+                    .insert(operation.operation_id, *operation)
+                    .is_some()
+            {
+                return Err(AdmissionError::DuplicateOperation(operation.operation_id));
             }
         }
 
@@ -279,7 +297,7 @@ impl AdmissionEngine {
             contract_sha256: approval.contract_sha256,
             bundle_descriptor_sha256: approval.bundle_descriptor_sha256,
             files: admitted_files,
-            operation_ids,
+            operations,
         })
     }
 
@@ -396,7 +414,11 @@ mod tests {
                     sha256: sha256_bytes(b"dependency"),
                 },
             ],
-            operation_ids: vec![7],
+            operations: vec![OperationAdmission {
+                operation_id: 7,
+                request_schema_id: 0x3000_0007,
+                response_schema_id: 0x3000_0008,
+            }],
         };
         let mut registry = Registry::default();
         registry.register(OPERATOR, [3; 32]).unwrap();
@@ -447,6 +469,14 @@ mod tests {
             )
             .unwrap();
         bundle.authorize_operation(&registry, CALLER, 7, 1).unwrap();
+        assert_eq!(
+            bundle.operation(7),
+            Some(OperationAdmission {
+                operation_id: 7,
+                request_schema_id: 0x3000_0007,
+                response_schema_id: 0x3000_0008,
+            })
+        );
         assert!(matches!(
             bundle.authorize_operation(&registry, CALLER, 8, 1),
             Err(AdmissionError::OperationNotInBundle)
@@ -795,7 +825,7 @@ mod tests {
         ));
 
         let mut value = approval.clone();
-        value.operation_ids.clear();
+        value.operations.clear();
         assert!(matches!(
             engine.admit(
                 &registry,
@@ -811,7 +841,7 @@ mod tests {
         ));
 
         let mut value = approval.clone();
-        value.operation_ids.push(7);
+        value.operations.push(value.operations[0]);
         assert!(matches!(
             engine.admit(
                 &registry,
@@ -849,8 +879,15 @@ mod tests {
         ));
 
         let mut value = approval.clone();
-        value.operation_ids = (0..=MAX_OPERATIONS)
-            .map(|id| u32::try_from(id).unwrap())
+        value.operations = (0..=MAX_OPERATIONS)
+            .map(|id| {
+                let operation_id = u32::try_from(id + 1).unwrap();
+                OperationAdmission {
+                    operation_id,
+                    request_schema_id: operation_id,
+                    response_schema_id: operation_id,
+                }
+            })
             .collect();
         assert!(matches!(
             engine.admit(

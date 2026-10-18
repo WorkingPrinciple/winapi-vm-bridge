@@ -26,7 +26,7 @@ fn main() {
         target_assembly_path: PathBuf::from(&arguments[11]),
         target_assembly_sha256: hash(&arguments[12]),
         dispatcher_type_name: String::from(
-            "Wvb.Generated.ManagedDispatcher, Example.ManagedMath.WvbDispatcher",
+            "Whiny.Generated.ManagedDispatcher, ExampleManagedMath.WhinyDispatcher",
         ),
         dispatcher_method_name: String::from("DispatchUnmanaged"),
     };

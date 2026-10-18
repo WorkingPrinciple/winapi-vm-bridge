@@ -49,10 +49,9 @@ The selected unreleased boundary is:
 | Runtime receipt | `whiny.runtime-receipt.v1` |
 
 There is no compatibility mode for the old Whiny contract or `wvb-ir` schema 2.
-Existing inspection/generation code remains temporarily to preserve the proven
-vertical paths. It will be removed atomically after Whiny publishes its
-validator package and frozen native and managed bundle vectors and the runtime
-consumer tests pass.
+The old VM-owned inspection/generation code has been removed. Runtime consumer
+tests use the immutable Whiny v0.3.0 artifacts pinned under
+`external/whiny/v0.3.0/`.
 
 ## Runtime security model
 
@@ -100,8 +99,8 @@ green until the atomic Whiny cutover.
 
 ## Current holds
 
-- Whiny bundle v1 and dispatcher ABI vectors are not yet published, so the
-  source-plane cutover and target-profile activation remain blocked.
+- The native and managed frozen scalar bundles are admitted and execute through
+  their generic runtime hosts under CrossOver, including encrypted managed RPC.
 - The preferred isolated `Whiny-Windows11-x64` acceptance VM is booted, but its
   QEMU guest agent is unavailable. No guest mutation or forwarding change is
   made until target readiness and reversible control are established.
