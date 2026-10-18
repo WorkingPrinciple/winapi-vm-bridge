@@ -8,6 +8,7 @@ members = [
   "crates/wvb-generate",
   "crates/wvb-inspect",
   "crates/wvb-ir",
+  "crates/wvb-marshal",
   "crates/wvb-protocol",
   "crates/wvb-state",
   "crates/wvb-transport",
