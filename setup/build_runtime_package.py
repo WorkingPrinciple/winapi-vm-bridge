@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -71,7 +72,9 @@ def deterministic_environment() -> dict[str, str]:
     return environment
 
 
-def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
+def build(
+    platform: str, source_sha256: str, output: Path, variant: str | None = None
+) -> tuple[Path, Path]:
     metadata = cargo_metadata()
     version = next(
         package["version"]
@@ -104,7 +107,12 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
         build_root /= "release"
 
     with tempfile.TemporaryDirectory() as temporary:
-        package = Path(temporary) / f"winapi-vm-bridge-{platform}-{version}"
+        release_name = f"winapi-vm-bridge-{platform}-{version}"
+        package_version = f"{version}-{platform}"
+        if variant:
+            release_name += f"-{variant}"
+            package_version += f"-{variant}"
+        package = Path(temporary) / release_name
         payload = package / "payload"
         lifecycle = package / "bin"
         suffix = ".exe" if platform == "windows" else ""
@@ -142,7 +150,7 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
         manifest = {
             "identifier": "winapi-vm-bridge.runtime-package.v1",
             "major": 1,
-            "package_version": f"{version}-{platform}",
+            "package_version": package_version,
             "source_sha256": list(bytes.fromhex(source_sha256)),
             "sbom_sha256": list(hashlib.sha256(sbom).digest()),
             "files": files,
@@ -181,7 +189,7 @@ def build(platform: str, source_sha256: str, output: Path) -> tuple[Path, Path]:
         )
 
         output.mkdir(parents=True, exist_ok=True)
-        archive_path = output / f"winapi-vm-bridge-{platform}-{version}.tar"
+        archive_path = output / f"{release_name}.tar"
         with tarfile.open(archive_path, "w", format=tarfile.PAX_FORMAT) as archive:
             add_tree(archive, package, package.name)
 
@@ -206,13 +214,19 @@ def main() -> int:
     parser.add_argument("--platform", choices=["macos", "windows"], required=True)
     parser.add_argument("--source-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--variant")
     arguments = parser.parse_args()
     if len(arguments.source_sha256) != 64:
         raise ValueError("source SHA-256 must be 64 hexadecimal characters")
+    if arguments.variant and not re.fullmatch(
+        r"[a-z0-9][a-z0-9.-]*", arguments.variant
+    ):
+        raise ValueError("variant must use lowercase alphanumerics, dots or hyphens")
     archive, provenance = build(
         arguments.platform,
         arguments.source_sha256,
         arguments.output,
+        arguments.variant,
     )
     print(
         f"runtime-package=ok archive={archive} sha256={sha256(archive)} "

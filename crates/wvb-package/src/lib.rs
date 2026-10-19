@@ -273,6 +273,22 @@ impl PackageManager {
         Ok(paths)
     }
 
+    pub fn deactivate(&self, package_version: &str) -> Result<bool, PackageError> {
+        validate_version(package_version)?;
+        let active = self.root.join("active.jcs");
+        let previous = self.root.join("previous.jcs");
+        let mut changed = false;
+        if active.is_file() && decode_slot(&active)?.package_version == package_version {
+            fs::remove_file(&active)?;
+            changed = true;
+        }
+        if previous.is_file() && decode_slot(&previous)?.package_version == package_version {
+            fs::remove_file(&previous)?;
+            changed = true;
+        }
+        Ok(changed)
+    }
+
     pub fn uninstall(&self, package_version: &str) -> Result<(), PackageError> {
         validate_version(package_version)?;
         if self
@@ -581,6 +597,32 @@ mod tests {
             Err(PackageError::RollbackUnavailable)
         ));
         assert!(install.path().join("versions").is_dir());
+    }
+
+    #[test]
+    fn deactivate_removes_only_matching_slot_references() {
+        let install = tempdir().unwrap();
+        let manager = PackageManager::open(install.path()).unwrap();
+        let first = ActiveSlot {
+            package_version: String::from("1.0.0-windows"),
+            manifest_sha256: [1; 32],
+        };
+        let second = ActiveSlot {
+            package_version: String::from("1.1.0-windows"),
+            manifest_sha256: [2; 32],
+        };
+        write_slot(&install.path().join("active.jcs"), &first).unwrap();
+        write_slot(&install.path().join("previous.jcs"), &second).unwrap();
+
+        assert!(manager.deactivate("1.0.0-windows").unwrap());
+        assert!(!install.path().join("active.jcs").exists());
+        assert_eq!(
+            decode_slot(&install.path().join("previous.jcs")).unwrap(),
+            second
+        );
+        assert!(manager.deactivate("1.1.0-windows").unwrap());
+        assert!(!install.path().join("previous.jcs").exists());
+        assert!(!manager.deactivate("1.1.0-windows").unwrap());
     }
 
     #[test]

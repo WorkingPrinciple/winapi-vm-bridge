@@ -116,6 +116,7 @@ case "$operation" in
       echo "set WVB_CONFIRM_UNINSTALL=1 after reviewing the preflight" >&2
       exit 67
     }
+    "$cli" deactivate --root "$install_root" --version "$version"
     "$cli" uninstall --root "$install_root" --version "$version"
     ;;
   doctor)

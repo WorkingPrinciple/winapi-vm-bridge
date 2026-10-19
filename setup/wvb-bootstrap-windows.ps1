@@ -121,6 +121,9 @@ switch ($Operation) {
             throw 'Set WVB_CONFIRM_UNINSTALL=1 after reviewing the preflight.'
         }
         Invoke-Native $cli @(
+            'deactivate', '--root', $InstallRoot, '--version', $PackageOrVersion
+        )
+        Invoke-Native $cli @(
             'uninstall', '--root', $InstallRoot, '--version', $PackageOrVersion
         )
     }

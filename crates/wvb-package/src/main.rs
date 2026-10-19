@@ -44,6 +44,12 @@ enum Command {
         #[arg(long)]
         version: String,
     },
+    Deactivate {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        version: String,
+    },
     Uninstall {
         #[arg(long)]
         root: PathBuf,
@@ -100,6 +106,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for path in paths {
                 println!("{}", path.display());
             }
+        }
+        Command::Deactivate { root, version } => {
+            let changed = PackageManager::open(&root)?.deactivate(&version)?;
+            println!("package-deactivate=ok version={version} changed={changed}");
         }
         Command::Uninstall { root, version } => {
             PackageManager::open(&root)?.uninstall(&version)?;
