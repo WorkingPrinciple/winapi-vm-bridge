@@ -99,8 +99,8 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ./tests/test-portable.sh
 ```
 
-The portable gate intentionally keeps the legacy generator/inspection path
-green until the atomic Whiny cutover.
+The portable gate validates the runtime-only workspace and the pinned frozen
+Whiny consumer boundary after the completed atomic cutover.
 
 ## Current holds
 
@@ -117,7 +117,8 @@ green until the atomic Whiny cutover.
   `STATUS_INVALID_INFO_CLASS` and is not retried unchanged. The supported
   direction is a Wine loader-initialized builtin DLL/unixlib pair, not a private
   memory-information-class load.
-- Signing identities and publication remain external human-controlled holds.
+- Signing identities, notarization, hosted CI billing and publication remain
+  external human-controlled release holds.
 
 ## Documentation
 

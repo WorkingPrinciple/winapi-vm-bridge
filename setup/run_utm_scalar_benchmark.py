@@ -12,7 +12,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from run_topology_benchmark import percentile
+try:
+    from .run_topology_benchmark import percentile
+except ImportError:
+    from run_topology_benchmark import percentile
 
 
 def main() -> int:

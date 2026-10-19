@@ -72,6 +72,9 @@ switch ($Operation) {
         Verify-Release $releaseManifest
         Verify-Envelope $PackageOrVersion $releaseManifest
         $cli = Package-Cli $PackageOrVersion
+        $installedCli = Join-Path $InstallRoot 'bin\wvb-package.exe'
+        New-Item -ItemType Directory -Force (Split-Path $installedCli) | Out-Null
+        Copy-Item -LiteralPath $cli -Destination $installedCli -Force
         Invoke-Native $cli @('verify', '--source', $payload, '--manifest', $manifest)
         Invoke-Native $cli @(
             'stage', '--root', $InstallRoot, '--source', $payload, '--manifest', $manifest

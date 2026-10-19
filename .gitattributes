@@ -1,0 +1,9 @@
+external/whiny/v0.3.0/frozen-bundles/**/*.json text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.c text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.cpp text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.def text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.cs text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.csproj text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.props text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.targets text eol=lf
+external/whiny/v0.3.0/frozen-bundles/**/*.dll -text

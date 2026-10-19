@@ -15,7 +15,10 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from run_utm_deploy import pull, require_target
+try:
+    from .run_utm_deploy import pull, require_target
+except ImportError:
+    from run_utm_deploy import pull, require_target
 
 
 DEFAULT_UTMCTL = "/Applications/UTM.app/Contents/MacOS/utmctl"
@@ -64,6 +67,9 @@ def main() -> int:
     parser.add_argument(
         "--client-mode", choices=["positive", "schema-negative"], default="positive"
     )
+    parser.add_argument("--attempt-id")
+    parser.add_argument("--authorization-sha256")
+    parser.add_argument("--root")
     parser.add_argument("--utmctl", default=DEFAULT_UTMCTL)
     parser.add_argument("--vm", default=DEFAULT_VM)
     parser.add_argument("--expected-uuid", default=DEFAULT_UUID)
@@ -77,7 +83,7 @@ def main() -> int:
         if arguments.profile == "native"
         else "192.168.64.4:47961"
     )
-    root = (
+    root = arguments.root or (
         r"C:\WvbAcceptance\native-scalar"
         if arguments.profile == "native"
         else r"C:\WvbAcceptance\canonical-runtime"
@@ -97,6 +103,13 @@ def main() -> int:
             "WVB_TEST_CLIENT_PUBLIC": client_public,
         }
     )
+    if arguments.attempt_id or arguments.authorization_sha256:
+        if not arguments.attempt_id or not arguments.authorization_sha256:
+            raise ValueError("attempt and authorization must be supplied together")
+        if len(arguments.attempt_id) != 32 or len(arguments.authorization_sha256) != 64:
+            raise ValueError("invalid attempt or authorization identity")
+        environment["WVB_ATTEMPT_ID"] = arguments.attempt_id
+        environment["WVB_AUTHORIZATION_SHA256"] = arguments.authorization_sha256
 
     with tempfile.TemporaryDirectory() as temporary:
         temporary_root = Path(temporary)
@@ -111,8 +124,7 @@ def main() -> int:
         ]:
             raise RuntimeError("guest config identity mismatch")
 
-        server = subprocess.Popen(
-            [
+        server_command = [
                 arguments.utmctl,
                 "exec",
                 arguments.vm,
@@ -120,12 +132,26 @@ def main() -> int:
                 f"WVB_TEST_BROKER_PRIVATE={broker_private}",
                 "--env",
                 f"WVB_TEST_CLIENT_PUBLIC={client_public}",
+        ]
+        for name in (
+            "WVB_ATTEMPT_ID",
+            "WVB_AUTHORIZATION_SHA256",
+        ):
+            if name in environment:
+                server_command.extend(["--env", f"{name}={environment[name]}"])
+        if arguments.client_mode == "schema-negative":
+            server_command.extend(["--env", "WVB_EXPECT_SCHEMA_NEGATIVE=1"])
+        server_command.extend(
+            [
                 "--cmd",
                 r"C:\Windows\System32\cmd.exe",
                 "/d",
                 "/c",
                 runner,
-            ],
+            ]
+        )
+        server = subprocess.Popen(
+            server_command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -233,6 +259,7 @@ def main() -> int:
             "clientSha256": sha256(arguments.client),
             "clientStdout": client.stdout.strip(),
             "serverLogSha256": hashlib.sha256(log).hexdigest(),
+            "serverLog": log.decode("utf-8-sig", errors="replace").strip(),
             "deploymentSha256": hashlib.sha256(deployment).hexdigest(),
             "deployment": deployment_value,
             "brokerPublicKeySha256": hashlib.sha256(
@@ -241,6 +268,8 @@ def main() -> int:
             "clientPublicKeySha256": hashlib.sha256(
                 bytes.fromhex(client_public)
             ).hexdigest(),
+            "attemptId": arguments.attempt_id,
+            "authorizationSha256": arguments.authorization_sha256,
         }
         arguments.receipt.parent.mkdir(parents=True, exist_ok=True)
         arguments.receipt.write_text(

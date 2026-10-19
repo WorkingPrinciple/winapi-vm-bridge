@@ -71,8 +71,9 @@ for script in \
   setup/run_utm_deploy.py \
   setup/run_utm_scalar_e2e.py \
   setup/run_utm_scalar_benchmark.py \
-  setup/generate_vm_runtime_receipts.py \
   setup/generate_windows_vm_evidence_manifest.py \
+  setup/run_utm_correlated_acceptance.py \
+  setup/finalize_vm_runtime_receipts.py \
   setup/run_utm_acceptance.py \
   setup/generate_runtime_metadata.py \
   setup/build_runtime_package.py \
@@ -93,6 +94,8 @@ test -x setup/wvb-bootstrap-macos
 grep -q 'WVB_SIGNATURE_VERIFIER is required' setup/wvb-bootstrap-macos
 grep -q 'WVB_SIGNATURE_VERIFIER is required' setup/wvb-bootstrap-windows.ps1
 grep -q 'function Invoke-Native' setup/wvb-bootstrap-windows.ps1
+grep -q "Copy-Item -LiteralPath .*installedCli" setup/wvb-bootstrap-windows.ps1
+grep -q 'install -m 755 .*wvb-package' setup/wvb-bootstrap-macos
 sh -n setup/wvb-bootstrap-macos
 
 grep -q 'runtime and execution plane' README.md

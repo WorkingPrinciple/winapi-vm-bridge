@@ -44,12 +44,44 @@ struct AcceptanceConfig {
 struct OneShot {
     inner: Arc<dyn CallHandler>,
     completed: Arc<Notify>,
+    expected_schema_failure: Option<(u32, u32)>,
+    expected_attempt: Option<[u8; 16]>,
 }
 
 #[async_trait]
 impl CallHandler for OneShot {
     async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
+        if self
+            .expected_attempt
+            .is_some_and(|attempt| request.idempotency_key != Some(attempt))
+        {
+            self.completed.notify_one();
+            return Err(BrokerError::Handler("attempt correlation mismatch".into()));
+        }
+        let observed_schema = request.request_schema_id;
         let result = self.inner.handle_call(request).await;
+        let result = if let Some((expected_schema, response_schema)) = self.expected_schema_failure
+        {
+            match result {
+                Err(BrokerError::Handler(message)) if message == "request schema mismatch" => {
+                    let mut body = Vec::with_capacity(8);
+                    body.extend_from_slice(&expected_schema.to_le_bytes());
+                    body.extend_from_slice(&observed_schema.to_le_bytes());
+                    Ok(CallResult {
+                        response_schema_id: response_schema,
+                        operation_uuid: None,
+                        native_status: 1_i32.to_le_bytes().to_vec(),
+                        body,
+                    })
+                }
+                Ok(_) => Err(BrokerError::Handler(
+                    "invalid schema unexpectedly dispatched".into(),
+                )),
+                Err(error) => Err(error),
+            }
+        } else {
+            result
+        };
         self.completed.notify_one();
         result
     }
@@ -158,10 +190,18 @@ async fn run_server(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
     let handler = Arc::new(OneShot {
         inner: authorized,
         completed: completed.clone(),
+        expected_schema_failure: std::env::var_os("WVB_EXPECT_SCHEMA_NEGATIVE")
+            .map(|_| (0x3000_0001, 0x3000_0002)),
+        expected_attempt: environment_optional_id("WVB_ATTEMPT_ID")?,
     });
 
     let listener = TcpListener::bind(config.address).await?;
-    println!("managed-broker-ready={}", listener.local_addr()?);
+    println!(
+        "managed-broker-ready={} attempt={} authorization={}",
+        listener.local_addr()?,
+        std::env::var("WVB_ATTEMPT_ID").unwrap_or_else(|_| String::from("none")),
+        std::env::var("WVB_AUTHORIZATION_SHA256").unwrap_or_else(|_| String::from("none"))
+    );
     let broker_key = StaticPrivateKey::from_bytes(broker_private);
     let provisional = accept_authorized(&listener, &broker_key, client_public).await?;
     let ack = HelloAck {
@@ -193,6 +233,7 @@ async fn run_client(
     invalid_schema: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let adapter_hash = hash(&config.adapter_hash)?;
+    let attempt_id = environment_optional_id("WVB_ATTEMPT_ID")?;
     let client_private = environment_key("WVB_TEST_CLIENT_PRIVATE")?;
     let broker_public = environment_key("WVB_TEST_BROKER_PUBLIC")?;
     let client = RuntimeClient::connect(ClientConfig {
@@ -239,7 +280,7 @@ async fn run_client(
                     0x3000_0001
                 },
                 deduplication_mode: 0,
-                idempotency_key: None,
+                idempotency_key: attempt_id,
                 disconnect_policy: 0,
                 sensitivity: 0,
                 body,
@@ -248,10 +289,15 @@ async fn run_client(
         )
         .await;
     if invalid_schema {
-        if result.is_ok() {
-            return Err("managed invalid schema unexpectedly dispatched".into());
+        let result = result?;
+        if result.native_status != 1_i32.to_le_bytes()
+            || result.response_schema_id != 0x3000_0002
+            || result.body
+                != [0x3000_0001_u32.to_le_bytes(), 0x3000_ffff_u32.to_le_bytes()].concat()
+        {
+            return Err("managed schema rejection evidence mismatch".into());
         }
-        println!("managed-schema-negative=ok");
+        println!("managed-schema-negative=ok expected=805306369 observed=805371903");
         return Ok(());
     }
     let result = result?;
@@ -282,4 +328,22 @@ fn hash(value: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
 
 fn environment_key(name: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     hash(&std::env::var(name).map_err(|_| format!("missing {name}"))?)
+}
+
+fn environment_optional_id(name: &str) -> Result<Option<[u8; 16]>, Box<dyn std::error::Error>> {
+    std::env::var(name)
+        .ok()
+        .map(|value| hash_id(&value))
+        .transpose()
+}
+
+fn hash_id(value: &str) -> Result<[u8; 16], Box<dyn std::error::Error>> {
+    if value.len() != 32 {
+        return Err("identifier length".into());
+    }
+    let mut output = [0_u8; 16];
+    for (index, byte) in output.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)?;
+    }
+    Ok(output)
 }

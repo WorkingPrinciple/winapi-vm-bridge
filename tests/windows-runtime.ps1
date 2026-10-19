@@ -18,6 +18,12 @@ try {
             throw "Whiny bundle hash mismatch: $($entry.Key)"
         }
     }
+    $bootstrap = Get-Content -Raw setup\wvb-bootstrap-windows.ps1
+    [void][scriptblock]::Create($bootstrap)
+    if ($bootstrap -notmatch 'Copy-Item -LiteralPath \$cli -Destination \$installedCli' -or
+        $bootstrap -notmatch "'deactivate'") {
+        throw 'Windows bootstrap is missing durable lifecycle CLI uninstall support.'
+    }
     Write-Output 'windows-runtime=ok frozen-bundles=pinned'
 } finally {
     Pop-Location

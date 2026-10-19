@@ -76,6 +76,8 @@ case "$operation" in
     verify_release "$release_manifest"
     verify_envelope "$package_dir" "$release_manifest"
     cli=$(package_cli)
+    mkdir -p "$install_root/bin"
+    install -m 755 "$cli" "$install_root/bin/wvb-package"
     "$cli" verify --source "$package_dir/payload" --manifest "$manifest"
     "$cli" stage \
       --root "$install_root" \
