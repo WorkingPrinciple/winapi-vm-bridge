@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from run_utm_deploy import pull, require_target
@@ -60,6 +61,9 @@ def main() -> int:
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--address")
     parser.add_argument("--sudo-client", action="store_true")
+    parser.add_argument(
+        "--client-mode", choices=["positive", "schema-negative"], default="positive"
+    )
     parser.add_argument("--utmctl", default=DEFAULT_UTMCTL)
     parser.add_argument("--vm", default=DEFAULT_VM)
     parser.add_argument("--expected-uuid", default=DEFAULT_UUID)
@@ -139,10 +143,17 @@ def main() -> int:
                         time.sleep(1)
                 else:
                     raise RuntimeError("guest broker TCP route did not become reachable")
-            client_command = [str(arguments.client), "client", str(config_path)]
+            mode = (
+                "client"
+                if arguments.client_mode == "positive"
+                else "client-schema-negative"
+            )
+            client_command = [str(arguments.client), mode, str(config_path)]
             if arguments.sudo_client:
                 client_command = ["sudo", "-n", "-E", *client_command]
             client = None
+            started_at = datetime.now(UTC)
+            started_monotonic = time.perf_counter_ns()
             for _ in range(15):
                 client = subprocess.run(
                     client_command,
@@ -164,6 +175,8 @@ def main() -> int:
                 if not any(value in diagnostic for value in retryable):
                     break
                 time.sleep(2)
+            completed_monotonic = time.perf_counter_ns()
+            completed_at = datetime.now(UTC)
             assert client is not None
             if client.returncode != 0:
                 raise RuntimeError(
@@ -208,7 +221,14 @@ def main() -> int:
             "operationId": profile["operationId"],
             "requestSchemaId": profile["requestSchemaId"],
             "responseSchemaId": profile["responseSchemaId"],
-            "result": 42,
+            "assertion": (
+                "result=42"
+                if arguments.client_mode == "positive"
+                else "request-schema-rejected"
+            ),
+            "startedAt": started_at.isoformat(),
+            "completedAt": completed_at.isoformat(),
+            "elapsedNs": completed_monotonic - started_monotonic,
             "manifestSha256": sha256(arguments.manifest),
             "clientSha256": sha256(arguments.client),
             "clientStdout": client.stdout.strip(),

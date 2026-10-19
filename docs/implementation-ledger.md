@@ -7,9 +7,9 @@
 > **Public ledger destination:** the owner has authorized the ledger-only T002 publication to `main`; product integration remains gated by T161 and the clean-machine hold
 > **Public ledger publication:** commit `5f315391d3501c24ea941138f7db82a893369da9`, blob `9b09c1e3e8c0f480a8fe7331546954f2cc5b9603`, published-byte SHA-256 `ede93391ff0e4c9b17d6cc833099603ed4bbe255d761cdb0aeaa5e2e2a30b124`
 > **Implementation destination:** reviewable checkpoints on the active branch until the complete release path passes
-> **Revision date:** 2026-10-18  
+> **Revision date:** 2026-10-19
 > **Owner authorization:** the user explicitly approves the full corrected canonical program and autonomous implementation; three adversarial revise loops were completed, their consolidated findings are binding, and the owner directed implementation to continue after those findings were corrected  
-> **Current state:** frozen Whiny v0.3.0 native and managed scalar bundles are independently verified, pinned, separately execution-admitted and exercised under CrossOver; exact JCS runtime receipts and atomic terminal Runtime Owner persistence are verified; duplicate VM-owned inspection/IR/generation source has been removed atomically; deterministic/security gates pass; T161 remains held behind Windows clean-machine acceptance, missing non-scalar Whiny profiles, canonical Run reconciliation and external signing
+> **Current state:** frozen Whiny v0.3.0 native and managed scalar bundles are independently verified, pinned and separately execution-admitted; encrypted native and managed scalar result `42` passes under both CrossOver and the exact Windows x64 UTM VM; correlated authenticated VM runtime receipts, clean package setup/update/rollback/uninstall, topology benchmarks and verified cleanup are recorded; duplicate VM-owned inspection/IR/generation source has been removed atomically; T16/T26/T32 and other unfrozen profiles remain excluded, while signing/notarization/publication remain external release holds
 > **Execution mode:** approved repository edit/build/test/package and local branch-integration program; no signing-secret access, production deployment or unrelated infrastructure mutation is authorized
 > **Notation:** **[D]** binding decision; **[GATE]** deterministic acceptance; **[STOP]** no inference or implementation beyond this point; **[CONDITIONAL]** implemented only after its specified evidence trigger
 
@@ -171,6 +171,49 @@ requires exact named PE export equality and fails closed when CLR
 nullable-default context is unresolved. These guarantees constrain future
 frozen bundles; they do not change the existing scalar pins or authorize
 T16/T26/T32 execution.
+
+Whiny's scoped v2 source boundary later converged clean and pushed at
+`97fe515268a83522b31fcf11f1c82bb329c9d702`, including reviewed
+deterministic-build/evidence contracts, callback lifecycle bindings and
+privacy-safe runtime evidence. This does not alter the frozen scalar package
+or authorize a new profile. The canonical VM Bridge consumer evidence remains
+limited to the native and managed scalar bundles above.
+
+### 0.4.1 Windows VM runtime evidence
+
+The exact VM acceptance evidence is committed under
+`runtime-artifacts/whiny-v0.3.0/acceptance/windows-vm-v1/` with manifest
+SHA-256
+`b48ad33e2e4fb6c4fe76c2d965278ba513365d39422977612a259a6ed1b7451e`.
+It binds VM UUID `F659FCF2-AC83-4072-86A6-F7538781A1FC`, disk UUID
+`065112D9-3B2D-4E40-AF74-C6B29CA4D133`, Windows build
+`10.0.26300.9457`, exact deployment hashes and verified cleanup.
+
+Authenticated `whiny.runtime-receipt.v1` evidence is committed under
+`runtime-artifacts/whiny-v0.3.0/acceptance/windows-vm-runtime-receipts-v1/`:
+
+- evidence manifest SHA-256
+  `22e63110c0c6a9916586a8b16231a264a0e45e1bb8cee75483a9de1c36abd0da`;
+- native receipt SHA-256
+  `5276a79c3f66b54bcd92b1dab1f0ed9080e92a1a396f192ad4caa46268020121`;
+- managed receipt SHA-256
+  `8e143e3c1f256386ea107419e63bbc166a324d71dff2edb72cb038883d9bb36d`;
+- strict VM trust-policy SHA-256
+  `e5c9ec527b7ab8e7abe73178cf4bb2c0443e65d48974c81a88261811ec8dc030`.
+
+The receipts use host ID `utm-WhinyWindows11x64-F659FCF2`, sequences 1 and 2,
+acceptance-only Ed25519 signers, exact native/managed loaded-file hashes and
+verified cleanup. The durable Runtime Owner SQLite state admitted distinct
+actors, persisted two running workload attempts and atomically transitioned
+both to succeeded terminal receipts; its observed SHA-256 is recorded in the
+evidence manifest rather than committing the mutable database.
+
+Both profiles passed a positive encrypted canonical call returning `42` and a
+real-topology wrong-schema rejection before dispatch. Native and managed each
+completed three end-to-end benchmark runs using a macOS monotonic clock with
+no cross-machine clock subtraction. The fixed frozen scalar request/response
+sizes are 8/4 bytes; larger-payload transfer benchmarks remain separate generic
+runtime evidence and are not fabricated as scalar-profile results.
 
 ### 0.5 Public redaction boundary
 
@@ -2637,25 +2680,25 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R030 | Compound transfer integration | VM Bridge | protocol transfer states, broker/client multiplexing, receipts | begin/data/end/cancel/receipt, bounds/hash/replay/disconnect tests | protocol codec, bounded registry and broker stream integration complete |
 | R031 | Guarded runtime copy and native error containment | VM Bridge | admitted native profile; Whiny marshalling declarations | SEH/TOCTOU/buffer/HRESULT/Win32/NTSTATUS/last-error tests under Wine | external-hold |
 | R040 | Handle ownership, generation and restart invalidation | VM Bridge | `R020`, `R011` | actor/epoch/type/generation/close/restart/crash tests | primitives and exact handle close/status protocol complete; dispatcher integration waits for frozen profiles |
-| R041 | Callback reverse RPC lifecycle | VM Bridge | `R030`, `R040` | thread/order/reentrancy/unregister/disconnect/resource-bound tests | exact protocol codec and actor/epoch/lease/thread/concurrency service complete; broker reverse-stream integration pending |
+| R041 | Callback reverse RPC lifecycle | VM Bridge | `R030`, `R040` | thread/order/reentrancy/unregister/disconnect/resource-bound tests | exact protocol codec and actor/epoch/lease/thread/concurrency service complete; frozen scalar profiles declare no callbacks, so no scalar VM callback claim is made |
 | R042 | Async cancellation and unknown-outcome receipts | VM Bridge | `R041`, `R011` | first terminal outcome wins; cancel races; disconnect/crash remains `unknown` | durable transitions plus exact cancel/operation/receipt/audit protocol controls complete |
 | R050 | Native dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; frozen native vector | exact export/ABI/load-path/hash and pre/post-load checks | generic loader and deterministic frozen native CrossOver oracle complete |
 | R051 | CLR dispatcher host and generic `whiny.dispatch.v1` loader | VM Bridge | `R010`; existing CLR host; frozen managed vector | host/runtime/dispatcher/target hashes, binding and crash isolation | frozen bundle admitted and encrypted CLR host CrossOver round trip complete |
 | R052 | Native/.NET process execution and Job Object lifecycle | VM Bridge | `R011`, `R020`; clean native-EXE migration artifact | argv/env/stdin/stdout/stderr/exit/timeout/cancel/tree-kill/receipt tests | native codec/broker/CrossOver Job Object oracle complete; managed process pending |
 | R060 | Broker service composition and bounded queues | VM Bridge | `R011`, `R030`–`R052` | least privilege, package ACL, worker containment, restart reconciliation | ready |
 | R061 | Readiness, health and redacted diagnostics | VM Bridge | `R060`, receipt store | truthful distinct states, source versions, no unconditional success, privacy tests | readiness/resource controls and runtime doctor complete; service export pending |
-| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS audit chain, anchored-prefix recovery, atomic Runtime Owner terminal receipt signing/persistence/correlation, audited retention redaction and exact `whiny.runtime-receipt.v1\\0 || RFC8785` compatibility complete |
+| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS audit chain, anchored-prefix recovery, atomic Runtime Owner terminal receipt signing/persistence/correlation, audited retention redaction, exact `whiny.runtime-receipt.v1\\0 || RFC8785` compatibility and authenticated native/managed Windows VM receipts complete |
 | R070 | macOS Keychain identity consumption | VM Bridge | `R020` | `SecItem` store/load/delete, access denial, zeroization, no argv/log secret | partial |
 | R071 | Safe Wine automatic configuration alternative | VM Bridge | `R070`; new evidence beyond failed by-name route | supported API/process boundary, exact bottle identity, no plaintext registry secret | official source confirms loader-initialized unixlib handle direction; implementation held because Wine build tooling/bundle is unavailable |
-| R080 | Windows service/MSI/firewall and macOS package setup | VM Bridge | `R060`, `R070`, admitted bundle catalog | clean install/pair/doctor/core call with receipted rollback | fail-closed bootstrap wrappers and runtime doctor complete; deterministic platform installers pending |
-| R081 | Update, rollback and uninstall | VM Bridge | `R080`, `R062` | inactive staging, health-gated activation, snapshot restoration, impact preflight | deterministic package core complete; platform installers pending |
+| R080 | Windows service/MSI/firewall and macOS package setup | VM Bridge | `R060`, `R070`, admitted bundle catalog | clean install/pair/doctor/core call with receipted rollback | deterministic Windows archive verification, stage, runtime state initialization, doctor and health-gated activation passed in the exact VM; production signing remains external |
+| R081 | Update, rollback and uninstall | VM Bridge | `R080`, `R062` | inactive staging, health-gated activation, snapshot restoration, impact preflight | base/update activation, rollback, explicit safe deactivation, uninstall of all versions and owned-root cleanup passed in the exact VM |
 | R090 | Resilience, fuzzing, replay and resource bounds | VM Bridge | all runtime handlers | deterministic negative suites, fuzz/sanitizer budgets, disk/DB/keystore/worker crash | replay/rate/resource negatives, deterministic malformed corpora and AddressSanitizer/libFuzzer runtime-parser target complete; local campaign completed 5,305,588 executions without a crash; extended chaos duration remains a release-environment gate |
-| R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | process-local benchmark harness complete; real topology hold |
+| R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | native and managed frozen scalar profiles each completed three encrypted Mac/UTM/Windows calls with monotonic host timing; scalar payload is fixed at 8/4 bytes, and larger generic-transfer sizes are not claimed as scalar evidence |
 | R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | two isolated checkout builds with compiler path remapping reproduced source archive SHA-256 `cea9bedd…dd7a2`; final macOS tar `6d5fa6ba…dc9a4` and Windows tar `5ac33ea2…33b03` include embedded SPDX, authenticated release envelopes and artifact-bound provenance; separately authenticated bootstraps and signing remain external |
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID/disk/account verified; local desktop and guest agent established; one controlled reboot and six-minute idle persistence check passed; AC idle sleep disabled without changing display-off/security; snapshot inventory retained, backing chain explicitly TCC-unverified |
-| R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | Windows runtime readiness PASS; deterministic package lifecycle and real topology execution remain |
+| R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | exact Windows VM readiness, native/managed encrypted scalar execution, package setup/update/rollback/uninstall and owned-resource cleanup PASS |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
-| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic selection/correlation tests complete |
+| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library plus durable real-VM workload/attempt/receipt correlation and authenticated terminal receipts complete |
 | R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | receipt binding/privacy review PASS at `170590b`, fuzz/evidence delta adversarial PASS at `f3f0e96`, and isolated package reproducibility review PASS at `07e15bc`; T161 remains held behind T160 and canonical Run reconciliation |
 
 Rejected or conditional scope:

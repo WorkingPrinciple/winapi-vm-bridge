@@ -85,7 +85,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config(Path::new(&arguments[2]))?;
     match arguments[1].as_str() {
         "server" => run_server(config).await,
-        "client" => run_client(config).await,
+        "client" => run_client(config, false).await,
+        "client-schema-negative" => run_client(config, true).await,
         _ => Err("mode must be server or client".into()),
     }
 }
@@ -164,7 +165,10 @@ async fn run_server(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-async fn run_client(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_client(
+    config: AcceptanceConfig,
+    invalid_schema: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let adapter_hash = hash(&config.adapter_hash)?;
     let client_private = environment_key("WVB_TEST_CLIENT_PRIVATE")?;
     let broker_public = environment_key("WVB_TEST_BROKER_PUBLIC")?;
@@ -206,7 +210,11 @@ async fn run_client(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
             &CallRequest {
                 adapter_hash,
                 operation_id: 1,
-                request_schema_id: 0x1000_0001,
+                request_schema_id: if invalid_schema {
+                    0x1000_ffff
+                } else {
+                    0x1000_0001
+                },
                 deduplication_mode: 0,
                 idempotency_key: None,
                 disconnect_policy: 0,
@@ -215,7 +223,15 @@ async fn run_client(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
             },
             Duration::from_secs(10),
         )
-        .await?;
+        .await;
+    if invalid_schema {
+        if result.is_ok() {
+            return Err("native invalid schema unexpectedly dispatched".into());
+        }
+        println!("native-schema-negative=ok");
+        return Ok(());
+    }
+    let result = result?;
     if result.native_status != 0_i32.to_le_bytes()
         || result.body.len() != 4
         || i32::from_le_bytes(result.body.try_into().map_err(|_| "response size")?) != 42

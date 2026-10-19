@@ -1,0 +1,56 @@
+{
+    "Schema":  "wvb.windows-package-lifecycle.v1",
+    "Status":  "PASS",
+    "VmUuid":  "F659FCF2-AC83-4072-86A6-F7538781A1FC",
+    "SourceSha256":  "cfd00138d9caf1a748c5988295c78b3bdc704a99540768462b9edd5e63300e05",
+    "Archives":  {
+                     "Base":  "0c497781f165e7caa7382bbe59d939bae76eb194357af8907a174c0030ff82e2",
+                     "Update":  "7dce5b9cc702b5cd7ccbcc95d5053c211afe21ca809a85d93880769cccabd8d7",
+                     "Lifecycle":  "9dcfa572cf38944eefa746dc86d053802f27fece7560a8edec87c4d794beacdd"
+                 },
+    "Versions":  [
+                     "0.2.0-windows",
+                     "0.2.0-windows-update1",
+                     "0.2.0-windows-lifecycle"
+                 ],
+    "Setup":  true,
+    "Update":  true,
+    "Rollback":  true,
+    "AllVersionsUninstalled":  true,
+    "BeforeCleanup":  [
+                          {
+                              "Path":  "C:\\WvbAcceptance\\package-lifecycle",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\WvbAcceptance\\package-staging",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\WvbAcceptance\\package-staging-update",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\WvbAcceptance\\package-staging-lifecycle",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\Users\\Public\\wvb-runtime-package.tar",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\Users\\Public\\wvb-runtime-package-update1.tar",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\Users\\Public\\wvb-runtime-package-lifecycle.tar",
+                              "Existed":  true
+                          },
+                          {
+                              "Path":  "C:\\Users\\Public\\wvb-bootstrap-windows.ps1",
+                              "Existed":  true
+                          }
+                      ],
+    "CleanupVerified":  true,
+    "Utc":  "2026-10-19T19:23:42.5479501Z"
+}

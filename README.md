@@ -105,10 +105,14 @@ green until the atomic Whiny cutover.
 ## Current holds
 
 - The native and managed frozen scalar bundles are admitted and execute through
-  their generic runtime hosts under CrossOver, including encrypted managed RPC.
-- The preferred isolated `Whiny-Windows11-x64` acceptance VM is booted, but its
-  QEMU guest agent is unavailable. No guest mutation or forwarding change is
-  made until target readiness and reversible control are established.
+  their generic runtime hosts under CrossOver and the exact Windows x64 UTM VM,
+  including encrypted native and managed RPC.
+- `Whiny-Windows11-x64` readiness, one-reboot persistence, clean package
+  setup/update/rollback/uninstall, three-run scalar topology benchmarks,
+  authenticated Runtime Owner receipts and owned-resource cleanup are verified.
+- Shell-hook, NT wait-completion, ALPC and other unfrozen profiles remain
+  explicitly unsupported until Whiny supplies reviewed exact identities and
+  commands.
 - The previous CrossOver by-name unixlib experiment failed with
   `STATUS_INVALID_INFO_CLASS` and is not retried unchanged. The supported
   direction is a Wine loader-initialized builtin DLL/unixlib pair, not a private
