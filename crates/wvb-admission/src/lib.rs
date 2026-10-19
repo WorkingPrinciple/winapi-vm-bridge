@@ -3,7 +3,7 @@
 mod correlated;
 mod handoff;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -285,7 +285,7 @@ impl AdmissionEngine {
         let mut dispatcher_count = 0;
         let mut target_count = 0;
         let mut normalized_paths = BTreeSet::new();
-        let mut stable_identities = BTreeSet::new();
+        let mut stable_identities = HashSet::new();
         let mut admitted_files = Vec::with_capacity(approval.files.len());
         for file in &approval.files {
             match file.kind {
@@ -300,7 +300,7 @@ impl AdmissionEngine {
             }
             let path = self.resolve_file(&file.relative_path)?;
             let stable_identity = stable_file_identity(&path)?;
-            if !stable_identities.insert(stable_identity) {
+            if !stable_identities.insert(stable_identity.clone()) {
                 return Err(AdmissionError::InvalidFileSet);
             }
             if sha256_file(&path)? != file.sha256 {

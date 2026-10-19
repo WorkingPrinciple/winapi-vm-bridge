@@ -1,8 +1,10 @@
 //! Shared path and content-integrity checks for runtime-controlled artifacts.
 
 use std::fs::{self, File};
+use std::hash::{Hash, Hasher};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
@@ -15,10 +17,21 @@ pub enum IntegrityError {
     Io(io::Error),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StableFileIdentity {
-    volume: u64,
-    file: u64,
+#[derive(Debug, Clone)]
+pub struct StableFileIdentity(Arc<same_file::Handle>);
+
+impl PartialEq for StableFileIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for StableFileIdentity {}
+
+impl Hash for StableFileIdentity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
 }
 
 impl std::fmt::Display for IntegrityError {
@@ -144,7 +157,9 @@ pub fn sha256_file(path: &Path) -> Result<[u8; 32], IntegrityError> {
 }
 
 pub fn stable_file_identity(path: &Path) -> Result<StableFileIdentity, IntegrityError> {
-    Ok(stable_identity(&fs::metadata(path)?))
+    Ok(StableFileIdentity(Arc::new(same_file::Handle::from_path(
+        path,
+    )?)))
 }
 
 #[must_use]
@@ -161,29 +176,9 @@ fn is_symlink_or_reparse(metadata: &fs::Metadata) -> bool {
         || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
-#[cfg(windows)]
-fn stable_identity(metadata: &fs::Metadata) -> StableFileIdentity {
-    use std::os::windows::fs::MetadataExt;
-
-    StableFileIdentity {
-        volume: metadata.volume_serial_number().unwrap_or(0).into(),
-        file: metadata.file_index().unwrap_or(0),
-    }
-}
-
 #[cfg(not(windows))]
 fn is_symlink_or_reparse(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
-}
-
-#[cfg(unix)]
-fn stable_identity(metadata: &fs::Metadata) -> StableFileIdentity {
-    use std::os::unix::fs::MetadataExt;
-
-    StableFileIdentity {
-        volume: metadata.dev(),
-        file: metadata.ino(),
-    }
 }
 
 #[cfg(test)]

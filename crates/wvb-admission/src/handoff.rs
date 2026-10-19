@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -661,7 +661,7 @@ impl AdmissionEngine {
             )?,
             transitive: Vec::new(),
         };
-        let mut identities = BTreeSet::new();
+        let mut identities = HashSet::new();
         for file in [
             &files.registry,
             &files.contract,
@@ -671,7 +671,7 @@ impl AdmissionEngine {
             &files.provider,
             &files.candidate,
         ] {
-            if !identities.insert(file.stable_identity) {
+            if !identities.insert(file.stable_identity.clone()) {
                 return Err(HandoffAdmissionError::Binding(
                     "duplicate stable file identity",
                 ));
@@ -780,7 +780,7 @@ fn bind_transitive_files(
     receipt: &BuildReceiptDocument,
 ) -> Result<(), HandoffAdmissionError> {
     let mut observed = BTreeMap::new();
-    let mut stable_identities = BTreeSet::new();
+    let mut stable_identities = HashSet::new();
     for file in [
         &files.registry,
         &files.contract,
@@ -794,7 +794,7 @@ fn bind_transitive_files(
             file.path.to_ascii_lowercase(),
             (file.path.clone(), file.sha256),
         );
-        stable_identities.insert(file.stable_identity);
+        stable_identities.insert(file.stable_identity.clone());
     }
     bind_registry_files(
         engine,
@@ -824,7 +824,7 @@ fn bind_registry_files(
     engine: &AdmissionEngine,
     files: &mut HandoffFiles,
     observed: &mut BTreeMap<String, (String, [u8; 32])>,
-    stable_identities: &mut BTreeSet<wvb_integrity::StableFileIdentity>,
+    stable_identities: &mut HashSet<wvb_integrity::StableFileIdentity>,
     registry: &AuthorityRegistry,
 ) -> Result<(), HandoffAdmissionError> {
     for entry in &registry.entries {
@@ -869,7 +869,7 @@ fn bind_contract_and_bundle_files(
     engine: &AdmissionEngine,
     files: &mut HandoffFiles,
     observed: &mut BTreeMap<String, (String, [u8; 32])>,
-    stable_identities: &mut BTreeSet<wvb_integrity::StableFileIdentity>,
+    stable_identities: &mut HashSet<wvb_integrity::StableFileIdentity>,
     contract: &ContractDocument,
     bundle: &BundleDocument,
 ) -> Result<(), HandoffAdmissionError> {
@@ -942,7 +942,7 @@ fn bind_build_files(
     engine: &AdmissionEngine,
     files: &mut HandoffFiles,
     observed: &mut BTreeMap<String, (String, [u8; 32])>,
-    stable_identities: &mut BTreeSet<wvb_integrity::StableFileIdentity>,
+    stable_identities: &mut HashSet<wvb_integrity::StableFileIdentity>,
     receipt: &BuildReceiptDocument,
 ) -> Result<(), HandoffAdmissionError> {
     bind_transitive_file(
@@ -974,7 +974,7 @@ fn bind_build_files(
 fn bind_transitive_file(
     engine: &AdmissionEngine,
     observed: &mut BTreeMap<String, (String, [u8; 32])>,
-    stable_identities: &mut BTreeSet<wvb_integrity::StableFileIdentity>,
+    stable_identities: &mut HashSet<wvb_integrity::StableFileIdentity>,
     files: &mut Vec<BoundFile>,
     path: &str,
     hash: &str,
@@ -989,7 +989,7 @@ fn bind_transitive_file(
     }
     let canonical_path = resolve_regular_file(&engine.load_root, path)?;
     let stable_identity = stable_file_identity(&canonical_path)?;
-    if !stable_identities.insert(stable_identity) {
+    if !stable_identities.insert(stable_identity.clone()) {
         return Err(HandoffAdmissionError::Binding(
             "duplicate transitive file identity",
         ));
