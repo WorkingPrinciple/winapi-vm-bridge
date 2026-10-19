@@ -107,9 +107,10 @@ Whiny consumer boundary after the completed atomic cutover.
 - The native and managed frozen scalar bundles are admitted and execute through
   their generic runtime hosts under CrossOver and the exact Windows x64 UTM VM,
   including encrypted native and managed RPC.
-- `Whiny-Windows11-x64` readiness, one-reboot persistence, clean package
-  setup/update/rollback/uninstall, three-run scalar topology benchmarks,
-  authenticated Runtime Owner receipts and owned-resource cleanup are verified.
+- Historical `Whiny-Windows11-x64` readiness, package lifecycle and scalar
+  topology evidence is retained but explicitly unqualified. Its post-hoc
+  receipts are invalid, and current-build pre-authorized Windows acceptance is
+  pending a stable target and the frozen v2.5 consumer handoff.
 - Shell-hook, NT wait-completion, ALPC and other unfrozen profiles remain
   explicitly unsupported until Whiny supplies reviewed exact identities and
   commands.

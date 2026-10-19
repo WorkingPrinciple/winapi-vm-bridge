@@ -184,16 +184,19 @@ limited to the native and managed scalar bundles above.
 The exact VM acceptance evidence is committed under
 `runtime-artifacts/whiny-v0.3.0/acceptance/windows-vm-v1/` with manifest
 SHA-256
-`b48ad33e2e4fb6c4fe76c2d965278ba513365d39422977612a259a6ed1b7451e`.
+`03113e115944fabfd528b9e12c40842f8eb90b710463066ed9e26726c5e7e6b9`.
 It binds VM UUID `F659FCF2-AC83-4072-86A6-F7538781A1FC`, disk UUID
 `065112D9-3B2D-4E40-AF74-C6B29CA4D133`, Windows build
 `10.0.26300.9457`, exact deployment hashes and verified cleanup.
+`STATUS.json` marks the complete directory `historical-unqualified`; individual
+historical files retaining `PASS` are not current qualification.
 
 The original VM receipt bytes are preserved under
 `runtime-artifacts/whiny-v0.3.0/acceptance/windows-vm-runtime-receipts-v1-posthoc-invalid/`.
 They are explicitly `invalid-posthoc-correlation`: workload, attempt,
 challenge, authorization and disk identity were assigned after execution.
-They must not be admitted or re-signed. The corrected implementation now:
+They must not be admitted or re-signed. A future corrected acceptance path
+must:
 
 - observes the exact QEMU UUID, writable disk path/UUID/inode and absence of
   `-snapshot` before attempt creation;
@@ -208,7 +211,7 @@ They must not be admitted or re-signed. The corrected implementation now:
 - rejects duplicate terminal completion.
 
 A fresh authenticated VM receipt remains required after a stable Windows target
-completes this corrected path. Neither the historical UTM evidence nor an
+and the frozen v2.5 consumer handoff implement this path. Neither the historical UTM evidence nor an
 interactive LXD console screenshot satisfies that gate.
 
 Both profiles historically passed a positive encrypted canonical call returning
@@ -2705,8 +2708,8 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID/disk/account verified; local desktop and guest agent established; one controlled reboot and six-minute idle persistence check passed; AC idle sleep disabled without changing display-off/security; snapshot inventory retained, backing chain explicitly TCC-unverified |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | historical exact-VM scalar and lifecycle evidence recorded; current-build corrected correlated rerun blocked by unstable UTM guest-agent/deployment and LXD guest without agent or network management path |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
-| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library plus durable real-VM workload/attempt/receipt correlation and authenticated terminal receipts complete |
-| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | receipt binding/privacy review PASS at `170590b`, fuzz/evidence delta adversarial PASS at `f3f0e96`, and isolated package reproducibility review PASS at `07e15bc`; T161 remains held behind T160 and canonical Run reconciliation |
+| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic correlation/atomic-terminal tests complete; fresh current-build real-VM correlated receipt pending v2.5 handoff and a stable target |
+| R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | deterministic/security gates and hosted CI pass; latest source-bound review requires only reconciliation of historical/unqualified completion claims before final PASS |
 
 Rejected or conditional scope:
 
