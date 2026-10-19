@@ -1081,6 +1081,7 @@ dependencies = [
  "tempfile",
  "wvb-authz",
  "wvb-integrity",
+ "wvb-receipt",
  "wvb-state",
 ]
 

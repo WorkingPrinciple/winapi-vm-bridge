@@ -29,6 +29,10 @@ The current boundary identifiers are:
 - `whiny.dispatch.v1`;
 - `whiny.correlated-runtime-expectations.v1`;
 - `whiny.correlated-runtime-admission.v1`;
+- `whiny.scalar-test-authority-registry.v1`;
+- `whiny.scalar-frozen-adapter-handoff.v1`;
+- `whiny.scalar-correlated-runtime-expectations.v1`;
+- `whiny.scalar-correlated-runtime-admission.v1`;
 - `whiny.runtime-receipt.v1`.
 
 The v2.5 consumer is pinned to Whiny revision
@@ -83,6 +87,31 @@ the older scalar bundles cannot traverse the v2.5 handoff until Whiny publishes
 reviewed scalar authority, handoff and runtime-expectation artifacts with
 supported pre-execution controls. The old v0.3 bundle path remains historical
 compatibility, not a substitute for this missing authority.
+
+The separate scalar test-authority consumer is pinned to merged Whiny main
+`f968659d4cee38bb30595e776e796cba45a611cc`. The schema and metadata surface is
+byte-identical to reviewed producer `67884aca55fe359243340bb59f644d80738c41b0`;
+the later main commit additionally includes the exact native and managed target
+DLL bytes already named by those reviewed identities.
+Its manifest SHA-256 is
+`6bd6c8eee2e55bc30a8bbaa754a3b1fcd7eb4bd2e2402eac931f410e7d4196e8`,
+its registry SHA-256 is
+`b39d8c49da636262f18ab19058c655519c60cf8797d26de82dd93778bfc30298`,
+and its retained source-evidence manifest SHA-256 is
+`2fb90b2192980f8b87f2386a1e7009b7bff5d089e121fdead03882a4f7d54734`.
+It is a distinct, scalar-only exception for bounded native and managed test
+execution. It binds Whiny's own manifest, registry, handoffs, correlated
+expectations/admissions, retained source evidence, signed receipts and
+acceptance-only trust policy. It retains only the SHA-256 identity of Whiny's
+consumed replay state; private replay state is not packaged or imported.
+
+Scalar authorization remains `test-execution-authorized`,
+`bridge-owned-invoke-required`, `development-only`, `support_claim: none` and
+`runtime_support: false`. A separately authenticated Bridge `Invoke` grant must
+match the exact contract hash and operation before the consumer returns a
+test-execution authorization. This does not create actors, roles, grants, ACLs
+or credentials, does not become product qualification, and does not alter the
+v1 denial or the unsupported status of T16, T26 and T32.
 
 ## Runtime layers
 

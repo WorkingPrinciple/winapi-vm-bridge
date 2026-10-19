@@ -110,7 +110,9 @@ Whiny consumer boundary after the completed atomic cutover.
 - Historical `Whiny-Windows11-x64` readiness, package lifecycle and scalar
   topology evidence is retained but explicitly unqualified. Its post-hoc
   receipts are invalid, and current-build pre-authorized Windows acceptance is
-  pending a stable target and the frozen v2.5 consumer handoff.
+  pending a stable target. The source-only scalar test-authority handoff is now
+  consumed exactly, but remains `development-only`, `support_claim: none` and
+  `runtime_support: false`; it does not qualify the historical guest evidence.
 - Shell-hook, NT wait-completion, ALPC and other unfrozen profiles remain
   explicitly unsupported until Whiny supplies reviewed exact identities and
   commands.

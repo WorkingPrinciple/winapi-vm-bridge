@@ -257,6 +257,49 @@ runtime expectations with supported pre-execution authority. Reusing the old
 v0.3 bundle approval, historical UTM bytes or post-hoc receipts would bypass
 that boundary and is prohibited.
 
+Whiny subsequently published a separate scalar-only test-authority artifact
+set at reviewed producer commit
+`67884aca55fe359243340bb59f644d80738c41b0`, based on
+`c48db610ef2e9505b0fbc577a76704a1214bc83f`, and merged the byte-identical
+artifact/schema surface to main as
+`bceeffbf6889e07937387d2636f119d1b4c6fa48`, then included the exact native and
+managed target DLL bytes on main at
+`f968659d4cee38bb30595e776e796cba45a611cc`. The latter full-artifact main
+commit is the consumer pin. Its manifest SHA-256 is
+`6bd6c8eee2e55bc30a8bbaa754a3b1fcd7eb4bd2e2402eac931f410e7d4196e8`,
+its scalar authority registry SHA-256 is
+`b39d8c49da636262f18ab19058c655519c60cf8797d26de82dd93778bfc30298`,
+and its retained source-evidence manifest SHA-256 is
+`2fb90b2192980f8b87f2386a1e7009b7bff5d089e121fdead03882a4f7d54734`.
+This is not an upgrade of the v1 authority domain. The v1 denial above remains
+unchanged.
+
+The scalar consumer admits only the exact native and managed scalar
+test-authority chains:
+
+- schema IDs are `whiny.scalar-test-authority-registry.v1`,
+  `whiny.scalar-frozen-adapter-handoff.v1`,
+  `whiny.scalar-correlated-runtime-expectations.v1` and
+  `whiny.scalar-correlated-runtime-admission.v1`;
+- policy remains `test-execution-authorized`,
+  `bridge-owned-invoke-required`, `development-only`,
+  `support_claim: none` and `runtime_support: false`;
+- the Whiny manifest, registry, handoff, contract, bundle, deterministic build
+  receipt, provider, candidate, operation/schema IDs, challenge, sequence,
+  correlation, retained source-evidence manifest, signed receipt and
+  acceptance-only trust-policy identities are all bound exactly;
+- only the SHA-256 identity of Whiny's consumed replay state crosses the
+  boundary. No private replay state, actor, role, grant, ACL, credential or
+  VM-owned replacement manifest is imported;
+- Bridge still requires a separately authenticated `Invoke` grant scoped to
+  the exact contract hash and operation before returning a bounded scalar
+  test-execution authorization.
+
+This authorization is test-only. It cannot qualify a product runtime, convert
+historical CrossOver or UTM observations into current acceptance, or authorize
+any non-scalar/general development bundle. T16/T26/T32 remain unsupported and
+unqualified.
+
 A future acceptance attempt must pre-create and durably commit the workload,
 attempt and receipt IDs, exact host/bundle/operation, request and expected
 response hashes, authorization-receipt hash, unique challenge and monotonic
@@ -2199,6 +2242,20 @@ revision `c48db610ef2e9505b0fbc577a76704a1214bc83f`, then binds that chain to th
 same runtime-owned approval. VM Bridge does not infer missing fields, repair
 invalid documents or extend Whiny qualification.
 
+The scalar test-authority path is separate and pinned to merged Whiny main
+`f968659d4cee38bb30595e776e796cba45a611cc` (schema and metadata bytes
+independently matched to reviewed producer
+`67884aca55fe359243340bb59f644d80738c41b0`, with the exact target DLLs added
+by the later main commit).
+It consumes Whiny's exact
+`scalar-test-artifacts.json` rather than inventing a VM-owned manifest, binds
+the native and managed scalar chains plus authenticated receipts and trust
+policy, and retains only the consumed replay-state hash. It returns a
+test-execution authorization only after the Bridge registry authenticates an
+exact `Invoke` grant for the contract and operation. Its
+`runtime_support: false` and `support_claim: none` values are invariants, not
+fields that the grant can elevate.
+
 The approval record pins:
 
 - contract identifier and major: `whiny.adapter-contract.v3`, major 3;
@@ -2752,7 +2809,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID/disk/account verified; local desktop and guest agent established; one controlled reboot and six-minute idle persistence check passed; AC idle sleep disabled without changing display-off/security; snapshot inventory retained, backing chain explicitly TCC-unverified |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | historical exact-VM scalar and lifecycle evidence recorded; current-build corrected correlated rerun blocked by unstable UTM guest-agent/deployment and LXD guest without agent or network management path |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
-| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | v2.5 source path prebinds workload/attempt/receipt, request/expected response, authorization, challenge and sequence before execution; exact Whiny c48 handoff/registry binding and tamper tests pass; fresh current-build real-VM correlated receipt remains pending reviewed scalar authority and a stable target |
+| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | v2.5 source path prebinds workload/attempt/receipt, request/expected response, authorization, challenge and sequence before execution; exact Whiny c48 v1 denial remains, while the merged `f968659` scalar test-authority chain binds native/managed identities and target bytes, retained source evidence, signed receipt/policy and replay-state hash with an exact external `Invoke` requirement; fresh current-build real-VM correlated receipt remains pending a stable target |
 | R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | deterministic/security gates and hosted CI pass; latest source-bound review requires only reconciliation of historical/unqualified completion claims before final PASS |
 
 Rejected or conditional scope:

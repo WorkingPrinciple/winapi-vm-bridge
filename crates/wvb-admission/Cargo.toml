@@ -12,6 +12,7 @@ serde_jcs.workspace = true
 serde_json.workspace = true
 wvb-authz = { path = "../wvb-authz" }
 wvb-integrity = { path = "../wvb-integrity" }
+wvb-receipt = { path = "../wvb-receipt" }
 
 [dev-dependencies]
 tempfile.workspace = true
