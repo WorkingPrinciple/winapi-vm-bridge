@@ -252,15 +252,13 @@ fn execution_approval(name: &str, contract: &[u8]) -> (PathBuf, OperatorAdmissio
 }
 
 #[test]
-fn frozen_whiny_scalar_bundles_admit_persist_and_keep_invoke_separate() {
+fn frozen_whiny_scalar_bundles_are_retained_as_historical_evidence_only() {
     for name in ["native-scalar", "managed-scalar"] {
         let directory = root().join(name);
         let (approval, contract, descriptor_bytes) = approval(&directory);
         let operator = [1; 16];
-        let caller = [2; 16];
         let mut registry = Registry::default();
         registry.register(operator, [3; 32]).unwrap();
-        registry.register(caller, [4; 32]).unwrap();
         registry
             .grant(
                 operator,
@@ -284,25 +282,6 @@ fn frozen_whiny_scalar_bundles_admit_persist_and_keep_invoke_separate() {
                     bundle_descriptor: &descriptor_bytes,
                 },
             )
-            .unwrap();
-        assert!(
-            admitted
-                .authorize_operation(&registry, caller, 1, 1)
-                .is_err()
-        );
-        registry
-            .grant(
-                caller,
-                Grant {
-                    role: Role::Invoke,
-                    adapter_hash: Some(approval.contract_sha256),
-                    operation_id: Some(1),
-                    expires_at_unix_ms: None,
-                },
-            )
-            .unwrap();
-        admitted
-            .authorize_operation(&registry, caller, 1, 1)
             .unwrap();
         assert_eq!(
             admitted.operation(1).unwrap().request_schema_id,

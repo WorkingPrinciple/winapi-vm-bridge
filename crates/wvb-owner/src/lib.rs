@@ -4,11 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use wvb_receipt::{
-    Authentication, Cleanup, LoadedFile, RuntimeIdentity, RuntimeReceipt, public_key,
-};
+use wvb_receipt::{LoadedFile, RuntimeIdentity, RuntimeReceipt};
 use wvb_state::{OperationRecord, OperationStatus, Store, TerminalReceiptCommit};
-use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum HostKind {
@@ -115,17 +112,39 @@ pub enum RuntimeOwnerOperation {
 pub struct AttemptCorrelation {
     pub workload_id: [u8; 16],
     pub attempt_id: [u8; 16],
+    pub receipt_id: [u8; 16],
     pub host_id: String,
     pub bundle_sha256: [u8; 32],
-    pub operation_id: Option<u32>,
-    #[serde(default)]
-    pub request_sha256: Option<[u8; 32]>,
-    pub receipt_id: Option<[u8; 16]>,
+    pub contract_sha256: [u8; 32],
+    pub operation_id: u32,
+    pub request_sha256: [u8; 32],
+    pub expected_response_sha256: [u8; 32],
+    pub authorization_receipt_sha256: [u8; 32],
+    pub challenge_sha256: [u8; 32],
+    pub sequence: u64,
+    pub runtime_key_id: [u8; 32],
+    pub expected_runtime_identity: RuntimeIdentity,
+    pub expected_loaded_files: Vec<LoadedArtifact>,
 }
 
 impl AttemptCorrelation {
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, OwnerError> {
-        if self.host_id.is_empty() {
+        if self.host_id.is_empty()
+            || self.workload_id == [0; 16]
+            || self.attempt_id == [0; 16]
+            || self.receipt_id == [0; 16]
+            || self.bundle_sha256 == [0; 32]
+            || self.contract_sha256 == [0; 32]
+            || self.request_sha256 == [0; 32]
+            || self.expected_response_sha256 == [0; 32]
+            || self.authorization_receipt_sha256 == [0; 32]
+            || self.challenge_sha256 == [0; 32]
+            || self.runtime_key_id == [0; 32]
+            || self.sequence == 0
+            || self.operation_id == 0
+            || self.expected_runtime_identity.host_id != self.host_id
+            || self.expected_loaded_files.is_empty()
+        {
             return Err(OwnerError::InvalidCorrelation);
         }
         serde_jcs::to_vec(self).map_err(|_| OwnerError::InvalidCorrelation)
@@ -166,25 +185,30 @@ impl AttemptCorrelation {
     pub fn complete_with_receipt(
         &mut self,
         store: &mut Store,
-        mut signing_seed: [u8; 32],
         input: TerminalReceiptInput,
     ) -> Result<EmittedReceipt, OwnerError> {
-        let result = self.complete_with_receipt_inner(store, &signing_seed, input);
-        signing_seed.zeroize();
-        result
-    }
-
-    fn complete_with_receipt_inner(
-        &mut self,
-        store: &mut Store,
-        signing_seed: &[u8; 32],
-        input: TerminalReceiptInput,
-    ) -> Result<EmittedReceipt, OwnerError> {
-        if input.bundle_sha256 != self.bundle_sha256
-            || input.operation_id != self.operation_id
-            || self.request_sha256 != Some(input.request_sha256)
-            || input.runtime_identity.host_id != self.host_id
-            || input.receipt_id == [0; 16]
+        let receipt = input.receipt;
+        let expected_loaded_files: Vec<LoadedFile> = self
+            .expected_loaded_files
+            .iter()
+            .map(|file| LoadedFile {
+                path: file.path.clone(),
+                sha256: hex(&file.sha256),
+            })
+            .collect();
+        if receipt.verify(&input.public_key).is_err()
+            || receipt.receipt_id != uuid_text(self.receipt_id)
+            || receipt.bundle_sha256 != hex(&self.bundle_sha256)
+            || receipt.contract_sha256 != hex(&self.contract_sha256)
+            || receipt.operation_id != self.operation_id
+            || receipt.request_sha256 != hex(&self.request_sha256)
+            || receipt.response_sha256 != hex(&self.expected_response_sha256)
+            || receipt.authorization_receipt_sha256 != hex(&self.authorization_receipt_sha256)
+            || receipt.challenge_sha256 != hex(&self.challenge_sha256)
+            || receipt.sequence != self.sequence
+            || receipt.authentication.key_id != hex(&self.runtime_key_id)
+            || receipt.runtime_identity != self.expected_runtime_identity
+            || receipt.loaded_files != expected_loaded_files
         {
             return Err(OwnerError::InvalidCorrelation);
         }
@@ -195,8 +219,7 @@ impl AttemptCorrelation {
         if operation.status != OperationStatus::Running {
             return Err(OwnerError::State);
         }
-        if self.receipt_id.is_some()
-            || operation.operation_type != "runtime-owner-attempt"
+        if operation.operation_type != "runtime-owner-attempt"
             || operation.target_hash != self.bundle_sha256
             || operation.idempotency_hash != Some(self.sha256()?)
             || serde_json::from_slice::<AttemptCorrelation>(&operation.detail)
@@ -205,65 +228,22 @@ impl AttemptCorrelation {
         {
             return Err(OwnerError::InvalidCorrelation);
         }
-        self.receipt_id = Some(input.receipt_id);
-        let status = input.status.clone();
-        let mut receipt = RuntimeReceipt {
-            schema: String::from(wvb_receipt::RECEIPT_IDENTIFIER),
-            receipt_id: uuid_text(input.receipt_id),
-            bundle_sha256: hex(&input.bundle_sha256),
-            contract_sha256: hex(&input.contract_sha256),
-            dispatcher_abi: String::from(wvb_receipt::DISPATCHER_ABI),
-            operation_id: input.operation_id.unwrap_or(0),
-            request_sha256: hex(&input.request_sha256),
-            response_sha256: hex(&input.response_sha256),
-            status,
-            runtime_identity: input.runtime_identity,
-            loaded_files: input
-                .loaded_files
-                .into_iter()
-                .map(|file| LoadedFile {
-                    path: file.path,
-                    sha256: hex(&file.sha256),
-                })
-                .collect(),
-            authorization_receipt_sha256: hex(&input.authorization_receipt_sha256),
-            challenge_sha256: hex(&input.challenge_sha256),
-            sequence: input.sequence,
-            started_at: input.started_at,
-            completed_at: input.completed_at,
-            cleanup: input.cleanup,
-            authentication: Authentication {
-                scheme: String::new(),
-                key_id: String::new(),
-                signed_payload_sha256: String::new(),
-                signature: String::new(),
-            },
-        };
-        receipt
-            .sign(signing_seed)
-            .map_err(|_| OwnerError::Receipt)?;
         let receipt_bytes = receipt.canonical_bytes().map_err(|_| OwnerError::Receipt)?;
-        operation.status = if receipt.status == "ok" {
-            OperationStatus::Succeeded
-        } else if receipt.status == "cancelled" {
-            OperationStatus::Canceled
-        } else {
-            OperationStatus::Failed
-        };
+        operation.status = terminal_operation_status(&receipt);
         operation.stage = operation.stage.checked_add(1).ok_or(OwnerError::State)?;
         operation.updated_unix_ms = input.completed_unix_ms;
         operation.completed_unix_ms = Some(input.completed_unix_ms);
         operation.cancellable = false;
-        operation.terminal_receipt_id = Some(input.receipt_id);
+        operation.terminal_receipt_id = Some(self.receipt_id);
         operation.detail = self.canonical_bytes()?;
         store
             .commit_terminal_operation(
                 OperationStatus::Running,
                 &operation,
                 &TerminalReceiptCommit {
-                    receipt_id: input.receipt_id,
-                    request_hash: Some(input.request_sha256),
-                    terminal_status: i32::from(receipt.status != "ok"),
+                    receipt_id: self.receipt_id,
+                    request_hash: Some(self.request_sha256),
+                    terminal_status: i32::from(operation.status != OperationStatus::Succeeded),
                     receipt_payload: &receipt_bytes,
                     audit_payload: b"runtime owner terminal receipt",
                 },
@@ -271,9 +251,21 @@ impl AttemptCorrelation {
             .map_err(|_| OwnerError::State)?;
         Ok(EmittedReceipt {
             receipt,
-            public_key: public_key(signing_seed).map_err(|_| OwnerError::Receipt)?,
+            public_key: input.public_key,
             operation,
         })
+    }
+}
+
+fn terminal_operation_status(receipt: &RuntimeReceipt) -> OperationStatus {
+    if receipt.status == "ok"
+        && matches!(receipt.cleanup.status.as_str(), "verified" | "not-required")
+    {
+        OperationStatus::Succeeded
+    } else if receipt.status == "cancelled" {
+        OperationStatus::Canceled
+    } else {
+        OperationStatus::Failed
     }
 }
 
@@ -285,22 +277,9 @@ pub struct LoadedArtifact {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalReceiptInput {
-    pub receipt_id: [u8; 16],
-    pub bundle_sha256: [u8; 32],
-    pub contract_sha256: [u8; 32],
-    pub operation_id: Option<u32>,
-    pub request_sha256: [u8; 32],
-    pub response_sha256: [u8; 32],
-    pub status: String,
-    pub runtime_identity: RuntimeIdentity,
-    pub loaded_files: Vec<LoadedArtifact>,
-    pub authorization_receipt_sha256: [u8; 32],
-    pub challenge_sha256: [u8; 32],
-    pub sequence: u64,
-    pub started_at: String,
-    pub completed_at: String,
+    pub receipt: RuntimeReceipt,
+    pub public_key: Vec<u8>,
     pub completed_unix_ms: u64,
-    pub cleanup: Cleanup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -373,39 +352,80 @@ mod tests {
         }
     }
 
-    fn terminal_input(
-        correlation: &AttemptCorrelation,
-        receipt_id: [u8; 16],
-        host_id: String,
-    ) -> TerminalReceiptInput {
-        TerminalReceiptInput {
-            receipt_id,
-            bundle_sha256: correlation.bundle_sha256,
-            contract_sha256: [10; 32],
+    fn terminal_input(correlation: &AttemptCorrelation, host_id: String) -> TerminalReceiptInput {
+        let mut receipt = RuntimeReceipt {
+            schema: String::from(wvb_receipt::RECEIPT_IDENTIFIER),
+            receipt_id: uuid_text(correlation.receipt_id),
+            bundle_sha256: hex(&correlation.bundle_sha256),
+            contract_sha256: hex(&correlation.contract_sha256),
+            dispatcher_abi: String::from(wvb_receipt::DISPATCHER_ABI),
             operation_id: correlation.operation_id,
-            request_sha256: [11; 32],
-            response_sha256: [12; 32],
+            request_sha256: hex(&correlation.request_sha256),
+            response_sha256: hex(&correlation.expected_response_sha256),
             status: String::from("ok"),
             runtime_identity: RuntimeIdentity {
                 host_id,
+                ..correlation.expected_runtime_identity.clone()
+            },
+            loaded_files: correlation
+                .expected_loaded_files
+                .iter()
+                .map(|file| LoadedFile {
+                    path: file.path.clone(),
+                    sha256: hex(&file.sha256),
+                })
+                .collect(),
+            authorization_receipt_sha256: hex(&correlation.authorization_receipt_sha256),
+            challenge_sha256: hex(&correlation.challenge_sha256),
+            sequence: correlation.sequence,
+            started_at: String::from("2026-10-18T00:00:00Z"),
+            completed_at: String::from("2026-10-18T00:00:01Z"),
+            cleanup: wvb_receipt::Cleanup {
+                status: String::from("verified"),
+                diagnostics: Vec::new(),
+            },
+            authentication: wvb_receipt::Authentication {
+                scheme: String::new(),
+                key_id: String::new(),
+                signed_payload_sha256: String::new(),
+                signature: String::new(),
+            },
+        };
+        let seed = [9; 32];
+        receipt.sign(&seed).unwrap();
+        TerminalReceiptInput {
+            receipt,
+            public_key: wvb_receipt::public_key(&seed).unwrap(),
+            completed_unix_ms: 12,
+        }
+    }
+
+    fn correlation() -> AttemptCorrelation {
+        let public_key = wvb_receipt::public_key(&[9; 32]).unwrap();
+        AttemptCorrelation {
+            workload_id: [1; 16],
+            attempt_id: [2; 16],
+            receipt_id: [8; 16],
+            host_id: String::from("windows-x64"),
+            bundle_sha256: [3; 32],
+            contract_sha256: [10; 32],
+            operation_id: 7,
+            request_sha256: [11; 32],
+            expected_response_sha256: [12; 32],
+            authorization_receipt_sha256: [14; 32],
+            challenge_sha256: [15; 32],
+            sequence: 1,
+            runtime_key_id: Sha256::digest(&public_key).into(),
+            expected_runtime_identity: RuntimeIdentity {
+                host_id: String::from("windows-x64"),
                 os_build: String::from("Windows 11"),
                 architecture: String::from("x86-64"),
                 bridge_version: String::from("0.2.0"),
             },
-            loaded_files: vec![LoadedArtifact {
+            expected_loaded_files: vec![LoadedArtifact {
                 path: String::from("dispatcher.dll"),
                 sha256: [13; 32],
             }],
-            authorization_receipt_sha256: [14; 32],
-            challenge_sha256: [15; 32],
-            sequence: 1,
-            started_at: String::from("2026-10-18T00:00:00Z"),
-            completed_at: String::from("2026-10-18T00:00:01Z"),
-            completed_unix_ms: 12,
-            cleanup: Cleanup {
-                status: String::from("verified"),
-                diagnostics: Vec::new(),
-            },
         }
     }
 
@@ -456,15 +476,7 @@ mod tests {
 
     #[test]
     fn attempt_correlation_binds_durable_operation_and_receipt() {
-        let correlation = AttemptCorrelation {
-            workload_id: [1; 16],
-            attempt_id: [2; 16],
-            host_id: String::from("windows-x64"),
-            bundle_sha256: [3; 32],
-            operation_id: Some(7),
-            request_sha256: Some([8; 32]),
-            receipt_id: Some([4; 16]),
-        };
+        let correlation = correlation();
         let operation = correlation.operation_record([5; 16], 10, [6; 16]).unwrap();
         assert_eq!(operation.operation_id, correlation.attempt_id);
         assert_eq!(operation.target_hash, correlation.bundle_sha256);
@@ -496,15 +508,7 @@ mod tests {
                 b"owner paired",
             )
             .unwrap();
-        let mut correlation = AttemptCorrelation {
-            workload_id: [1; 16],
-            attempt_id: [2; 16],
-            host_id: String::from("windows-x64"),
-            bundle_sha256: [3; 32],
-            operation_id: Some(7),
-            request_sha256: Some([11; 32]),
-            receipt_id: None,
-        };
+        let mut correlation = correlation();
         let mut operation = correlation.operation_record(actor_id, 10, [6; 16]).unwrap();
         store
             .create_operation(&operation, b"attempt created")
@@ -516,42 +520,38 @@ mod tests {
         store
             .transition_operation(OperationStatus::Queued, &operation, b"attempt running")
             .unwrap();
-        let receipt_id = [8; 16];
+        let receipt_id = correlation.receipt_id;
         let mut wrong = correlation.clone();
         wrong.host_id = String::from("other-host");
         assert_eq!(
             wrong.complete_with_receipt(
                 &mut store,
-                [9; 32],
-                terminal_input(&correlation, receipt_id, wrong.host_id.clone()),
+                terminal_input(&correlation, wrong.host_id.clone()),
             ),
             Err(OwnerError::InvalidCorrelation)
         );
         assert!(store.receipt(receipt_id).unwrap().is_none());
-        let mut wrong_host_input =
-            terminal_input(&correlation, receipt_id, String::from("other-host"));
-        assert_eq!(
-            correlation.clone().complete_with_receipt(
-                &mut store,
-                [9; 32],
-                wrong_host_input.clone(),
-            ),
-            Err(OwnerError::InvalidCorrelation)
-        );
-        wrong_host_input.runtime_identity.host_id = correlation.host_id.clone();
-        wrong_host_input.request_sha256 = [99; 32];
+        let mut wrong_host_input = terminal_input(&correlation, String::from("other-host"));
         assert_eq!(
             correlation
                 .clone()
-                .complete_with_receipt(&mut store, [9; 32], wrong_host_input,),
+                .complete_with_receipt(&mut store, wrong_host_input.clone()),
+            Err(OwnerError::InvalidCorrelation)
+        );
+        wrong_host_input.receipt.runtime_identity.host_id = correlation.host_id.clone();
+        wrong_host_input.receipt.request_sha256 = hex(&[99; 32]);
+        wrong_host_input.receipt.sign(&[9; 32]).unwrap();
+        assert_eq!(
+            correlation
+                .clone()
+                .complete_with_receipt(&mut store, wrong_host_input),
             Err(OwnerError::InvalidCorrelation)
         );
         assert!(store.receipt(receipt_id).unwrap().is_none());
         let emitted = correlation
             .complete_with_receipt(
                 &mut store,
-                [9; 32],
-                terminal_input(&correlation, receipt_id, correlation.host_id.clone()),
+                terminal_input(&correlation, correlation.host_id.clone()),
             )
             .unwrap();
         emitted.receipt.verify(&emitted.public_key).unwrap();
@@ -566,7 +566,20 @@ mod tests {
             serde_json::from_slice::<AttemptCorrelation>(&restored.detail)
                 .unwrap()
                 .receipt_id,
-            Some(receipt_id)
+            receipt_id
+        );
+    }
+
+    #[test]
+    fn successful_status_requires_honest_cleanup() {
+        let correlation = correlation();
+        let mut input = terminal_input(&correlation, correlation.host_id.clone());
+        input.receipt.cleanup.status = String::from("failed");
+        input.receipt.cleanup.diagnostics = vec![String::from("owned child remained active")];
+        input.receipt.sign(&[9; 32]).unwrap();
+        assert_eq!(
+            terminal_operation_status(&input.receipt),
+            OperationStatus::Failed
         );
     }
 }

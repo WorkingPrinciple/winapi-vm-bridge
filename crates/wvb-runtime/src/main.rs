@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
@@ -8,7 +7,6 @@ use wvb_operations::{CheckStatus, OverallStatus, ReadinessCheck, ReadinessRegist
 use wvb_owner::{AttemptCorrelation, TerminalReceiptInput};
 use wvb_package::{HealthReceipt, PackageManifest};
 use wvb_state::Store;
-use zeroize::Zeroize;
 
 #[derive(Parser)]
 struct Arguments {
@@ -70,11 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut correlation: AttemptCorrelation =
                 serde_json::from_slice(&fs::read(correlation)?)?;
             let input: TerminalReceiptInput = serde_json::from_slice(&fs::read(input)?)?;
-            let mut seed = [0_u8; 32];
-            io::stdin().read_exact(&mut seed)?;
-            let emitted = correlation.complete_with_receipt(&mut store, seed, input);
-            seed.zeroize();
-            let emitted = emitted?;
+            let emitted = correlation.complete_with_receipt(&mut store, input)?;
             fs::write(output, emitted.receipt.canonical_bytes()?)?;
             fs::write(public_key, emitted.public_key)?;
             println!(

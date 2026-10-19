@@ -1,8 +1,10 @@
 //! Shared path and content-integrity checks for runtime-controlled artifacts.
 
 use std::fs::{self, File};
+use std::hash::{Hash, Hasher};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
@@ -13,6 +15,23 @@ pub enum IntegrityError {
     SymlinkOrReparsePoint(PathBuf),
     NotRegularFile(PathBuf),
     Io(io::Error),
+}
+
+#[derive(Debug, Clone)]
+pub struct StableFileIdentity(Arc<same_file::Handle>);
+
+impl PartialEq for StableFileIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for StableFileIdentity {}
+
+impl Hash for StableFileIdentity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
 }
 
 impl std::fmt::Display for IntegrityError {
@@ -42,20 +61,53 @@ pub fn canonical_root(path: &Path) -> Result<PathBuf, IntegrityError> {
 
 pub fn validate_portable_relative_path(value: &str) -> Result<(), IntegrityError> {
     if value.is_empty()
-        || value.len() > 1_024
+        || value.len() > 240
         || value.contains(['\\', ':', '\0'])
         || value.starts_with('/')
         || value.ends_with('/')
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
-        || value
-            .split('/')
-            .any(|component| component.is_empty() || matches!(component, "." | ".."))
+        || value.split('/').any(|component| {
+            component.is_empty()
+                || matches!(component, "." | "..")
+                || component.ends_with(['.', ' '])
+                || is_reserved_windows_component(component)
+        })
     {
         return Err(IntegrityError::InvalidPath(value.to_owned()));
     }
+
     Ok(())
+}
+
+fn is_reserved_windows_component(value: &str) -> bool {
+    let stem = value.split('.').next().unwrap_or(value);
+    matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
 }
 
 pub fn resolve_regular_file(
@@ -104,6 +156,12 @@ pub fn sha256_file(path: &Path) -> Result<[u8; 32], IntegrityError> {
     Ok(digest.finalize().into())
 }
 
+pub fn stable_file_identity(path: &Path) -> Result<StableFileIdentity, IntegrityError> {
+    Ok(StableFileIdentity(Arc::new(same_file::Handle::from_path(
+        path,
+    )?)))
+}
+
 #[must_use]
 pub fn sha256_bytes(value: &[u8]) -> [u8; 32] {
     Sha256::digest(value).into()
@@ -136,7 +194,17 @@ mod tests {
         let root = canonical_root(directory.path()).unwrap();
         let path = resolve_regular_file(&root, "bin/runtime.dll").unwrap();
         assert_eq!(sha256_file(&path).unwrap(), sha256_bytes(b"runtime"));
-        for invalid in ["", "../x", "/x", "C:/x", "bin\\x", "bin/./x"] {
+        for invalid in [
+            "",
+            "../x",
+            "/x",
+            "C:/x",
+            "bin\\x",
+            "bin/./x",
+            "CON",
+            "bin/Lpt1.dll",
+            "bin/candidate.dll.",
+        ] {
             assert!(validate_portable_relative_path(invalid).is_err());
         }
     }

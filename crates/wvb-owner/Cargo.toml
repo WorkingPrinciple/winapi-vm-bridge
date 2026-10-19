@@ -13,7 +13,6 @@ serde_json.workspace = true
 sha2.workspace = true
 wvb-receipt = { path = "../wvb-receipt" }
 wvb-state = { path = "../wvb-state" }
-zeroize.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -7,12 +7,13 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+serde.workspace = true
+serde_jcs.workspace = true
+serde_json.workspace = true
 wvb-authz = { path = "../wvb-authz" }
 wvb-integrity = { path = "../wvb-integrity" }
 
 [dev-dependencies]
-serde.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
 wvb-state = { path = "../wvb-state" }
 
