@@ -67,8 +67,6 @@ def main() -> int:
     parser.add_argument(
         "--client-mode", choices=["positive", "schema-negative"], default="positive"
     )
-    parser.add_argument("--attempt-id")
-    parser.add_argument("--authorization-sha256")
     parser.add_argument("--root")
     parser.add_argument("--utmctl", default=DEFAULT_UTMCTL)
     parser.add_argument("--vm", default=DEFAULT_VM)
@@ -103,14 +101,6 @@ def main() -> int:
             "WVB_TEST_CLIENT_PUBLIC": client_public,
         }
     )
-    if arguments.attempt_id or arguments.authorization_sha256:
-        if not arguments.attempt_id or not arguments.authorization_sha256:
-            raise ValueError("attempt and authorization must be supplied together")
-        if len(arguments.attempt_id) != 32 or len(arguments.authorization_sha256) != 64:
-            raise ValueError("invalid attempt or authorization identity")
-        environment["WVB_ATTEMPT_ID"] = arguments.attempt_id
-        environment["WVB_AUTHORIZATION_SHA256"] = arguments.authorization_sha256
-
     with tempfile.TemporaryDirectory() as temporary:
         temporary_root = Path(temporary)
         config = pull(arguments.utmctl, arguments.vm, guest_config)
@@ -133,12 +123,6 @@ def main() -> int:
                 "--env",
                 f"WVB_TEST_CLIENT_PUBLIC={client_public}",
         ]
-        for name in (
-            "WVB_ATTEMPT_ID",
-            "WVB_AUTHORIZATION_SHA256",
-        ):
-            if name in environment:
-                server_command.extend(["--env", f"{name}={environment[name]}"])
         if arguments.client_mode == "schema-negative":
             server_command.extend(["--env", "WVB_EXPECT_SCHEMA_NEGATIVE=1"])
         server_command.extend(
@@ -268,8 +252,6 @@ def main() -> int:
             "clientPublicKeySha256": hashlib.sha256(
                 bytes.fromhex(client_public)
             ).hexdigest(),
-            "attemptId": arguments.attempt_id,
-            "authorizationSha256": arguments.authorization_sha256,
         }
         arguments.receipt.parent.mkdir(parents=True, exist_ok=True)
         arguments.receipt.write_text(

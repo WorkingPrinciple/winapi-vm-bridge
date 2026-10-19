@@ -72,8 +72,6 @@ for script in \
   setup/run_utm_scalar_e2e.py \
   setup/run_utm_scalar_benchmark.py \
   setup/generate_windows_vm_evidence_manifest.py \
-  setup/run_utm_correlated_acceptance.py \
-  setup/finalize_vm_runtime_receipts.py \
   setup/run_utm_acceptance.py \
   setup/generate_runtime_metadata.py \
   setup/build_runtime_package.py \

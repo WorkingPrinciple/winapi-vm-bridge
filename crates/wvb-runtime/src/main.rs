@@ -7,7 +7,7 @@ use serde_json::json;
 use wvb_operations::{CheckStatus, OverallStatus, ReadinessCheck, ReadinessRegistry};
 use wvb_owner::{AttemptCorrelation, TerminalReceiptInput};
 use wvb_package::{HealthReceipt, PackageManifest};
-use wvb_state::{ActorRecord, OperationStatus, Store};
+use wvb_state::Store;
 use zeroize::Zeroize;
 
 #[derive(Parser)]
@@ -29,20 +29,6 @@ enum Command {
         package_root: PathBuf,
         #[arg(long)]
         receipt: Option<PathBuf>,
-    },
-    BeginAttempt {
-        #[arg(long)]
-        state: PathBuf,
-        #[arg(long)]
-        correlation: PathBuf,
-        #[arg(long)]
-        actor_id: String,
-        #[arg(long)]
-        actor_public_key: String,
-        #[arg(long)]
-        trace_id: String,
-        #[arg(long)]
-        now_unix_ms: u64,
     },
     CompleteReceipt {
         #[arg(long)]
@@ -73,48 +59,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             package_root,
             receipt,
         } => doctor(&state, &package_root, receipt),
-        Command::BeginAttempt {
-            state,
-            correlation,
-            actor_id,
-            actor_public_key,
-            trace_id,
-            now_unix_ms,
-        } => {
-            let mut store = Store::open(&state)?;
-            let correlation: AttemptCorrelation = serde_json::from_slice(&fs::read(correlation)?)?;
-            let actor_id = parse_hex(&actor_id)?;
-            if !store
-                .actors()?
-                .iter()
-                .any(|actor| actor.actor_id == actor_id)
-            {
-                store.commit_pairing(
-                    &ActorRecord {
-                        actor_id,
-                        public_key: parse_hex(&actor_public_key)?,
-                        label: String::from("runtime-owner-acceptance"),
-                        active: true,
-                    },
-                    &[],
-                    b"runtime owner acceptance actor",
-                )?;
-            }
-            let mut operation =
-                correlation.operation_record(actor_id, now_unix_ms, parse_hex(&trace_id)?)?;
-            store.create_operation(&operation, b"runtime owner attempt created")?;
-            operation.status = OperationStatus::Running;
-            operation.stage = operation.stage.saturating_add(1);
-            operation.updated_unix_ms = now_unix_ms;
-            operation.started_unix_ms = Some(now_unix_ms);
-            store.transition_operation(
-                OperationStatus::Queued,
-                &operation,
-                b"runtime owner attempt running",
-            )?;
-            println!("runtime-attempt=running actor={}", hex(&actor_id));
-            Ok(())
-        }
         Command::CompleteReceipt {
             state,
             correlation,
@@ -147,26 +91,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
     }
-}
-
-fn parse_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn std::error::Error>> {
-    if value.len() != N * 2 {
-        return Err("hex value has invalid length".into());
-    }
-    let mut output = [0_u8; N];
-    for (index, byte) in output.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)?;
-    }
-    Ok(output)
-}
-
-fn hex(value: &[u8]) -> String {
-    use std::fmt::Write;
-
-    value.iter().fold(String::new(), |mut output, byte| {
-        write!(output, "{byte:02x}").expect("writing to String cannot fail");
-        output
-    })
 }
 
 fn doctor(

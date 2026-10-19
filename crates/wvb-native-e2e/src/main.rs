@@ -35,19 +35,11 @@ struct OneShot {
     inner: Arc<dyn CallHandler>,
     completed: Arc<Notify>,
     expected_schema_failure: Option<(u32, u32)>,
-    expected_attempt: Option<[u8; 16]>,
 }
 
 #[async_trait]
 impl CallHandler for OneShot {
     async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
-        if self
-            .expected_attempt
-            .is_some_and(|attempt| request.idempotency_key != Some(attempt))
-        {
-            self.completed.notify_one();
-            return Err(BrokerError::Handler("attempt correlation mismatch".into()));
-        }
         let observed_schema = request.request_schema_id;
         let result = self.inner.handle_call(request).await;
         let result = if let Some((expected_schema, response_schema)) = self.expected_schema_failure
@@ -169,16 +161,10 @@ async fn run_server(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
         completed: completed.clone(),
         expected_schema_failure: std::env::var_os("WVB_EXPECT_SCHEMA_NEGATIVE")
             .map(|_| (0x1000_0001, 0x1000_0002)),
-        expected_attempt: environment_optional_id("WVB_ATTEMPT_ID")?,
     });
 
     let listener = TcpListener::bind(config.address).await?;
-    println!(
-        "native-broker-ready={} attempt={} authorization={}",
-        listener.local_addr()?,
-        std::env::var("WVB_ATTEMPT_ID").unwrap_or_else(|_| String::from("none")),
-        std::env::var("WVB_AUTHORIZATION_SHA256").unwrap_or_else(|_| String::from("none"))
-    );
+    println!("native-broker-ready={}", listener.local_addr()?);
     let broker_key = StaticPrivateKey::from_bytes(broker_private);
     let provisional = accept_authorized(&listener, &broker_key, client_public).await?;
     let ack = HelloAck {
@@ -210,7 +196,6 @@ async fn run_client(
     invalid_schema: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let adapter_hash = hash(&config.adapter_hash)?;
-    let attempt_id = environment_optional_id("WVB_ATTEMPT_ID")?;
     let client_private = environment_key("WVB_TEST_CLIENT_PRIVATE")?;
     let broker_public = environment_key("WVB_TEST_BROKER_PUBLIC")?;
     let client = RuntimeClient::connect(ClientConfig {
@@ -257,7 +242,7 @@ async fn run_client(
                     0x1000_0001
                 },
                 deduplication_mode: 0,
-                idempotency_key: attempt_id,
+                idempotency_key: None,
                 disconnect_policy: 0,
                 sensitivity: 0,
                 body,
@@ -305,22 +290,4 @@ fn hash(value: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
 
 fn environment_key(name: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     hash(&std::env::var(name).map_err(|_| format!("missing {name}"))?)
-}
-
-fn environment_optional_id(name: &str) -> Result<Option<[u8; 16]>, Box<dyn std::error::Error>> {
-    std::env::var(name)
-        .ok()
-        .map(|value| hash_id(&value))
-        .transpose()
-}
-
-fn hash_id(value: &str) -> Result<[u8; 16], Box<dyn std::error::Error>> {
-    if value.len() != 32 {
-        return Err("identifier length".into());
-    }
-    let mut output = [0_u8; 16];
-    for (index, byte) in output.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)?;
-    }
-    Ok(output)
 }
