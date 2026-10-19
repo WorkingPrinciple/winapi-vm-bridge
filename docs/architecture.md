@@ -22,10 +22,21 @@ There is no second contract implementation in this repository.
 
 The current boundary identifiers are:
 
+- `whiny.frozen-adapter-handoff.v1`;
+- `whiny.authority-registry.v1`;
 - `whiny.adapter-contract.v3`;
 - `whiny.adapter-bundle.v1`;
 - `whiny.dispatch.v1`;
+- `whiny.correlated-runtime-expectations.v1`;
+- `whiny.correlated-runtime-admission.v1`;
 - `whiny.runtime-receipt.v1`.
+
+The v2.5 consumer is pinned to Whiny revision
+`c48db610ef2e9505b0fbc577a76704a1214bc83f`. It binds the canonical handoff,
+registry entry, contract, bundle, deterministic build receipt, dispatcher,
+provider, candidate, operation/schema IDs, side-effect policy, challenge
+policy, acceptance command, source revision and custody boundary. It does not
+generate, qualify or repair any of them.
 
 An admitted bundle is not trusted because it was generated. Admission requires
 an independently authorized operator and verifies:
@@ -62,6 +73,16 @@ sequenceDiagram
 ```
 
 Bundle metadata cannot create an actor, role or grant.
+
+The public Whiny v1 authority registry and handoff currently describe only
+`development-only` evidence. Their challenge, sequence and correlation values
+are `unsupported`, and correlated admission reports `runtime_support: false`.
+VM Bridge may bind and retain that evidence, but an `Invoke` grant cannot turn
+it into runtime authority. T16, T26 and T32 therefore remain unsupported, and
+the older scalar bundles cannot traverse the v2.5 handoff until Whiny publishes
+reviewed scalar authority, handoff and runtime-expectation artifacts with
+supported pre-execution controls. The old v0.3 bundle path remains historical
+compatibility, not a substitute for this missing authority.
 
 ## Runtime layers
 
@@ -118,6 +139,12 @@ Runtime-changing operations have a durable operation UUID, actor, target hash,
 timestamps, stage, attempt, idempotency hash, retry/cancel/rerun policy, trace
 ID and terminal receipt. Events and receipts are hash chained. A trusted
 rollback anchor remains independent of broker database metadata.
+
+Before execution, a Runtime Owner attempt binds a nonzero workload, attempt and
+receipt ID; exact host, bundle and operation; request and expected-response
+hashes; immutable authorization-receipt and challenge hashes; and a monotonic
+sequence. Terminal completion must match every prebound value. Assigning any of
+them after execution is invalid rather than recoverable evidence.
 
 `whiny.runtime-receipt.v1` defines the cross-product receipt format. VM Bridge
 owns runtime emission, retention, privacy and query behavior; it does not own

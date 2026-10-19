@@ -19,7 +19,6 @@ wvb-operations = { path = "../wvb-operations" }
 wvb-owner = { path = "../wvb-owner" }
 wvb-package = { path = "../wvb-package" }
 wvb-transport = { path = "../wvb-transport" }
-zeroize.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true

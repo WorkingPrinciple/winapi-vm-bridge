@@ -225,6 +225,45 @@ no cross-machine clock subtraction. The fixed frozen scalar request/response
 sizes are 8/4 bytes; larger-payload transfer benchmarks remain separate generic
 runtime evidence and are not fabricated as scalar-profile results.
 
+### 0.4.2 VM Bridge v2.5 frozen-handoff consumer
+
+The v2.5 consumer is pinned to final VM Bridge base
+`09cf8a34cf17c6721512f831456ebd1588fe0082` and Whiny main
+`c48db610ef2e9505b0fbc577a76704a1214bc83f`. VM Bridge consumes the public
+`whiny.frozen-adapter-handoff.v1` and `whiny.authority-registry.v1` documents;
+it does not define a replacement manifest or take over validation, generation
+or qualification.
+
+Consumer admission binds the canonical handoff and registry-entry hashes to the
+exact contract, bundle, deterministic build receipt, dispatcher, provider,
+candidate, operation/schema IDs, side-effect and cleanup policy,
+challenge/sequence/correlation policy, acceptance command, source revision and
+custody identity. The existing `AdapterAdmin` grant remains required for the
+exact contract. Invocation remains a separate exact `Invoke` grant.
+
+The merged Whiny v1 documents are deliberately not runtime authority:
+
+- qualification is fixed to `development-only`;
+- challenge, sequence and correlation are fixed to `unsupported`;
+- correlated admission emits `runtime_support: false`;
+- the public registry covers `shell_hook`, `nt_wait_completion` and `alpc`,
+  not the frozen native/managed scalar profiles.
+
+VM Bridge therefore binds these documents as evidence and rejects runtime use
+even when a caller has an `Invoke` grant. T16/T26/T32 remain unsupported. The
+existing scalar bundles also cannot traverse the v2.5 seam until Whiny
+publishes reviewed scalar registry entries, frozen handoffs and correlated
+runtime expectations with supported pre-execution authority. Reusing the old
+v0.3 bundle approval, historical UTM bytes or post-hoc receipts would bypass
+that boundary and is prohibited.
+
+A future acceptance attempt must pre-create and durably commit the workload,
+attempt and receipt IDs, exact host/bundle/operation, request and expected
+response hashes, authorization-receipt hash, unique challenge and monotonic
+sequence. The terminal authenticated receipt must match all of them, report
+the actual loaded file identities and current Windows build, and retain an
+honest cleanup disposition. No field may be assigned after execution.
+
 ### 0.5 Public redaction boundary
 
 The public ledger may contain:
@@ -2153,9 +2192,12 @@ Mandatory tests:
 
 ## 16.3 Frozen-bundle admission and controlled loading
 
-Admission consumes a runtime-owned operator approval record plus exact immutable
-Whiny contract and bundle-descriptor bytes. It does not parse, infer or extend
-the Whiny schema.
+Legacy bundle admission consumes a runtime-owned operator approval record plus
+exact immutable Whiny contract and bundle-descriptor bytes. The v2.5 path first
+consumes the exact public frozen handoff and authority registry from Whiny
+revision `c48db610ef2e9505b0fbc577a76704a1214bc83f`, then binds that chain to the
+same runtime-owned approval. VM Bridge does not infer missing fields, repair
+invalid documents or extend Whiny qualification.
 
 The approval record pins:
 
@@ -2424,10 +2466,12 @@ local Windows ARM64 host for compatible non-authoritative work and routes x64
 or authoritative requirements to the authoritative Windows x64 host.
 
 Every workload attempt has a workload UUID, attempt UUID, selected host,
-bundle hash, optional operation ID and terminal receipt ID. The canonicalized
-correlation is stored in the durable operation detail and its hash is the
-idempotency key. `whiny.runtime-receipt.v1` remains unchanged; correlation is
-joined by durable receipt ID rather than adding VM-owned fields to Whiny's
+prebound terminal receipt ID, bundle hash, exact nonzero operation ID, request and
+expected-response hashes, authorization-receipt hash, unique challenge and
+monotonic sequence. The canonicalized correlation is stored in the durable
+operation detail before execution and its hash is the idempotency key.
+`whiny.runtime-receipt.v1` remains unchanged; correlation is joined by the
+prebound durable receipt ID rather than adding VM-owned fields to Whiny's
 schema.
 
 VM Bridge does not own AI policy, blocker interpretation, contract inference,
@@ -2697,7 +2741,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R052 | Native/.NET process execution and Job Object lifecycle | VM Bridge | `R011`, `R020`; clean native-EXE migration artifact | argv/env/stdin/stdout/stderr/exit/timeout/cancel/tree-kill/receipt tests | native codec/broker/CrossOver Job Object oracle complete; managed process pending |
 | R060 | Broker service composition and bounded queues | VM Bridge | `R011`, `R030`–`R052` | least privilege, package ACL, worker containment, restart reconciliation | ready |
 | R061 | Readiness, health and redacted diagnostics | VM Bridge | `R060`, receipt store | truthful distinct states, source versions, no unconditional success, privacy tests | readiness/resource controls and runtime doctor complete; service export pending |
-| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS audit chain, anchored-prefix recovery, atomic Runtime Owner terminal receipt signing/persistence/correlation, audited retention redaction and exact `whiny.runtime-receipt.v1\\0 || RFC8785` compatibility complete; historical post-hoc VM receipts invalidated, fresh corrected-path VM receipts pending a stable target |
+| R062 | Runtime receipts, audit anchor, retention and privacy | VM Bridge | `R011`, `whiny.runtime-receipt.v1` | hash chain, independent rollback anchor, query/export/redaction/retention tests | domain-separated JCS audit chain, anchored-prefix recovery, atomic verification/persistence of an already authenticated runtime receipt against prebound correlation, audited retention redaction and exact `whiny.runtime-receipt.v1\\0 || RFC8785` compatibility complete; historical post-hoc VM receipts invalidated, fresh corrected-path VM receipts pending reviewed scalar authority and a stable target |
 | R070 | macOS Keychain identity consumption | VM Bridge | `R020` | `SecItem` store/load/delete, access denial, zeroization, no argv/log secret | partial |
 | R071 | Safe Wine automatic configuration alternative | VM Bridge | `R070`; new evidence beyond failed by-name route | supported API/process boundary, exact bottle identity, no plaintext registry secret | official source confirms loader-initialized unixlib handle direction; implementation held because Wine build tooling/bundle is unavailable |
 | R080 | Windows service/MSI/firewall and macOS package setup | VM Bridge | `R060`, `R070`, admitted bundle catalog | clean install/pair/doctor/core call with receipted rollback | deterministic Windows archive verification, stage, runtime state initialization, doctor and health-gated activation passed in the exact VM; production signing remains external |
@@ -2708,7 +2752,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID/disk/account verified; local desktop and guest agent established; one controlled reboot and six-minute idle persistence check passed; AC idle sleep disabled without changing display-off/security; snapshot inventory retained, backing chain explicitly TCC-unverified |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | historical exact-VM scalar and lifecycle evidence recorded; current-build corrected correlated rerun blocked by unstable UTM guest-agent/deployment and LXD guest without agent or network management path |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
-| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic correlation/atomic-terminal tests complete; fresh current-build real-VM correlated receipt pending v2.5 handoff and a stable target |
+| R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | v2.5 source path prebinds workload/attempt/receipt, request/expected response, authorization, challenge and sequence before execution; exact Whiny c48 handoff/registry binding and tamper tests pass; fresh current-build real-VM correlated receipt remains pending reviewed scalar authority and a stable target |
 | R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | deterministic/security gates and hosted CI pass; latest source-bound review requires only reconciliation of historical/unqualified completion claims before final PASS |
 
 Rejected or conditional scope:

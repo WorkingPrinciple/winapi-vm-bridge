@@ -15,6 +15,12 @@ pub enum IntegrityError {
     Io(io::Error),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StableFileIdentity {
+    volume: u64,
+    file: u64,
+}
+
 impl std::fmt::Display for IntegrityError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{self:?}")
@@ -42,20 +48,53 @@ pub fn canonical_root(path: &Path) -> Result<PathBuf, IntegrityError> {
 
 pub fn validate_portable_relative_path(value: &str) -> Result<(), IntegrityError> {
     if value.is_empty()
-        || value.len() > 1_024
+        || value.len() > 240
         || value.contains(['\\', ':', '\0'])
         || value.starts_with('/')
         || value.ends_with('/')
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
-        || value
-            .split('/')
-            .any(|component| component.is_empty() || matches!(component, "." | ".."))
+        || value.split('/').any(|component| {
+            component.is_empty()
+                || matches!(component, "." | "..")
+                || component.ends_with(['.', ' '])
+                || is_reserved_windows_component(component)
+        })
     {
         return Err(IntegrityError::InvalidPath(value.to_owned()));
     }
+
     Ok(())
+}
+
+fn is_reserved_windows_component(value: &str) -> bool {
+    let stem = value.split('.').next().unwrap_or(value);
+    matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
 }
 
 pub fn resolve_regular_file(
@@ -104,6 +143,10 @@ pub fn sha256_file(path: &Path) -> Result<[u8; 32], IntegrityError> {
     Ok(digest.finalize().into())
 }
 
+pub fn stable_file_identity(path: &Path) -> Result<StableFileIdentity, IntegrityError> {
+    Ok(stable_identity(&fs::metadata(path)?))
+}
+
 #[must_use]
 pub fn sha256_bytes(value: &[u8]) -> [u8; 32] {
     Sha256::digest(value).into()
@@ -118,9 +161,29 @@ fn is_symlink_or_reparse(metadata: &fs::Metadata) -> bool {
         || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
+#[cfg(windows)]
+fn stable_identity(metadata: &fs::Metadata) -> StableFileIdentity {
+    use std::os::windows::fs::MetadataExt;
+
+    StableFileIdentity {
+        volume: metadata.volume_serial_number().unwrap_or(0).into(),
+        file: metadata.file_index().unwrap_or(0),
+    }
+}
+
 #[cfg(not(windows))]
 fn is_symlink_or_reparse(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
+}
+
+#[cfg(unix)]
+fn stable_identity(metadata: &fs::Metadata) -> StableFileIdentity {
+    use std::os::unix::fs::MetadataExt;
+
+    StableFileIdentity {
+        volume: metadata.dev(),
+        file: metadata.ino(),
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +199,17 @@ mod tests {
         let root = canonical_root(directory.path()).unwrap();
         let path = resolve_regular_file(&root, "bin/runtime.dll").unwrap();
         assert_eq!(sha256_file(&path).unwrap(), sha256_bytes(b"runtime"));
-        for invalid in ["", "../x", "/x", "C:/x", "bin\\x", "bin/./x"] {
+        for invalid in [
+            "",
+            "../x",
+            "/x",
+            "C:/x",
+            "bin\\x",
+            "bin/./x",
+            "CON",
+            "bin/Lpt1.dll",
+            "bin/candidate.dll.",
+        ] {
             assert!(validate_portable_relative_path(invalid).is_err());
         }
     }

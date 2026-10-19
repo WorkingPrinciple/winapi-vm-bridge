@@ -1,5 +1,8 @@
 //! Admission of immutable, operator-approved Whiny bundles into the runtime.
 
+mod correlated;
+mod handoff;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -7,7 +10,17 @@ use std::path::{Path, PathBuf};
 use wvb_authz::{ActorId, AuthorizationError, Registry, Role};
 use wvb_integrity::{
     IntegrityError, canonical_root, resolve_regular_file, sha256_bytes, sha256_file,
-    validate_portable_relative_path,
+    stable_file_identity, validate_portable_relative_path,
+};
+
+pub use correlated::{
+    BoundCorrelatedEvidence, Cleanup as CorrelatedCleanup, CorrelatedEvidenceApproval,
+    CorrelatedEvidenceError, CorrelatedEvidenceInputs, FileDigest as CorrelatedFileDigest,
+};
+pub use handoff::{
+    BoundFrozenHandoff, ChallengeSequence, Custody, FileIdentity, FrozenHandoffApproval,
+    FrozenHandoffInputs, HandoffAdmissionError, ReceiptPolicy, SideEffects,
+    WHINY_FROZEN_HANDOFF_IDENTIFIER, WHINY_VALIDATOR_REVISION,
 };
 
 const MAX_DESCRIPTOR_BYTES: usize = 16 * 1024 * 1024;
@@ -77,6 +90,7 @@ pub struct AdmittedFile {
     pub relative_path: String,
     pub canonical_path: PathBuf,
     pub sha256: [u8; 32],
+    stable_identity: wvb_integrity::StableFileIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,7 +118,7 @@ impl AdmittedBundle {
         &self.files
     }
 
-    pub fn authorize_operation(
+    pub(crate) fn authorize_operation(
         &self,
         registry: &Registry,
         actor_id: ActorId,
@@ -135,6 +149,12 @@ impl AdmittedBundle {
             }
             if sha256_file(&resolved)? != file.sha256 {
                 return Err(AdmissionError::HashMismatch(resolved));
+            }
+            if stable_file_identity(&resolved)? != file.stable_identity {
+                return Err(AdmissionError::PathIdentityChanged {
+                    expected: file.canonical_path.clone(),
+                    observed: resolved,
+                });
             }
         }
         Ok(())
@@ -265,6 +285,7 @@ impl AdmissionEngine {
         let mut dispatcher_count = 0;
         let mut target_count = 0;
         let mut normalized_paths = BTreeSet::new();
+        let mut stable_identities = BTreeSet::new();
         let mut admitted_files = Vec::with_capacity(approval.files.len());
         for file in &approval.files {
             match file.kind {
@@ -278,6 +299,10 @@ impl AdmissionEngine {
                 return Err(AdmissionError::DuplicatePath(file.relative_path.clone()));
             }
             let path = self.resolve_file(&file.relative_path)?;
+            let stable_identity = stable_file_identity(&path)?;
+            if !stable_identities.insert(stable_identity) {
+                return Err(AdmissionError::InvalidFileSet);
+            }
             if sha256_file(&path)? != file.sha256 {
                 return Err(AdmissionError::HashMismatch(path));
             }
@@ -286,6 +311,7 @@ impl AdmissionEngine {
                 relative_path: file.relative_path.clone(),
                 canonical_path: path,
                 sha256: file.sha256,
+                stable_identity,
             });
         }
         if dispatcher_count != 1 || target_count != 1 {
@@ -968,6 +994,33 @@ mod tests {
                 },
             ),
             Err(AdmissionError::SymlinkOrReparsePoint(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn admission_rejects_hard_linked_bundle_identities() {
+        let (directory, mut approval, contract, descriptor, registry) = fixture();
+        fs::remove_file(directory.path().join("bin/target.dll")).unwrap();
+        fs::hard_link(
+            directory.path().join("bin/dispatcher.dll"),
+            directory.path().join("bin/target.dll"),
+        )
+        .unwrap();
+        approval.files[1].sha256 = approval.files[0].sha256;
+        let engine = AdmissionEngine::new(directory.path()).unwrap();
+        assert!(matches!(
+            engine.admit(
+                &registry,
+                OPERATOR,
+                1,
+                &approval,
+                FrozenInputs {
+                    contract: &contract,
+                    bundle_descriptor: &descriptor,
+                },
+            ),
+            Err(AdmissionError::InvalidFileSet)
         ));
     }
 

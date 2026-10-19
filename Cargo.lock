@@ -1058,6 +1058,7 @@ name = "wvb-admission"
 version = "0.2.0"
 dependencies = [
  "serde",
+ "serde_jcs",
  "serde_json",
  "tempfile",
  "wvb-authz",
@@ -1230,7 +1231,6 @@ dependencies = [
  "tempfile",
  "wvb-receipt",
  "wvb-state",
- "zeroize",
 ]
 
 [[package]]
@@ -1285,7 +1285,6 @@ dependencies = [
  "wvb-session",
  "wvb-state",
  "wvb-transport",
- "zeroize",
 ]
 
 [[package]]
