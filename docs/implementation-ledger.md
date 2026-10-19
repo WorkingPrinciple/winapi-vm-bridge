@@ -145,6 +145,25 @@ acceptance commands, or an independent review records an unsupported decision.
 VM Bridge shall not invent `loaded_files`, runtime receipts or provider
 identity for these missing source-plane profiles.
 
+Whiny authoritative checkpoint
+`afa7604` records reviewed development-plane native C++, COM, WinRT, bounded
+managed DLL and .NET EXE profiles, but they are not frozen runtime-acceptance
+packages. Its
+`spec/test-vectors/windows-adapter-package-v1/unsupported-decisions.json`
+marks `shell_hook`, `nt_wait_completion` and `alpc` as
+`unsupported-until-frozen-identities`. The exact release conditions are:
+
+| Scenario | Required frozen inputs before VM execution |
+|---|---|
+| T16 shell hook | provider/candidate paths and SHA-256; native calibration references; admitted interactive-desktop helper |
+| T26 NT wait completion | provider/candidate paths and SHA-256; exact admitted declarations/statuses; admitted generated helper |
+| T32 ALPC | provider/candidate paths and SHA-256; exact admitted declarations/statuses/flags/attributes; admitted generated helper |
+
+No Xbox sign-in or game launch is required. Until Whiny supplies a reviewed
+bundle with these identities plus its exact acceptance command, all three
+scenarios remain `UNVERIFIED`; VM Bridge must not execute them or emit a
+runtime receipt.
+
 ### 0.5 Public redaction boundary
 
 The public ledger may contain:
