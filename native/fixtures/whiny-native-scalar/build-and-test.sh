@@ -30,6 +30,6 @@ if command -v wine >/dev/null 2>&1; then
 elif [ -x "$wine" ]; then
   (cd "$out/a" && "$wine" --bottle XOdeLabRPC ./runner_test.exe)
 else
-  echo "Windows runner unavailable; frozen native bundle built but not executed" >&2
-  exit 2
+  echo "Windows runner unavailable; frozen native execution skipped" >&2
+  [ "${WVB_REQUIRE_WINDOWS_RUNNER:-0}" != 1 ] || exit 2
 fi

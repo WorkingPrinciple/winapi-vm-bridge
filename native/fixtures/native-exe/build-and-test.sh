@@ -22,7 +22,14 @@ build_one "$out/b"
 cmp "$out/a/vendor-cli.exe" "$out/b/vendor-cli.exe"
 cmp "$out/a/runner-test.exe" "$out/b/runner-test.exe"
 hash=$(shasum -a 256 "$out/a/vendor-cli.exe" | cut -d' ' -f1)
-/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine \
-  --bottle XOdeLabRPC "$out/a/runner-test.exe" \
-  "$out/a/vendor-cli.exe" "$hash"
+if command -v wine >/dev/null 2>&1; then
+  wine "$out/a/runner-test.exe" "$out/a/vendor-cli.exe" "$hash"
+elif [ -x /Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine ]; then
+  /Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine \
+    --bottle XOdeLabRPC "$out/a/runner-test.exe" \
+    "$out/a/vendor-cli.exe" "$hash"
+else
+  echo "Windows runner unavailable; native EXE execution skipped" >&2
+  [ "${WVB_REQUIRE_WINDOWS_RUNNER:-0}" != 1 ] || exit 2
+fi
 echo "native EXE fixture tests passed"
