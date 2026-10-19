@@ -1,0 +1,165 @@
+{
+  "schema": "architrave.run.v2",
+  "revision": 1,
+  "runId": "wvb-canonical-v2",
+  "createdAt": "2026-10-18T14:44:16Z",
+  "updatedAt": "2026-10-18T14:44:31Z",
+  "goal": "Implement the complete canonical WinAPI VM Bridge across native, COM/WinRT, managed, and EXE target families",
+  "status": "CREATED",
+  "autonomy": {
+    "scope": "approved-program"
+  },
+  "policy": {
+    "default": "deny",
+    "allow": [
+      {
+        "scope": "repository",
+        "operations": [
+          "edit",
+          "build",
+          "test"
+        ]
+      }
+    ],
+    "confirmationRequired": [
+      "destructive-migration,signing-secret,credential-material,architecture-invalidating-finding"
+    ]
+  },
+  "outcome": {
+    "description": "A deterministic generated proxy and Windows dispatcher system with one secure protocol, complete marshalling/lifecycle semantics, two-command setup, clean-machine qualification, and atomic final integration",
+    "requiredCriteria": [
+      {
+        "id": "AC1",
+        "description": "One canonical protocol and implementation only",
+        "verification": "semantic",
+        "required": true
+      },
+      {
+        "id": "AC2",
+        "description": "All six target families have honest support gates",
+        "verification": "semantic",
+        "required": true
+      },
+      {
+        "id": "AC3",
+        "description": "Generated unsigned artifacts are deterministic",
+        "verification": "deterministic",
+        "required": true
+      },
+      {
+        "id": "AC4",
+        "description": "Real Wine application consumes real Windows DLL results",
+        "verification": "e2e",
+        "required": true
+      },
+      {
+        "id": "AC5",
+        "description": "Security performance compatibility and clean-machine gates pass",
+        "verification": "semantic",
+        "required": true
+      }
+    ]
+  },
+  "acceptanceCriteria": [
+    {
+      "id": "AC1",
+      "description": "One canonical protocol and implementation only",
+      "scope": "program",
+      "risk": "R4",
+      "verificationType": "semantic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC2",
+      "description": "All six target families have honest support gates",
+      "scope": "program",
+      "risk": "R4",
+      "verificationType": "semantic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC3",
+      "description": "Generated unsigned artifacts are deterministic",
+      "scope": "build",
+      "risk": "R3",
+      "verificationType": "deterministic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC4",
+      "description": "Real Wine application consumes real Windows DLL results",
+      "scope": "runtime",
+      "risk": "R4",
+      "verificationType": "e2e",
+      "surface": "runtime",
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    },
+    {
+      "id": "AC5",
+      "description": "Security performance compatibility and clean-machine gates pass",
+      "scope": "release",
+      "risk": "R4",
+      "verificationType": "semantic",
+      "surface": null,
+      "status": "UNTESTED",
+      "evidenceRefs": [],
+      "blocking": true
+    }
+  ],
+  "baseline": {
+    "repository": "/Users/dragoshont/.copilot/chats/2026-10-17/jubilant-goggles-c36465cb/vm-bridge-seed",
+    "commit": "f583f70fdc283de78abcc16e019d0b84ffd481fe",
+    "branch": "canonical-runtime",
+    "deployment": null
+  },
+  "tasks": [],
+  "checkpoints": [
+    {
+      "id": "cp-ec8edacef4f0466db957d1ee86ca4201",
+      "taskId": null,
+      "kind": "GATE_COMPLETION",
+      "createdAt": "2026-10-18T14:44:31Z",
+      "revision": 0,
+      "stateHash": "f25325a0802048b96df4f14da391f9c16c5e7ded7361491069316ff67c9aaf58"
+    }
+  ],
+  "externalCheckpoints": [],
+  "artifacts": [],
+  "workers": [],
+  "gateResults": [
+    {
+      "id": "canonical-ledger-review-1",
+      "taskId": null,
+      "criteria": [
+        "AC1",
+        "AC2",
+        "AC5"
+      ],
+      "type": "semantic",
+      "family": "gpt",
+      "status": "FAIL",
+      "startedAt": "2026-10-18T14:44:31Z",
+      "finishedAt": "2026-10-18T14:44:31Z",
+      "evidenceRefs": [
+        "docs/reviews/canonical-ledger-review-1.md"
+      ]
+    }
+  ],
+  "eventLog": ".architrave/runs/wvb-canonical-v2/events.jsonl",
+  "eventCursor": {
+    "sequence": 2,
+    "lastHash": "1df2833ac7c58ddc4eb2c711c0baf82437703a55c7ac62989a3dbaa107ec0ba1"
+  },
+  "pendingEvent": null
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "whiny.vm-bridge-scalar-runtime-evidence.v1",
+  "source_revision": "870da868f3d3d48f1da1a36123a9aaf1a6435e53",
+  "validator_package_sha256": "e95244e9056997a1887052744c1e235403f8e560cc2fa80d23ad14a4094c7a6f",
+  "validator_manifest_sha256": "11dd56f11e9f46b5099fd8b842a3b4455298698d570706fb267f329598da2731",
+  "trust_policy_sha256": "fedfc843772405c0dd799ba83e6a108f56e2c98ea06a1935efd61f114fa292e9",
+  "corrected_receipts": {
+    "native-scalar-receipt-jcs.json": "eb02139899a73b93f11bd273ee9a27c9d599b7e0723c0a2695eb91d39ce422cd",
+    "managed-scalar-receipt-jcs.json": "bcbb3a8086fca5aa705e9577bdc93e875ea51e76aca514314d54867814e458b6"
+  },
+  "historical_invalid_receipts": {
+    "native-scalar-receipt.json": {
+      "sha256": "f1a6b46da911033d5aef97570ead963fc9b6819d7c4051782db6a666ca8abad8",
+      "reason": "legacy non-JCS signed payload; rejected by current ingestor"
+    },
+    "managed-scalar-receipt.json": {
+      "sha256": "f2f3c804a25af272ad62bffaead6746f91730e21b33611147ec9cb09734f4380",
+      "reason": "legacy non-JCS signed payload; rejected by current ingestor"
+    }
+  },
+  "assurance": "acceptance-only runtime identities; not production runtime keys"
+}

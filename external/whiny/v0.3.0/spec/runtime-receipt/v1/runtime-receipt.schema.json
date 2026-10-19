@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "whiny.runtime-receipt.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "receipt_id", "bundle_sha256", "contract_sha256",
+    "dispatcher_abi", "operation_id", "request_sha256", "response_sha256",
+    "status", "runtime_identity", "loaded_files",
+    "authorization_receipt_sha256", "challenge_sha256", "sequence",
+    "started_at", "completed_at", "cleanup", "authentication"
+  ],
+  "properties": {
+    "schema": { "const": "whiny.runtime-receipt.v1" },
+    "receipt_id": { "type": "string", "minLength": 1 },
+    "bundle_sha256": { "$ref": "#/$defs/sha256" },
+    "contract_sha256": { "$ref": "#/$defs/sha256" },
+    "dispatcher_abi": { "const": "whiny.dispatch.v1" },
+    "operation_id": { "type": "integer", "minimum": 1 },
+    "request_sha256": { "$ref": "#/$defs/sha256" },
+    "response_sha256": { "$ref": "#/$defs/sha256" },
+    "status": { "enum": ["ok", "invalid-request", "operation-unknown", "target-failure", "timeout", "cancelled", "internal"] },
+    "runtime_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host_id", "os_build", "architecture", "bridge_version"],
+      "properties": {
+        "host_id": { "type": "string", "minLength": 1 },
+        "os_build": { "type": "string", "minLength": 1 },
+        "architecture": { "type": "string", "minLength": 1 },
+        "bridge_version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "loaded_files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "authorization_receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "challenge_sha256": { "$ref": "#/$defs/sha256" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "started_at": { "$ref": "#/$defs/timestamp" },
+    "completed_at": { "$ref": "#/$defs/timestamp" },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "diagnostics"],
+      "properties": {
+        "status": { "enum": ["verified", "failed", "not-required", "unknown"] },
+        "diagnostics": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scheme", "key_id", "signed_payload_sha256", "signature"],
+      "properties": {
+        "scheme": { "const": "ed25519" },
+        "key_id": { "$ref": "#/$defs/sha256" },
+        "signed_payload_sha256": { "$ref": "#/$defs/sha256" },
+        "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$" }
+  }
+}

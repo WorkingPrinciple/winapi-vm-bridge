@@ -1,0 +1,16 @@
+[package]
+name = "wvb-authz"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+wvb-state = { path = "../wvb-state" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

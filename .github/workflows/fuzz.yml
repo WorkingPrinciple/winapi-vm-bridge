@@ -1,0 +1,14 @@
+name: Fuzz
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime-inputs:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install nightly-2026-10-10 --profile minimal
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - run: cargo +nightly-2026-10-10 fuzz run runtime_inputs -- -max_total_time=60 -rss_limit_mb=2048 -timeout=5

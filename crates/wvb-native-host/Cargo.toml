@@ -1,0 +1,14 @@
+[package]
+name = "wvb-native-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+wvb-broker = { path = "../wvb-broker" }
+wvb-integrity = { path = "../wvb-integrity" }
+
+[lints]
+workspace = true

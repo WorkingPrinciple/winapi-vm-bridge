@@ -1,0 +1,102 @@
+{
+  "platform": "windows",
+  "stack": "rust",
+  "designSource": {
+    "type": "design-doc",
+    "path": "docs/implementation-ledger.md"
+  },
+  "applyTo": [
+    "crates/**",
+    "native/**",
+    "managed/**",
+    "schemas/**",
+    "generator/**",
+    "tools/**",
+    "setup/**",
+    "docs/**"
+  ],
+  "build": "./tests/test-portable.sh",
+  "test": "./tests/test-portable.sh",
+  "backend": {
+    "stack": "mixed-rust-c-cpp-dotnet",
+    "solution": ".",
+    "architectureDocs": [
+      "docs/implementation-ledger.md"
+    ],
+    "contracts": "docs/implementation-ledger.md",
+    "applyTo": [
+      "crates/**",
+      "native/**",
+      "managed/**",
+      "schemas/**",
+      "generator/**"
+    ],
+    "build": "./tests/test-portable.sh",
+    "test": "./tests/test-portable.sh"
+  },
+  "autonomy": {
+    "scope": "approved-program",
+    "mutationPolicy": {
+      "default": "deny",
+      "allow": [
+        {
+          "scope": "repository",
+          "operations": [
+            "edit",
+            "build",
+            "test"
+          ]
+        }
+      ],
+      "confirmationRequired": [
+        "destructive-migration",
+        "signing-secret",
+        "credential-material",
+        "architecture-invalidating-finding"
+      ]
+    }
+  },
+  "invariants": {
+    "requiredFiles": [
+      "docs/implementation-ledger.md",
+      "SECURITY.md",
+      "LICENSE"
+    ],
+    "forbiddenPatterns": [
+      {
+        "pattern": "replace-at-install",
+        "paths": [
+          "schemas/**",
+          "examples/**"
+        ]
+      }
+    ]
+  },
+  "evaluation": {
+    "defaultRisk": "R4",
+    "realityGate": true,
+    "controlAudit": true,
+    "riskPolicy": {
+      "R0": [
+        "deterministic"
+      ],
+      "R2": [
+        "deterministic",
+        "semantic-gpt"
+      ],
+      "R3": [
+        "deterministic",
+        "e2e",
+        "semantic-gpt",
+        "reality"
+      ],
+      "R4": [
+        "deterministic",
+        "e2e",
+        "semantic-gpt",
+        "reality",
+        "security"
+      ]
+    }
+  }
+}

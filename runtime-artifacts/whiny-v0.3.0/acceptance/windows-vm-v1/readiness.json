@@ -1,0 +1,116 @@
+{
+  "schema": "wvb.windows-readiness.v1",
+  "verdict": "PASS_BOUNDED_RUNTIME",
+  "authorization": {
+    "ownership": "OWNERSHIP RELEASED; READINESS UNVERIFIED",
+    "preflight": "RESUME BOUNDED PREFLIGHT",
+    "rebootLimit": 1,
+    "rebootsUsed": 1,
+    "consoleInputUsed": false
+  },
+  "host": {
+    "utmVersion": "5.0.8",
+    "utmCtlSha256": "bb924a1f97192679f63f1ef1a5f8559dec2d7189277f2d8cd50ba1bdab977817",
+    "qemuX8664Sha256": "e3974987dee2e2929a31abf20427a7b37a17ce77ee18999214828d2e0befa5cd",
+    "utmSignature": "Notarized Developer ID: Turing Software, LLC (WDNLXAD4W8)",
+    "sleepAssertion": "caffeinate -is -w 31434",
+    "hostPowerMutation": false
+  },
+  "vm": {
+    "name": "Whiny-Windows11-x64",
+    "qemuName": "WhinyWindows11x64",
+    "uuid": "F659FCF2-AC83-4072-86A6-F7538781A1FC",
+    "diskUuid": "065112D9-3B2D-4E40-AF74-C6B29CA4D133",
+    "diskPath": "/Users/dragoshont/Library/Containers/com.utmapp.UTM/Data/Documents/Whiny-Windows11-x64.utm/Data/065112D9-3B2D-4E40-AF74-C6B29CA4D133.qcow2",
+    "diskInode": 22612246,
+    "diskBytes": 30648565760,
+    "directWritable": true,
+    "qemuSnapshotFlag": false,
+    "snapshotInventory": [
+      "wvb-pre-audit-mode-20261018",
+      "wvb-pre-acceptance-20261018"
+    ],
+    "backingChain": "UNVERIFIED_MACOS_TCC",
+    "cpu": "TCG x86_64, 4 vCPU",
+    "memoryMiB": 16384,
+    "network": "e1000, vmnet-shared",
+    "mac": "F2:7A:17:16:2B:F7"
+  },
+  "guest": {
+    "computerName": "WHINY",
+    "osBuild": "10.0.26300.9457",
+    "displayVersion": "26H2",
+    "profile": "C:\\Users\\drago",
+    "account": "whiny\\drago",
+    "bootUtc": "2026-10-19T17:17:38.3257590Z",
+    "agentRecoveredUtc": "2026-10-19T17:18:43Z",
+    "ipv4": "192.168.64.4",
+    "gateway": "192.168.64.1",
+    "dnsGithub": true,
+    "httpsGithub443": true,
+    "firewallProfilesEnabled": [
+      "Domain",
+      "Private",
+      "Public"
+    ],
+    "matchingRuntimeFirewallRules": [],
+    "pendingReboot": false
+  },
+  "guestTools": {
+    "mountedInstaller": {
+      "path": "D:\\utm-guest-tools.exe",
+      "bytes": 80396115,
+      "sha256": "d3691378dffcde986c2e09e391f449477a096818113b3e5e46c40f4a6c89f23c",
+      "authenticode": "NotSigned"
+    },
+    "installedPackages": {
+      "UTM Guest Tools": "0.1.274",
+      "QEMU guest agent": "109.1.0",
+      "Spice webdavd": "2.4.0"
+    },
+    "services": {
+      "BalloonService": "Running/Auto",
+      "QEMU-GA": "Running/Auto",
+      "vdservice": "Running/Auto",
+      "spice-webdavd": "Stopped/Auto"
+    },
+    "installedBinarySha256": {
+      "C:\\Program Files\\Qemu-ga\\qemu-ga.exe": "d041535a05e8f4c71be2004a20c4ffcac4a2c2c58d6c9619ba48598c0cb564bb",
+      "C:\\Program Files (x86)\\UTM Guest Tools\\64\\vdservice.exe": "638a1f24f66f165b301befbec7aa233ac7985c041e4d4f154aa182e4cb8315bd",
+      "C:\\Program Files (x86)\\UTM Guest Tools\\drivers\\Balloon\\w11\\amd64\\blnsvr.exe": "7034d66c997f7bc94d46eb317aa68558706337fdc488b6c7504dcbad13060a50",
+      "C:\\Program Files\\SPICE webdavd\\bin\\spice-webdavd.exe": "8b3ef3c700e6ae93efde4f75519db20583574b739d3b1003d45c0dbe89e0b844"
+    },
+    "driverSigners": {
+      "QEMU FWCfg Device": "Microsoft Windows Hardware Compatibility Publisher",
+      "VirtIO RNG Device": "Microsoft Windows Hardware Compatibility Publisher",
+      "VirtIO Serial Driver": "Microsoft Windows Hardware Compatibility Publisher"
+    },
+    "installerProcessesAfterReboot": [],
+    "commandPromptsAfterReboot": []
+  },
+  "power": {
+    "activeScheme": "Balanced",
+    "acSleepSecondsBefore": 900,
+    "acSleepSecondsAfter": 0,
+    "dcSleepSeconds": 600,
+    "acDisplayOffSeconds": 300,
+    "dcDisplayOffSeconds": 180,
+    "hibernateTimeoutSeconds": 0,
+    "hibernateDisabled": false,
+    "fastStartupChanged": false
+  },
+  "idleVerification": {
+    "startUtc": "2026-10-19T17:25:12Z",
+    "endUtc": "2026-10-19T17:31:12Z",
+    "seconds": 360,
+    "vmStatus": "started",
+    "agentExec": "IDLE_RECONNECT_OK",
+    "qemuGa": "RUNNING",
+    "ipv4": "192.168.64.4"
+  },
+  "prohibited": [
+    "T16 shell_hook",
+    "T26 nt_wait_completion",
+    "T32 alpc"
+  ]
+}

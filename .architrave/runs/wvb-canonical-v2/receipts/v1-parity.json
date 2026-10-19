@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "receiptType": "protected-v1-parity-baseline",
+  "observedAt": "2026-10-18T12:43:00Z",
+  "source": {
+    "repository": "dragoshont/winapi-vm-bridge",
+    "publicCommit": "21d1d484b964965afe44397c6e99d170237cd17e"
+  },
+  "topology": {
+    "host": "macOS on Apple Silicon",
+    "guest": "Windows 11 ARM64 under UTM",
+    "transport": "persistent loopback-forwarded TCP",
+    "clockSynchronizationAssumed": false
+  },
+  "operations": [
+    {
+      "name": "real-application user-add request/result",
+      "callerConsumedNativeSuccess": true,
+      "warmEndToEndMilliseconds": 13,
+      "brokerProcessingMilliseconds": 1.5,
+      "sensitiveValuesRetained": false
+    },
+    {
+      "name": "real remote identity result",
+      "callerConsumedNativeSuccess": true,
+      "sensitiveValuesRetained": false
+    },
+    {
+      "name": "real remote profile result",
+      "callerConsumedNativeSuccess": true,
+      "sensitiveValuesRetained": false
+    }
+  ],
+  "publicPortableProof": {
+    "operation": "kernel32.dll!GetTickCount64",
+    "windowsCiRun": "https://github.com/dragoshont/winapi-vm-bridge/actions/runs/39133825854",
+    "nativeResultConsumed": true
+  },
+  "limitations": [
+    "This is the protected v1/reference baseline, not protocol v2 acceptance.",
+    "Fresh Windows authentication versus cached user reuse was not established.",
+    "No cross-machine latency was computed from unsynchronized clocks.",
+    "No gameplay, arbitrary DLL, anti-cheat, graphics or kernel-driver claim follows."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "runId": "wvb-canonical-v2",
+  "decision": "GO_CONDITIONAL_ON_INDEPENDENT_PASS",
+  "approvedAt": "2026-10-18T14:47:42.560855+00:00",
+  "authority": "repository-owner",
+  "scope": "Complete canonical implementation described by the corrected public ledger, autonomous in dependency order after independent PASS",
+  "constraints": [
+    "No partial feature merge to main",
+    "No mock/scaffold/TODO counted as support",
+    "Stop for destructive migration, signing secrets, credential material, or architecture-invalidating findings",
+    "Final integration only after all deterministic, runtime, security, performance, compatibility and review gates pass"
+  ],
+  "evidence": [
+    "User explicitly requested full ledger followed by implementation",
+    "User explicitly approved complete implementation",
+    "User explicitly required 100% canonical implementation with nothing intermediary"
+  ]
+}

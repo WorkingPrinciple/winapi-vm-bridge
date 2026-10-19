@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/wvb-admission",
+  "crates/wvb-authz",
+  "crates/wvb-broker",
+  "crates/wvb-call",
+  "crates/wvb-callback",
+  "crates/wvb-client",
+  "crates/wvb-client-ffi",
+  "crates/wvb-crypto",
+  "crates/wvb-control",
+  "crates/wvb-exe",
+  "crates/wvb-integrity",
+  "crates/wvb-lifecycle",
+  "crates/wvb-managed-host",
+  "crates/wvb-managed-e2e",
+  "crates/wvb-marshal",
+  "crates/wvb-native-e2e",
+  "crates/wvb-native-host",
+  "crates/wvb-operations",
+  "crates/wvb-owner",
+  "crates/wvb-package",
+  "crates/wvb-protocol",
+  "crates/wvb-registry",
+  "crates/wvb-receipt",
+  "crates/wvb-runtime",
+  "crates/wvb-session",
+  "crates/wvb-state",
+  "crates/wvb-transport",
+  "crates/wvb-transfer",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/dragoshont/winapi-vm-bridge"
+rust-version = "1.98"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+
+[workspace.dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+serde_jcs = "0.2.0"
+sha2 = "0.10.9"
+snow = { version = "0.10.0", default-features = true }
+zeroize = { version = "1.8.2", features = ["derive"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+ring = "0.17.14"
+tempfile = "3.23.0"
+tokio = { version = "1.48.0", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
+async-trait = "0.1.89"
+clap = { version = "4.5.50", features = ["derive"] }
+goblin = "0.10.7"

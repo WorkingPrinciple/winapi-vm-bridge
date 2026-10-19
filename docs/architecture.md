@@ -1,88 +1,168 @@
-# Architecture
+# Runtime architecture
 
-## Responsibility split
+## Product boundary
 
 ```mermaid
 flowchart LR
-  G[App/game under Wine on macOS] --> S[Generated API-compatible shim DLL]
-  S -->|paired, versioned RPC| M[Mac loopback/forwarder]
-  M --> W[Windows VM broker]
-  W --> A[Native Windows-only library/API]
-  A --> W --> M --> S --> G
-  G --> GPU[Mac graphics stack / Apple GPU]
+  W[Whiny source plane] -->|frozen contract, bundle, dispatcher, evidence| A[VM Bridge admission]
+  A --> C[Controlled runtime catalog]
+  G[Application under Wine] --> P[Admitted proxy]
+  P --> R[VM Bridge client runtime]
+  R -->|Noise + protocol v2| B[Windows broker service]
+  B --> D[Admitted dispatcher host]
+  D --> T[Exact target and dependencies]
+  T --> D --> B --> R --> P --> G
 ```
 
-The bridge is an API coprocessor. It does not move rendering or the complete
-application into Windows.
+Whiny owns inspection, semantic evidence, canonical contract/IR, dependency
+placement, freezing and every generated artifact. VM Bridge owns execution.
+There is no second contract implementation in this repository.
 
-“Paired” is transport access control: setup creates a random capability known
-to the Mac client and Windows broker. It is not application-user or online
-account authentication.
+## Frozen artifact admission
 
-Pairing belongs to the Mac ↔ VM transport, not an individual adapter. All
-installed DLL adapters share the same paired connection. Re-pair only for a new
-machine/VM pair, a rebuild/reset, or capability rotation.
+The current boundary identifiers are:
 
-Mac setup verifies an existing stored capability with `core.ping`. It reuses a
-working pairing, asks for a replacement only when the broker rejects it, and
-does not overwrite pairing state when the VM is simply unreachable.
+- `whiny.adapter-contract.v3`;
+- `whiny.adapter-bundle.v1`;
+- `whiny.dispatch.v1`;
+- `whiny.runtime-receipt.v1`.
 
-## Generic DLL model
+An admitted bundle is not trusted because it was generated. Admission requires
+an independently authorized operator and verifies:
 
-The broker never accepts an arbitrary DLL path or export from an untrusted
-request. Setup installs an allowlisted adapter manifest. The generated shim
-knows the ABI; requests identify only the installed adapter and operation.
+1. exact contract and bundle descriptor bytes and SHA-256 values;
+2. exact contract, bundle and dispatcher ABI identifiers and majors;
+3. exactly one dispatcher and target;
+4. every target and dependency hash;
+5. a bounded operation set;
+6. portable controlled relative paths;
+7. no path traversal, case collision, symlink, junction or reparse point;
+8. canonical containment under the configured package root.
 
-```mermaid
-flowchart TB
-  IDL[Adapter YAML/JSON] --> GEN[Code generator]
-  GEN --> SHIM[Wine-side shim DLL]
-  GEN --> DISP[Windows broker dispatcher]
-  GEN --> TEST[Contract + fuzz tests]
-  SHIM --> RPC[Versioned RPC]
-  RPC --> DISP --> DLL[Allowlisted real DLL]
-```
+The verified paths are re-resolved and re-hashed before loading. The Windows
+loader uses explicit package directories and secure `LoadLibraryEx` search
+flags; ambient `PATH` and current-directory resolution are prohibited.
 
-## Contract requirements
-
-Every adapter defines:
-
-1. accepted request shape and maximum sizes;
-2. native call and required Windows authority;
-3. response shape and sensitive-field handling;
-4. async completion and cancellation behavior;
-5. remote handle ownership, expiry, close, and restart invalidation;
-6. exact error mapping;
-7. tests for malformed input, stale handles, replay, and disconnect.
-
-An ABI manifest is mandatory. A DLL binary alone does not describe pointer
-ownership, structure packing, callbacks, calling convention, or handle
-lifecycle reliably enough for transparent remoting.
-
-## Proven game operation
+Admission and invocation are separate:
 
 ```mermaid
 sequenceDiagram
-    participant AF as Actual Abiotic Factor
-    participant RT as Wine runtime adapter
-    participant VM as Windows broker
-    AF->>RT: XUserAddAsync(silent)
-    RT->>VM: negotiate
-    VM-->>RT: version / epoch
-    RT->>VM: acquire user
-    Note over VM: Native Windows user;<br/>may already be signed in
-    VM-->>RT: S_OK + opaque session
-    RT-->>AF: async completion S_OK
-    AF->>RT: XUserAddResult
-    RT-->>AF: S_OK
+    participant O as Adapter administrator
+    participant A as Admission engine
+    participant S as Durable state
+    participant C as Calling actor
+    participant B as Broker
+    O->>A: approve exact contract/bundle hashes
+    A->>A: verify AdapterAdmin(contract hash)
+    A->>A: verify bytes, versions, paths and files
+    A->>S: commit admission + audit event
+    C->>B: call(contract hash, operation ID)
+    B->>B: verify Invoke(contract hash, operation ID)
+    B->>A: use admitted dispatcher/target only
 ```
 
-Warm path: about 13 ms from game API entry to game result. Independent broker
-processing for user acquisition was about 1.5 ms. Mac and guest clocks were not
-synchronized, so cross-machine timestamp subtraction is not used.
+Bundle metadata cannot create an actor, role or grant.
 
-## Not Steamac
+## Runtime layers
 
-Steamac runs the application inside a Linux VM and forwards virtualized graphics
-to the Mac GPU. This project keeps the application under Wine on the Mac and
-remotes selected Windows API calls. They solve different problems.
+### Wine/client side
+
+- process-wide connection pool per broker identity;
+- no blocking or network work in `DllMain`;
+- bounded call and transfer queues;
+- guarded ABI copies and exact error restoration;
+- explicit callback executors;
+- inherited sessions discarded after fork;
+- OS-backed identity consumed without plaintext repository or registry secrets.
+
+The failed CrossOver by-name unixlib experiment is not a supported
+configuration path. A supported automatic configuration route must use a Wine
+loader-initialized builtin DLL/unixlib handle or another documented mechanism;
+it must not call the rejected private memory-information-class path unchanged.
+
+### Transport/session
+
+- framed TCP with `TCP_NODELAY`;
+- Noise pairing and application sessions;
+- HELLO/HELLO_ACK feature and bound negotiation;
+- odd client stream IDs and independent multiplexed streams;
+- bounded physical fragments and logical payloads;
+- replay windows and actor-scoped rate limits;
+- truthful timeout, cancellation and disconnect outcomes.
+
+### Windows broker
+
+- least-privileged service account;
+- exact package ACLs;
+- durable SQLite WAL state and bounded writers;
+- separate liveness, readiness and diagnostics;
+- actor/operation authorization on every dispatch;
+- controlled native/CLR/process hosts;
+- worker isolation and Job Object process-tree containment;
+- startup reconciliation for admissions, operations and terminal receipts.
+
+### Lifecycle
+
+- transfers require begin/data/end, content hash and a terminal receipt;
+- handles are bound to actor, epoch, slot, generation and type;
+- callbacks enforce executor, thread, ordering, reentrancy and unregister rules;
+- the first completion/cancellation terminal decision wins;
+- disconnect during an executing non-idempotent operation produces
+  `unknown`, never fabricated success or cancellation;
+- process requests bound argv, environment, stdin, stdout and stderr and retain
+  exact exit/timeout/cancellation results.
+
+## Durable evidence
+
+Runtime-changing operations have a durable operation UUID, actor, target hash,
+timestamps, stage, attempt, idempotency hash, retry/cancel/rerun policy, trace
+ID and terminal receipt. Events and receipts are hash chained. A trusted
+rollback anchor remains independent of broker database metadata.
+
+`whiny.runtime-receipt.v1` defines the cross-product receipt format. VM Bridge
+owns runtime emission, retention, privacy and query behavior; it does not own
+Whiny build or semantic-evidence receipts.
+
+## Package lifecycle
+
+Unsigned packages have deterministic canonical manifests with exact source,
+SBOM and file hashes. Installation uses inactive version slots:
+
+1. verify and stage into a controlled temporary directory;
+2. verify every copied file;
+3. atomically finalize the version;
+4. run health checks before activation;
+5. retain the previous active slot for rollback;
+6. refuse removal of the active slot;
+7. expose exact uninstall impact before deletion.
+
+Authenticode and notarization are separate external receipts. No signing secret
+is stored in the repository or materialized by the runtime.
+
+Bootstrap launchers are distributed and authenticated separately from runtime
+archives. They are not embedded in the package they verify, avoiding a
+self-authentication trust loop. The trusted launcher verifies the release
+envelope before executing the envelope-bound lifecycle binary.
+
+## Topology acceptance
+
+The canonical topology remains Wine on macOS calling the Windows VM broker over
+the approved forwarded TCP path. Shared memory, vsock, gRPC replacement, GUI
+remoting, kernel/driver execution and anti-cheat bypass are not part of v2.
+
+The isolated `Whiny-Windows11-x64` VM is the preferred acceptance target.
+Acceptance automation must verify its UUID and readiness, record or snapshot
+pre-state, use dedicated paths/rules/processes, and restore temporary changes.
+The official Windows-RPC VM and unrelated VMs are never modified.
+
+## Runtime Owner and host selection
+
+The Runtime Owner API exposes typed install, activate, rollback, execute,
+receipt-query and diagnostic operations only. Host discovery reports immutable
+capability observations. Selection prefers compatible local Windows ARM64 work
+and routes authoritative or x64-only profiles to authoritative Windows x64.
+
+Workload UUID, attempt UUID, selected host, bundle hash and terminal receipt ID
+are correlated in durable VM Bridge operation state. This does not extend the
+Whiny receipt schema or move campaign policy, semantic interpretation or
+generation into VM Bridge.

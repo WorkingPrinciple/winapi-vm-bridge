@@ -1,0 +1,24 @@
+[package]
+name = "wvb-managed-e2e"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+wvb-authz = { path = "../wvb-authz" }
+wvb-broker = { path = "../wvb-broker" }
+wvb-call = { path = "../wvb-call" }
+wvb-crypto = { path = "../wvb-crypto" }
+wvb-managed-host = { path = "../wvb-managed-host" }
+wvb-runtime = { path = "../wvb-runtime" }
+wvb-session = { path = "../wvb-session" }
+wvb-transport = { path = "../wvb-transport" }
+
+[lints]
+workspace = true

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "channel": "8.0",
+  "version": "8.0.32",
+  "rid": "win-x64",
+  "releaseMetadataUrl": "https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/8.0/releases.json",
+  "runtime": {
+    "fileName": "dotnet-runtime-8.0.32-win-x64.zip",
+    "url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/8.0.32/dotnet-runtime-8.0.32-win-x64.zip",
+    "sha256": "0132501a735fc584adff29d28084150083f6ba320f5ae52beb7c49f52ba793f7",
+    "sha512": "f0349e793d8081c682c01d736db695c9c1ec268c6173648913543db219e44cbf2e952c7ef94fc37946b0f2bb95ca1898d972a43591b8e44d5a1659f4911904c0",
+    "licensePath": "dotnet/LICENSE.txt",
+    "thirdPartyNoticesPath": "dotnet/ThirdPartyNotices.txt"
+  },
+  "nethostPackage": {
+    "id": "Microsoft.NETCore.App.Host.win-x64",
+    "version": "8.0.32",
+    "fileName": "microsoft.netcore.app.host.win-x64.8.0.32.nupkg",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.host.win-x64/8.0.32/microsoft.netcore.app.host.win-x64.8.0.32.nupkg",
+    "sha256": "32d48bdbce29ec3c57917ca2aae2aa5fc71302702780c099b9f122842bccd789",
+    "sha512": "882ca188181e693619be4ccdd6bf1558aab81904a1b13472d07ab71563ad7ea2a22a3f8930f9f4716699b362b0e829a2ea2ad2b3ed66f03814224197f868aad4",
+    "licenseExpression": "MIT",
+    "licensePath": "host/LICENSE.TXT",
+    "authorSignatureCertificateSha256": "9a1b131bee0605433056a4ea3815478a8e177961a968c6c0027c1093d1feb630",
+    "repositorySignatureCertificateSha256": "1f4b311d9acc115c8dc8018b5a49e00fce6da8e2855f9f014ca6f34570bc482d"
+  },
+  "files": {
+    "hostfxr": {
+      "path": "dotnet/host/fxr/8.0.32/hostfxr.dll",
+      "sha256": "d579c8d05dd7456be1551ab0cc3a86bd298b5cd5675936332cc4c8e56e59984d"
+    },
+    "nethost": {
+      "packagePath": "runtimes/win-x64/native/nethost.dll",
+      "path": "host/nethost.dll",
+      "sha256": "b7ebee5df9d8e27aca714db5be487aba5f00a24687e2e920b385444ae4f085d0"
+    },
+    "runtimeLicense": {
+      "path": "dotnet/LICENSE.txt",
+      "sha256": "7f6839a61ce892b79c6549e2dc5a81fdbd240a0b260f8881216b45b7fda8b45d"
+    },
+    "runtimeThirdPartyNotices": {
+      "path": "dotnet/ThirdPartyNotices.txt",
+      "sha256": "1271701f435f7fe4aa81dc7e273ca80b6391b73580ee20b35a956052c95de4cf"
+    },
+    "nethostLicense": {
+      "path": "host/LICENSE.TXT",
+      "sha256": "d7a68596ab69b06f51ca278a6545148e4269a9381c26d597c13df5d88e08cf5b"
+    }
+  }
+}

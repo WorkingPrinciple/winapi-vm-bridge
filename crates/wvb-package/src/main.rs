@@ -1,0 +1,120 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use clap::{Parser, Subcommand};
+use wvb_package::{HealthReceipt, PackageManager, PackageManifest};
+
+#[derive(Parser)]
+struct Arguments {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    Verify {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    Stage {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    Activate {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        health_receipt: PathBuf,
+    },
+    Rollback {
+        #[arg(long)]
+        root: PathBuf,
+    },
+    UninstallPreflight {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        version: String,
+    },
+    Deactivate {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        version: String,
+    },
+    Uninstall {
+        #[arg(long)]
+        root: PathBuf,
+        #[arg(long)]
+        version: String,
+    },
+}
+
+fn manifest(path: &PathBuf) -> Result<PackageManifest, Box<dyn std::error::Error>> {
+    Ok(serde_json::from_slice(&fs::read(path)?)?)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    match Arguments::parse().command {
+        Command::Verify {
+            source,
+            manifest: path,
+        } => {
+            manifest(&path)?.verify_source(&source)?;
+            println!("package-verify=ok");
+        }
+        Command::Stage {
+            root,
+            source,
+            manifest: path,
+        } => {
+            let manager = PackageManager::open(&root)?;
+            let staged = manager.stage(&source, &manifest(&path)?)?;
+            println!("package-stage=ok path={}", staged.display());
+        }
+        Command::Activate {
+            root,
+            manifest: path,
+            health_receipt,
+        } => {
+            let manager = PackageManager::open(&root)?;
+            let value = manifest(&path)?;
+            let health: HealthReceipt = serde_json::from_slice(&fs::read(&health_receipt)?)?;
+            let expected_root =
+                fs::canonicalize(root.join("versions").join(&value.package_version))?;
+            let healthy = health.status == "PASS"
+                && health.package_version == value.package_version
+                && health.manifest_sha256 == value.sha256()?
+                && Path::new(&health.package_root) == expected_root;
+            let slot = manager.activate(&value, |_| healthy)?;
+            println!("package-activate=ok version={}", slot.package_version);
+        }
+        Command::Rollback { root } => {
+            let slot = PackageManager::open(&root)?.rollback()?;
+            println!("package-rollback=ok version={}", slot.package_version);
+        }
+        Command::UninstallPreflight { root, version } => {
+            let paths = PackageManager::open(&root)?.uninstall_preflight(&version)?;
+            for path in paths {
+                println!("{}", path.display());
+            }
+        }
+        Command::Deactivate { root, version } => {
+            let changed = PackageManager::open(&root)?.deactivate(&version)?;
+            println!("package-deactivate=ok version={version} changed={changed}");
+        }
+        Command::Uninstall { root, version } => {
+            PackageManager::open(&root)?.uninstall(&version)?;
+            println!("package-uninstall=ok version={version}");
+        }
+    }
+    Ok(())
+}

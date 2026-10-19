@@ -9,10 +9,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install portable native toolchain
+        run: brew install mingw-w64
       - run: ./tests/test-portable.sh
-  windows-real-dll:
+  windows-runtime:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - shell: powershell
-        run: ./tests/windows-roundtrip.ps1
+        run: ./tests/windows-runtime.ps1

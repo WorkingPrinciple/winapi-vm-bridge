@@ -1,0 +1,25 @@
+[package]
+name = "wvb-broker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+tokio.workspace = true
+wvb-call = { path = "../wvb-call" }
+wvb-authz = { path = "../wvb-authz" }
+wvb-protocol = { path = "../wvb-protocol" }
+wvb-transport = { path = "../wvb-transport" }
+wvb-transfer = { path = "../wvb-transfer" }
+
+[dev-dependencies]
+sha2.workspace = true
+wvb-client = { path = "../wvb-client" }
+wvb-crypto = { path = "../wvb-crypto" }
+wvb-exe = { path = "../wvb-exe" }
+
+[lints]
+workspace = true
