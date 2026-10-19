@@ -63,6 +63,7 @@ thresholds. Performance must be measured on the actual Mac/UTM/Windows topology.
 | Windows Setup `RunSynchronous` | https://learn.microsoft.com/windows-hardware/customize/desktop/unattend/microsoft-windows-deployment-runsynchronous | Supported SYSTEM commands run during the `specialize` pass, not as an arbitrary current-OOBE recovery hook |
 | Windows Setup custom scripts | https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-a-custom-script-to-windows-setup | `SetupComplete.cmd` timing/limitations; not guaranteed to rerun after the installation has already reached OOBE |
 | UTM Windows guest tools | https://docs.getutm.app/guest-support/windows/ | Official guest-agent/tooling source; in-app mounted media is protected by macOS container access controls |
+| UTM QMP SPICE-port ownership | https://github.com/utmapp/UTM/blob/535d6592a8bdc22b48de53703a371b80bf60d587/Services/UTMSpiceIO.m#L261-L279 | UTM claims `org.qemu.monitor.qmp.0` and wraps it as its internal QEMU monitor port; an isolated second-client probe did not receive this private channel |
 
 ## Performance references
 
