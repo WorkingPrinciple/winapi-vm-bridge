@@ -2236,6 +2236,19 @@ Hard stops:
   execution, anti-cheat bypass, ambient path loading or untraced reverse
   dependency proxying for the approved runtime architecture.
 
+Offline OOBE recovery was investigated against the exact suspended VM and
+official Microsoft mechanisms. A host-side Windows 11 x64 ISO was observed at
+SHA-256 `bd4307df32bc8af33b39ccecb1174aeb345386630f89a2b86c7a4e36b55ea650`,
+but was not attached or booted. Supported `LocalAccounts` unattend requires
+password material in the answer file, violating the explicit no-secret-on-media
+hold. `RunSynchronous` and `SetupComplete.cmd` apply during earlier setup
+passes and are not a deterministic supported recovery hook for an installation
+already at OOBE. Offline SAM/authentication-binary edits remain prohibited.
+Therefore no offline disk write was performed. The VM is suspended with
+snapshot `wvb-pre-acceptance-20261018`; the minimal safe resume action remains
+manual `start ms-cxh:localonly`, local admin creation, OOBE completion and the
+mounted UTM guest-tools UAC approval.
+
 ## 16.8 Runtime Owner convergence surface
 
 VM Bridge owns only typed runtime operations:
@@ -2532,7 +2545,7 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R090 | Resilience, fuzzing, replay and resource bounds | VM Bridge | all runtime handlers | deterministic negative suites, fuzz/sanitizer budgets, disk/DB/keystore/worker crash | replay/rate/resource negatives, deterministic malformed corpora and AddressSanitizer/libFuzzer runtime-parser target complete; local campaign completed 5,305,588 executions without a crash; extended chaos duration remains a release-environment gate |
 | R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | process-local benchmark harness complete; real topology hold |
 | R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | two isolated checkout builds with compiler path remapping reproduced source archive SHA-256 `cea9bedd…dd7a2`; final macOS tar `6d5fa6ba…dc9a4` and Windows tar `5ac33ea2…33b03` include embedded SPDX, authenticated release envelopes and artifact-bound provenance; separately authenticated bootstraps and signing remain external |
-| R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | target UUID verified and snapshot created; blocked because QEMU guest agent is unavailable |
+| R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID verified, snapshot created and VM safely suspended at OOBE; supported offline provisioning rejected because it requires secret-bearing unattend or nondeterministic/prohibited offline authentication edits; manual OOBE/guest-tools step required |
 | R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | deterministic packages and lifecycle controls ready; live Windows clean-machine run blocked on guest-agent/login control |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
 | R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic selection/correlation tests complete |

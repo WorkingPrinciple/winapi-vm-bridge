@@ -55,6 +55,10 @@ thresholds. Performance must be measured on the actual Mac/UTM/Windows topology.
 | Apple Keychain items | https://developer.apple.com/documentation/security/keychain-items | OS-backed generic-password/key storage model |
 | `SecItemCopyMatching` | https://developer.apple.com/documentation/security/secitemcopymatching(_:_:) | Exact Keychain lookup behavior |
 | Adding a Keychain password | https://developer.apple.com/documentation/security/adding-a-password-to-the-keychain | `kSecClassGenericPassword`, service/account and secret data pattern |
+| Windows unattend local accounts | https://learn.microsoft.com/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-useraccounts-localaccounts-localaccount | Supported OOBE account creation requires a `Password` value in the answer file; incompatible with the no-secret-on-media hold |
+| Windows Setup `RunSynchronous` | https://learn.microsoft.com/windows-hardware/customize/desktop/unattend/microsoft-windows-deployment-runsynchronous | Supported SYSTEM commands run during the `specialize` pass, not as an arbitrary current-OOBE recovery hook |
+| Windows Setup custom scripts | https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-a-custom-script-to-windows-setup | `SetupComplete.cmd` timing/limitations; not guaranteed to rerun after the installation has already reached OOBE |
+| UTM Windows guest tools | https://docs.getutm.app/guest-support/windows/ | Official guest-agent/tooling source; in-app mounted media is protected by macOS container access controls |
 
 ## Performance references
 
