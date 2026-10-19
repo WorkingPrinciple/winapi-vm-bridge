@@ -11,5 +11,10 @@ external/whiny/v0.3.0/**/*.json text eol=lf
 runtime-artifacts/**/*.json text eol=lf
 runtime-artifacts/**/*.bin -text
 runtime-artifacts/**/*.dll -text
+runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts/**/*.c text eol=lf
+runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts/**/*.cpp text eol=lf
+runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts/**/*.def text eol=lf
+runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts/**/*.cs text eol=lf
+runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts/**/*.csproj text eol=lf
 runtime-artifacts/whiny-v0.3.0/acceptance/windows-vm-v1/** -text
 runtime-artifacts/whiny-v0.3.0/acceptance/windows-vm-runtime-receipts-v1-posthoc-invalid/** -text

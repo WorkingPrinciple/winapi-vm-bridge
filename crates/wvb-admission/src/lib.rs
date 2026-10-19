@@ -2,6 +2,7 @@
 
 mod correlated;
 mod handoff;
+mod scalar;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
@@ -21,6 +22,12 @@ pub use handoff::{
     BoundFrozenHandoff, ChallengeSequence, Custody, FileIdentity, FrozenHandoffApproval,
     FrozenHandoffInputs, HandoffAdmissionError, ReceiptPolicy, SideEffects,
     WHINY_FROZEN_HANDOFF_IDENTIFIER, WHINY_VALIDATOR_REVISION,
+};
+pub use scalar::{
+    BoundScalarTestAuthority, BoundScalarTestProfile, ScalarProfile, ScalarTestAuthorityApproval,
+    ScalarTestAuthorityError, ScalarTestExecutionAuthorization,
+    WHINY_SCALAR_ARTIFACTS_MANIFEST_SHA256, WHINY_SCALAR_ARTIFACTS_REVISION,
+    WHINY_SCALAR_AUTHORITY_REGISTRY_SHA256, WHINY_SCALAR_SOURCE_EVIDENCE_SHA256,
 };
 
 const MAX_DESCRIPTOR_BYTES: usize = 16 * 1024 * 1024;

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -101,6 +102,89 @@ class WhinyPinTests(unittest.TestCase):
                 for receipt in receipts
             )
         )
+
+    def test_scalar_test_authority_artifacts_are_exact_and_hash_only(self):
+        root = (
+            Path("runtime-artifacts/whiny-v0.3.0")
+            / "acceptance"
+            / "scalar-test-artifacts"
+        )
+        manifest_path = root / "scalar-test-artifacts.json"
+        registry_path = root / "authority-registry.json"
+        self.assertEqual(
+            hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            "6bd6c8eee2e55bc30a8bbaa754a3b1fcd7eb4bd2e2402eac931f410e7d4196e8",
+        )
+        self.assertEqual(
+            hashlib.sha256(registry_path.read_bytes()).hexdigest(),
+            "b39d8c49da636262f18ab19058c655519c60cf8797d26de82dd93778bfc30298",
+        )
+        manifest = json.loads(manifest_path.read_bytes())
+        self.assertEqual(
+            manifest["authorization_state"], "test-execution-authorized"
+        )
+        self.assertEqual(
+            manifest["external_invoke_grant"], "bridge-owned-invoke-required"
+        )
+        self.assertEqual(manifest["qualification"], "development-only")
+        self.assertEqual(manifest["support_claim"], "none")
+        self.assertFalse(manifest["runtime_support"])
+        self.assertEqual(
+            manifest["source_replay_state_sha256"],
+            "c6269edc801213a0bdc8ccac590f6e419b7aad6a08671d2d25bc56d59e85b56a",
+        )
+        self.assertFalse((root / "replay-state.json").exists())
+        self.assertEqual(
+            hashlib.sha256(
+                (root / manifest["source_evidence"]["path"]).read_bytes()
+            ).hexdigest(),
+            "2fb90b2192980f8b87f2386a1e7009b7bff5d089e121fdead03882a4f7d54734",
+        )
+        for identity in [manifest["registry"], manifest["trust_policy"]]:
+            self.assertEqual(
+                hashlib.sha256((root / identity["path"]).read_bytes()).hexdigest(),
+                identity["sha256"],
+            )
+        for profile in manifest["profiles"]:
+            for field in ["handoff", "expectations", "admission", "runtime_receipt"]:
+                identity = profile[field]
+                self.assertEqual(
+                    hashlib.sha256(
+                        (root / identity["path"]).read_bytes()
+                    ).hexdigest(),
+                    identity["sha256"],
+                )
+
+    def test_scalar_artifacts_survive_windows_checkout_filters(self):
+        root = Path(
+            "runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts"
+        )
+        manifest = json.loads((root / "scalar-test-artifacts.json").read_bytes())
+        paths = set()
+        for profile in manifest["profiles"]:
+            directory = root / profile["name"]
+            receipt = json.loads((directory / "build-receipt.json").read_bytes())
+            paths.update(item["path"] for item in receipt["inputs"])
+        for relative in sorted(paths):
+            if Path(relative).suffix not in {
+                ".c", ".cpp", ".def", ".cs", ".csproj"
+            }:
+                continue
+            path = root / relative
+            filtered = subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "core.autocrlf=true",
+                    "cat-file",
+                    "--filters",
+                    f"--path={path.as_posix()}",
+                    f":{path.as_posix()}",
+                ],
+                check=True,
+                capture_output=True,
+            ).stdout
+            self.assertEqual(filtered, path.read_bytes(), path.as_posix())
 
 
 if __name__ == "__main__":

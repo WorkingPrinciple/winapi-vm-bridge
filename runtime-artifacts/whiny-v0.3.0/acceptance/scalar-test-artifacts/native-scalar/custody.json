@@ -1,0 +1,1 @@
+{"bundle_sha256":"67330e6444fdb8876d8c162692b544a891cc47d15d8140c3bd92f0ab6e51d828","direction":"frozen-bundle-to-vm-bridge","profile_id":"native-c-scalar-x64-v1","receipt_boundary":"authenticated-correlated-only","request_boundary":"immutable-package-only","schema":"whiny.scalar-test-custody.v1","source_revision":"870da868f3d3d48f1da1a36123a9aaf1a6435e53"}

@@ -1,0 +1,34 @@
+{
+  "schema": "whiny.vm-bridge-scalar-runtime-evidence.v1",
+  "source_revision": "870da868f3d3d48f1da1a36123a9aaf1a6435e53",
+  "validator_package_sha256": "e95244e9056997a1887052744c1e235403f8e560cc2fa80d23ad14a4094c7a6f",
+  "validator_manifest_sha256": "11dd56f11e9f46b5099fd8b842a3b4455298698d570706fb267f329598da2731",
+  "trust_policy_sha256": "fedfc843772405c0dd799ba83e6a108f56e2c98ea06a1935efd61f114fa292e9",
+  "custody_artifacts": {
+    "index.json": "b57ad845e28054a969705f1f3c1cc8f60478f6d07242693a9e9f4af8f9cb357c",
+    "managed-scalar-authorization.json": "48173a6fd7870060b978a9c4fabc7f71ca929ddea44ce6e95caeb362d4a05210",
+    "managed-scalar-correlation.json": "7c94c5dd857b1415ba663873f5ebf614cd323d11e6cf98edd3ac168bf887ac08",
+    "managed-scalar-host-state.json": "f9b263d973f2fd3d05f28b184c04205faa30e4b2f5b46e9b7f5a30fe4dbccc83",
+    "managed-scalar-public-key-jcs.bin": "2a80cc400441cb5d1ecbdbb8aa8448c4dc229eab7aaa1a4b4df43b0e869ab3f9",
+    "native-scalar-authorization.json": "af312bb95eca80a9dac6443df2e14549b0f7fd50a1e1972aeb0a765b73466dd6",
+    "native-scalar-correlation.json": "655ac7002cb2e51a040632dc5503ca0db1e601b643691a7e2d23a4f53d436ba1",
+    "native-scalar-host-state.json": "f5666af5b2616194f423fcb578c55a2831f1caac1c7856fe87173615573e338a",
+    "native-scalar-public-key-jcs.bin": "0bf01e472fe9e08eafecf4c7fd4e2779432355b13a23238a8ca09a7446031404",
+    "whiny-trust-policy.json": "fedfc843772405c0dd799ba83e6a108f56e2c98ea06a1935efd61f114fa292e9"
+  },
+  "corrected_receipts": {
+    "native-scalar-receipt-jcs.json": "eb02139899a73b93f11bd273ee9a27c9d599b7e0723c0a2695eb91d39ce422cd",
+    "managed-scalar-receipt-jcs.json": "bcbb3a8086fca5aa705e9577bdc93e875ea51e76aca514314d54867814e458b6"
+  },
+  "historical_invalid_receipts": {
+    "native-scalar-receipt.json": {
+      "sha256": "f1a6b46da911033d5aef97570ead963fc9b6819d7c4051782db6a666ca8abad8",
+      "reason": "legacy non-JCS signed payload; rejected by current ingestor"
+    },
+    "managed-scalar-receipt.json": {
+      "sha256": "f2f3c804a25af272ad62bffaead6746f91730e21b33611147ec9cb09734f4380",
+      "reason": "legacy non-JCS signed payload; rejected by current ingestor"
+    }
+  },
+  "assurance": "acceptance-only runtime identities; not production runtime keys"
+}

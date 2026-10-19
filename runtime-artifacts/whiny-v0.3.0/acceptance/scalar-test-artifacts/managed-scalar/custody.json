@@ -1,0 +1,1 @@
+{"bundle_sha256":"0086d567312afc118e0e4b31dad37ac108af7428c0b718bf329b6115ed773678","direction":"frozen-bundle-to-vm-bridge","profile_id":"dotnet-static-scalar-net8-x64-v1","receipt_boundary":"authenticated-correlated-only","request_boundary":"immutable-package-only","schema":"whiny.scalar-test-custody.v1","source_revision":"870da868f3d3d48f1da1a36123a9aaf1a6435e53"}
