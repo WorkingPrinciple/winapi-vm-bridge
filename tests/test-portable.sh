@@ -8,6 +8,7 @@ python3 -m unittest \
   tests.test_runtime_metadata \
   tests.test_runtime_package_builder \
   tests.test_topology_benchmark \
+  tests.test_windows_vm_acceptance \
   tests.test_whiny_pin
 
 cargo fmt --all -- --check
@@ -66,8 +67,9 @@ python3 -c 'import json; from pathlib import Path; p=Path("setup/runtime-pins/wi
 for script in \
   setup/provision_windows_dotnet_runtime.py \
   setup/run_cross_platform_managed_e2e.py \
+  setup/build_windows_vm_acceptance.py \
   setup/run_utm_deploy.py \
-  setup/run_utm_managed_e2e.py \
+  setup/run_utm_scalar_e2e.py \
   setup/run_utm_acceptance.py \
   setup/generate_runtime_metadata.py \
   setup/build_runtime_package.py \

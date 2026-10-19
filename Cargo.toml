@@ -16,6 +16,7 @@ members = [
   "crates/wvb-managed-host",
   "crates/wvb-managed-e2e",
   "crates/wvb-marshal",
+  "crates/wvb-native-e2e",
   "crates/wvb-native-host",
   "crates/wvb-operations",
   "crates/wvb-owner",

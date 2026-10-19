@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 use wvb_authz::{Grant, Registry, Role};
 use wvb_broker::{
@@ -18,7 +18,7 @@ use wvb_crypto::StaticPrivateKey;
 use wvb_managed_host::{ManagedHostConfig, NativeManagedDispatcher};
 use wvb_runtime::{ClientConfig, RuntimeClient};
 use wvb_session::{Hello, HelloAck, Platform, Readiness, activate_broker};
-use wvb_transport::session_responder;
+use wvb_transport::{SecureConnection, session_responder};
 
 const ACTOR_ID: [u8; 16] = [0x42; 16];
 
@@ -53,6 +53,30 @@ impl CallHandler for OneShot {
         self.completed.notify_one();
         result
     }
+}
+
+async fn accept_authorized(
+    listener: &TcpListener,
+    broker_key: &StaticPrivateKey,
+    client_public: [u8; 32],
+) -> Result<SecureConnection<TcpStream>, Box<dyn std::error::Error>> {
+    Ok(tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
+            if stream.set_nodelay(true).is_err() {
+                continue;
+            }
+            let Ok((remote, provisional)) = session_responder(stream, broker_key).await else {
+                continue;
+            };
+            if remote == client_public {
+                break provisional;
+            }
+        }
+    })
+    .await?)
 }
 
 #[tokio::main]
@@ -137,13 +161,8 @@ async fn run_server(config: AcceptanceConfig) -> Result<(), Box<dyn std::error::
 
     let listener = TcpListener::bind(config.address).await?;
     println!("managed-broker-ready={}", listener.local_addr()?);
-    let (stream, _) = listener.accept().await?;
-    stream.set_nodelay(true)?;
     let broker_key = StaticPrivateKey::from_bytes(broker_private);
-    let (remote, provisional) = session_responder(stream, &broker_key).await?;
-    if remote != client_public {
-        return Err("client static key mismatch".into());
-    }
+    let provisional = accept_authorized(&listener, &broker_key, client_public).await?;
     let ack = HelloAck {
         selected_minor: 0,
         features: 0,

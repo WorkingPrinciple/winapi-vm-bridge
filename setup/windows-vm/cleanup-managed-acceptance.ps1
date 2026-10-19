@@ -20,7 +20,9 @@ Remove-Item `
     'C:\Users\Public\wvb-dotnet-runtime.zip', `
     'C:\Users\Public\wvb-nethost.nupkg', `
     'C:\Users\Public\wvb-managed-payload.zip', `
+    'C:\Users\Public\wvb-acceptance-package.json', `
     'C:\Users\Public\wvb-deploy.ps1', `
+    'C:\Users\Public\wvb-deploy-error.txt', `
     'C:\Users\Public\wvb-identity.ps1', `
     'C:\Users\Public\wvb-exec-test.txt' `
     -Force -ErrorAction SilentlyContinue

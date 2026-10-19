@@ -1190,6 +1190,24 @@ name = "wvb-marshal"
 version = "0.2.0"
 
 [[package]]
+name = "wvb-native-e2e"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tokio",
+ "wvb-authz",
+ "wvb-broker",
+ "wvb-call",
+ "wvb-crypto",
+ "wvb-native-host",
+ "wvb-runtime",
+ "wvb-session",
+ "wvb-transport",
+]
+
+[[package]]
 name = "wvb-native-host"
 version = "0.2.0"
 dependencies = [

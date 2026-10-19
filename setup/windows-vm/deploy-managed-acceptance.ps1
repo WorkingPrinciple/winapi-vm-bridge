@@ -3,7 +3,8 @@ param(
     [string]$RuntimeZip = 'C:\Users\Public\wvb-dotnet-runtime.zip',
     [string]$NethostPackage = 'C:\Users\Public\wvb-nethost.nupkg',
     [string]$PayloadZip = 'C:\Users\Public\wvb-managed-payload.zip',
-    [string]$ListenAddress = '192.168.64.3:47961',
+    [string]$Manifest = 'C:\Users\Public\wvb-acceptance-package.json',
+    [string]$ListenAddress = '192.168.64.4:47961',
     [string]$DeploymentId = 'manual'
 )
 
@@ -17,19 +18,15 @@ Remove-Item 'C:\Users\Public\wvb-deploy-error.txt' -Force -ErrorAction SilentlyC
 $donePath = Join-Path $Root ("deploy-{0}.done" -f $DeploymentId)
 Remove-Item $donePath -Force -ErrorAction SilentlyContinue
 
-$pins = [ordered]@{
-    RuntimePackage = '0132501a735fc584adff29d28084150083f6ba320f5ae52beb7c49f52ba793f7'
-    NethostPackage = '32d48bdbce29ec3c57917ca2aae2aa5fc71302702780c099b9f122842bccd789'
-    PayloadPackage = '1d8924284a811f1045f1253226799956d3a3fcc1c6899de579c78aa3bb99f80d'
-    HostFxr = 'd579c8d05dd7456be1551ab0cc3a86bd298b5cd5675936332cc4c8e56e59984d'
-    NetHost = 'b7ebee5df9d8e27aca714db5be487aba5f00a24687e2e920b385444ae4f085d0'
-    Broker = 'aa8d3ae816dd2bb70d85bf487696c851d91ea68d7d84787bae3bcd45d8852ef3'
-    NativeHost = '2f8b176b05dad63c5a7488a3f6a4c17ce81eedab9d449c1a3734bcf8bcc7aa60'
-    Dispatcher = '489a2d3f4a4331fcd6befb372b19130c7483e7add66e71a85bef2808f15a66f7'
-    RuntimeConfig = 'ca8666237d92cc378ef2cf0e34c09ec9f64ce3ed0b0e82d3333b83594da4cab0'
-    Target = '49df01adbcd5d578cc950bd7daf448eba6cebe3741eb0b0ffc874e6d64b46be6'
-    Contract = '8f91443299fb2e54e13d129ceea7bd864e9e82259721d854753421e516e303d8'
+if (-not (Test-Path -LiteralPath $Manifest -PathType Leaf)) {
+    throw "acceptance manifest is missing: $Manifest"
 }
+$document = Get-Content -Raw -LiteralPath $Manifest | ConvertFrom-Json
+if ($document.schema -ne 'wvb.windows-vm-scalar-package.v1' -or
+    $document.managed.profile -ne 'managed-scalar') {
+    throw 'invalid managed acceptance manifest'
+}
+$managed = $document.managed
 
 function Require-Hash([string]$Path, [string]$Expected) {
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
@@ -38,9 +35,17 @@ function Require-Hash([string]$Path, [string]$Expected) {
     }
 }
 
-Require-Hash $RuntimeZip $pins.RuntimePackage
-Require-Hash $NethostPackage $pins.NethostPackage
-Require-Hash $PayloadZip $pins.PayloadPackage
+function Require-Entry([string]$Key) {
+    $entry = @($managed.files | Where-Object { $_.key -eq $Key })
+    if ($entry.Count -ne 1) {
+        throw "missing or duplicate managed manifest entry: $Key"
+    }
+    return $entry[0]
+}
+
+Require-Hash $RuntimeZip $managed.runtimePackageSha256
+Require-Hash $NethostPackage $managed.nethostPackageSha256
+Require-Hash $PayloadZip $managed.payloadZipSha256
 
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 $runtime = Join-Path $Root 'runtime'
@@ -69,38 +74,28 @@ Copy-Item `
     (Join-Path $runtime 'host\LICENSE.TXT') -Force
 Expand-Archive -LiteralPath $PayloadZip -DestinationPath $payload -Force
 
+$entries = [ordered]@{
+    Broker = Require-Entry 'Broker'
+    NativeHost = Require-Entry 'NativeHost'
+    Dispatcher = Require-Entry 'Dispatcher'
+    RuntimeConfig = Require-Entry 'RuntimeConfig'
+    Target = Require-Entry 'Target'
+    Contract = Require-Entry 'Contract'
+}
 $files = [ordered]@{
-    HostFxr = @{
+    HostFxr = [ordered]@{
         Path = Join-Path $runtime 'dotnet\host\fxr\8.0.32\hostfxr.dll'
-        Hash = $pins.HostFxr
+        Hash = $managed.hostfxrSha256
     }
-    NetHost = @{
+    NetHost = [ordered]@{
         Path = Join-Path $runtime 'host\nethost.dll'
-        Hash = $pins.NetHost
+        Hash = $managed.nethostSha256
     }
-    Broker = @{
-        Path = Join-Path $payload 'wvb-managed-e2e.exe'
-        Hash = $pins.Broker
-    }
-    NativeHost = @{
-        Path = Join-Path $payload 'wvb_managed_host.dll'
-        Hash = $pins.NativeHost
-    }
-    Dispatcher = @{
-        Path = Join-Path $payload 'Example.ManagedMath.WvbDispatcher.dll'
-        Hash = $pins.Dispatcher
-    }
-    RuntimeConfig = @{
-        Path = Join-Path $payload 'Example.ManagedMath.WvbDispatcher.runtimeconfig.json'
-        Hash = $pins.RuntimeConfig
-    }
-    Target = @{
-        Path = Join-Path $payload 'Example.ManagedMath.dll'
-        Hash = $pins.Target
-    }
-    Contract = @{
-        Path = Join-Path $payload 'contract.canonical.json'
-        Hash = $pins.Contract
+}
+foreach ($key in $entries.Keys) {
+    $files[$key] = [ordered]@{
+        Path = Join-Path $payload ([string]$entries[$key].relativePath)
+        Hash = [string]$entries[$key].sha256
     }
 }
 foreach ($entry in $files.Values) {
@@ -109,7 +104,7 @@ foreach ($entry in $files.Values) {
 
 $config = [ordered]@{
     address = $ListenAddress
-    adapterHash = $files.Contract.Hash
+    adapterHash = [string]$managed.contractSha256
     hostDll = $files.NativeHost.Path
     hostDllSha256 = $files.NativeHost.Hash
     dotnetRoot = Join-Path $runtime 'dotnet'
