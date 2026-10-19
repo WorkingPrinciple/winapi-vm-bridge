@@ -13,9 +13,14 @@ x86_64-w64-mingw32-gcc \
   -o "$out/autoconfig_test.exe"
 
 "$root/native/macos-keychain/build-and-test.sh"
+wine=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
+if [ ! -x "$wine" ]; then
+  echo "CrossOver unavailable; Wine unixlib runtime execution skipped" >&2
+  [ "${WVB_REQUIRE_WINDOWS_RUNNER:-0}" != 1 ] || exit 2
+  exit 0
+fi
 account="wine-unixlib-$$"
 unixlib="$root/out/macos-keychain/wvb_client_ffi.so"
-wine=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
 trap '"$root/out/macos-keychain/keychain_fixture" delete "$account"' EXIT
 "$root/out/macos-keychain/keychain_fixture" store "$account"
 windows_path=$("$wine" --bottle XOdeLabRPC winepath -w "$unixlib")
