@@ -996,11 +996,16 @@ impl AdmissionEngine {
                     "case-colliding artifact path",
                 ));
             }
-            return Ok(fs::read(&existing.canonical_path)?);
+            let bytes = fs::read(&existing.canonical_path)?;
+            if sha256_bytes(&bytes) != existing.sha256 {
+                return Err(ScalarTestAuthorityError::Binding("artifact file identity"));
+            }
+            return Ok(bytes);
         }
         let canonical_path = resolve_regular_file(&self.load_root, path)
             .map_err(|_| ScalarTestAuthorityError::Binding("artifact path"))?;
-        let sha256 = sha256_file(&canonical_path)?;
+        let bytes = fs::read(&canonical_path)?;
+        let sha256 = sha256_bytes(&bytes);
         if sha256 != expected_sha256 {
             return Err(ScalarTestAuthorityError::Binding("artifact file identity"));
         }
@@ -1010,7 +1015,6 @@ impl AdmissionEngine {
                 "duplicate stable artifact identity",
             ));
         }
-        let bytes = fs::read(&canonical_path)?;
         files.insert(
             folded,
             ScalarBoundFile {
@@ -1809,4 +1813,131 @@ fn hex(value: [u8; 32]) -> String {
         write!(output, "{byte:02x}").expect("writing to String cannot fail");
         output
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../runtime-artifacts/whiny-v0.3.0/acceptance/scalar-test-artifacts")
+    }
+
+    fn document<T: for<'de> Deserialize<'de>>(path: &str) -> T {
+        parse_exact(&fs::read(root().join(path)).unwrap(), "test document").unwrap()
+    }
+
+    fn receipt(path: &str) -> RuntimeReceipt {
+        serde_json::from_slice(&fs::read(root().join(path)).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn targeted_scalar_mutations_reach_their_intended_validators() {
+        let mut registry: AuthorityRegistry = document("authority-registry.json");
+        registry.entries[0].profile_id = String::from("native-cpp-bounded-x64-v1");
+        assert!(matches!(
+            validate_registry(&registry),
+            Err(ScalarTestAuthorityError::Invalid("registry profile"))
+        ));
+
+        let registry: AuthorityRegistry = document("authority-registry.json");
+        let entry = registry
+            .entries
+            .iter()
+            .find(|entry| entry.profile_id == ScalarProfile::Native.profile_id())
+            .unwrap();
+        let mut handoff: ScalarHandoff = document("native-scalar/scalar-frozen-handoff.json");
+        handoff.candidate.sha256 = "00".repeat(32);
+        assert!(matches!(
+            bind_entry(entry, &handoff),
+            Err(ScalarTestAuthorityError::Binding("registry handoff chain"))
+        ));
+
+        let handoff: ScalarHandoff = document("native-scalar/scalar-frozen-handoff.json");
+        let policy_sha256 = sha256_file(&root().join("runtime-trust-policy.json")).unwrap();
+        let mut expectations: ScalarExpectations =
+            document("native-scalar/correlated-expectations.json");
+        expectations.policy.challenge_sequence.sequence = String::from("unsupported");
+        assert!(matches!(
+            bind_expectations(&expectations, &handoff, policy_sha256),
+            Err(ScalarTestAuthorityError::Invalid(
+                "test authorization policy"
+            ))
+        ));
+
+        let mut expectations: ScalarExpectations =
+            document("native-scalar/correlated-expectations.json");
+        expectations.bundle_sha256 = "11".repeat(32);
+        assert!(matches!(
+            bind_expectations(&expectations, &handoff, policy_sha256),
+            Err(ScalarTestAuthorityError::Binding(
+                "expectation handoff chain"
+            ))
+        ));
+
+        let mut expectations: ScalarExpectations =
+            document("native-scalar/correlated-expectations.json");
+        expectations.runtime.sequence += 1;
+        let signed_receipt = receipt("native-scalar/runtime-receipt.json");
+        assert!(matches!(
+            bind_receipt(&signed_receipt, &expectations, &handoff),
+            Err(ScalarTestAuthorityError::Binding(
+                "signed receipt expectations"
+            ))
+        ));
+
+        let expectations: ScalarExpectations =
+            document("native-scalar/correlated-expectations.json");
+        let mut admission: ScalarAdmission = document("native-scalar/correlated-admission.json");
+        admission.replay_binding.challenge_consumed = false;
+        assert!(matches!(
+            bind_admission(
+                &admission,
+                &expectations,
+                &handoff,
+                &signed_receipt,
+                REPLAY_STATE_SHA256
+            ),
+            Err(ScalarTestAuthorityError::Binding(
+                "correlated scalar admission"
+            ))
+        ));
+
+        let mut admission: ScalarAdmission = document("native-scalar/correlated-admission.json");
+        admission.runtime.response_sha256 = "22".repeat(32);
+        assert!(matches!(
+            bind_admission(
+                &admission,
+                &expectations,
+                &handoff,
+                &signed_receipt,
+                REPLAY_STATE_SHA256
+            ),
+            Err(ScalarTestAuthorityError::Binding(
+                "correlated scalar admission"
+            ))
+        ));
+
+        let policy: TrustPolicy = document("runtime-trust-policy.json");
+        let mut invalid_receipt = receipt("native-scalar/runtime-receipt.json");
+        invalid_receipt.authentication.signature = "00".repeat(64);
+        assert!(matches!(
+            verify_receipt(&policy, &invalid_receipt, ScalarProfile::Native),
+            Err(ScalarTestAuthorityError::Receipt(
+                wvb_receipt::ReceiptError::Verification
+            ))
+        ));
+
+        let mut invalid_policy: TrustPolicy = document("runtime-trust-policy.json");
+        invalid_policy.signers[0].public_key_hex = "00".repeat(32);
+        assert!(matches!(
+            verify_receipt(&invalid_policy, &signed_receipt, ScalarProfile::Native),
+            Err(ScalarTestAuthorityError::Binding(
+                "receipt public key identity"
+            ))
+        ));
+    }
 }

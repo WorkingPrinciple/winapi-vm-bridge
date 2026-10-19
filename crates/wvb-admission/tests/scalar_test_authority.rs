@@ -53,19 +53,6 @@ fn write_json(path: &Path, value: &Value) {
     fs::write(path, serde_jcs::to_vec(value).unwrap()).unwrap();
 }
 
-fn update_manifest_hash(root: &Path, profile: &str, field: &str, path: &Path) {
-    let manifest_path = root.join("scalar-test-artifacts.json");
-    let mut manifest = read_json(&manifest_path);
-    let profile = manifest["profiles"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|value| value["name"] == profile)
-        .unwrap();
-    profile[field]["sha256"] = json!(hex(sha256_file(path).unwrap()));
-    write_json(&manifest_path, &manifest);
-}
-
 fn update_manifest_file_hash(root: &Path, field: &str, path: &Path) {
     let manifest_path = root.join("scalar-test-artifacts.json");
     let mut manifest = read_json(&manifest_path);
@@ -190,21 +177,6 @@ fn self_consistent_replacement_chain_cannot_override_frozen_pin() {
 }
 
 #[test]
-fn non_scalar_general_development_authority_is_rejected() {
-    let temporary = tempdir().unwrap();
-    copy_tree(&root(), temporary.path());
-    let registry_path = temporary.path().join("authority-registry.json");
-    let mut registry = read_json(&registry_path);
-    registry["entries"][0]["profile_id"] = json!("native-cpp-bounded-x64-v1");
-    write_json(&registry_path, &registry);
-    let manifest_path = temporary.path().join("scalar-test-artifacts.json");
-    let mut manifest = read_json(&manifest_path);
-    manifest["registry"]["sha256"] = json!(hex(sha256_file(&registry_path).unwrap()));
-    write_json(&manifest_path, &manifest);
-    assert!(bind(temporary.path()).is_err());
-}
-
-#[test]
 fn artifact_identity_drift_is_rejected() {
     let temporary = tempdir().unwrap();
     copy_tree(&root(), temporary.path());
@@ -216,131 +188,6 @@ fn artifact_identity_drift_is_rejected() {
     )
     .unwrap();
     assert!(bind(temporary.path()).is_err());
-}
-
-#[test]
-fn manifest_registry_handoff_expectation_and_admission_drift_are_rejected() {
-    let manifest = tempdir().unwrap();
-    copy_tree(&root(), manifest.path());
-    fs::write(manifest.path().join("scalar-test-artifacts.json"), b"{}").unwrap();
-    assert!(
-        AdmissionEngine::new(manifest.path())
-            .unwrap()
-            .bind_scalar_test_authority(&ScalarTestAuthorityApproval::default())
-            .is_err()
-    );
-
-    let registry = tempdir().unwrap();
-    copy_tree(&root(), registry.path());
-    let registry_path = registry.path().join("authority-registry.json");
-    let mut registry_value = read_json(&registry_path);
-    registry_value["entries"][0]["entry_id"] = json!("scalar.drifted");
-    write_json(&registry_path, &registry_value);
-    assert!(bind(registry.path()).is_err());
-
-    let handoff = tempdir().unwrap();
-    copy_tree(&root(), handoff.path());
-    let handoff_path = handoff
-        .path()
-        .join("native-scalar/scalar-frozen-handoff.json");
-    let mut handoff_value = read_json(&handoff_path);
-    handoff_value["candidate"]["sha256"] = json!("00".repeat(32));
-    write_json(&handoff_path, &handoff_value);
-    update_manifest_hash(handoff.path(), "native-scalar", "handoff", &handoff_path);
-    assert!(bind(handoff.path()).is_err());
-
-    let expectations = tempdir().unwrap();
-    copy_tree(&root(), expectations.path());
-    let expectations_path = expectations
-        .path()
-        .join("managed-scalar/correlated-expectations.json");
-    let mut expectations_value = read_json(&expectations_path);
-    expectations_value["bundle_sha256"] = json!("11".repeat(32));
-    write_json(&expectations_path, &expectations_value);
-    update_manifest_hash(
-        expectations.path(),
-        "managed-scalar",
-        "expectations",
-        &expectations_path,
-    );
-    assert!(bind(expectations.path()).is_err());
-
-    let admission = tempdir().unwrap();
-    copy_tree(&root(), admission.path());
-    let admission_path = admission
-        .path()
-        .join("native-scalar/correlated-admission.json");
-    let mut admission_value = read_json(&admission_path);
-    admission_value["runtime"]["response_sha256"] = json!("22".repeat(32));
-    write_json(&admission_path, &admission_value);
-    update_manifest_hash(
-        admission.path(),
-        "native-scalar",
-        "admission",
-        &admission_path,
-    );
-    assert!(bind(admission.path()).is_err());
-}
-
-#[test]
-fn challenge_sequence_and_replay_mutations_are_rejected() {
-    let challenge = tempdir().unwrap();
-    copy_tree(&root(), challenge.path());
-    let expectations_path = challenge
-        .path()
-        .join("native-scalar/correlated-expectations.json");
-    let mut expectations = read_json(&expectations_path);
-    expectations["policy"]["challenge_sequence"]["sequence"] = json!("unsupported");
-    write_json(&expectations_path, &expectations);
-    update_manifest_hash(
-        challenge.path(),
-        "native-scalar",
-        "expectations",
-        &expectations_path,
-    );
-    assert!(bind(challenge.path()).is_err());
-
-    let replay = tempdir().unwrap();
-    copy_tree(&root(), replay.path());
-    let admission_path = replay
-        .path()
-        .join("managed-scalar/correlated-admission.json");
-    let mut admission = read_json(&admission_path);
-    admission["replay_binding"]["challenge_consumed"] = json!(false);
-    write_json(&admission_path, &admission);
-    update_manifest_hash(
-        replay.path(),
-        "managed-scalar",
-        "admission",
-        &admission_path,
-    );
-    assert!(bind(replay.path()).is_err());
-}
-
-#[test]
-fn signed_receipt_and_policy_authentication_mutations_are_rejected() {
-    let temporary = tempdir().unwrap();
-    copy_tree(&root(), temporary.path());
-    let receipt_path = temporary.path().join("native-scalar/runtime-receipt.json");
-    let mut receipt = read_json(&receipt_path);
-    receipt["authentication"]["signature"] = json!("00".repeat(64));
-    write_json(&receipt_path, &receipt);
-    update_manifest_hash(
-        temporary.path(),
-        "native-scalar",
-        "runtime_receipt",
-        &receipt_path,
-    );
-    assert!(bind(temporary.path()).is_err());
-
-    let policy = tempdir().unwrap();
-    copy_tree(&root(), policy.path());
-    let policy_path = policy.path().join("runtime-trust-policy.json");
-    let mut policy_value = read_json(&policy_path);
-    policy_value["signers"][0]["public_key_hex"] = json!("00".repeat(32));
-    write_json(&policy_path, &policy_value);
-    update_manifest_file_hash(policy.path(), "trust_policy", &policy_path);
-    assert!(bind(policy.path()).is_err());
 }
 
 #[test]
