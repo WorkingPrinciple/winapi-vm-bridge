@@ -164,6 +164,14 @@ bundle with these identities plus its exact acceptance command, all three
 scenarios remain `UNVERIFIED`; VM Bridge must not execute them or emit a
 runtime receipt.
 
+Whiny's final repository-wide independent review is `PASS` at clean pushed
+checkpoint `fde7bc0` (`89b29f1` code plus final ledger verdict). Its complete
+Rust/Python/lint/evidence/audit gates passed. The source plane now additionally
+requires exact named PE export equality and fails closed when CLR
+nullable-default context is unresolved. These guarantees constrain future
+frozen bundles; they do not change the existing scalar pins or authorize
+T16/T26/T32 execution.
+
 ### 0.5 Public redaction boundary
 
 The public ledger may contain:
