@@ -2314,6 +2314,48 @@ this investigation, remains stopped at the restored checkpoint, and must not
 repeat the Audit Mode attempt until an observable console or a separately
 supported screenshot/control surface is available.
 
+The later user-authorized OOBE settlement reached the local `drago` desktop,
+installed the mounted UTM guest tools, and transferred exclusive ownership to
+VM Bridge with readiness explicitly unverified. VM Bridge then executed a
+guest-agent-only readiness gate, with no synthetic console input:
+
+- exact VM UUID `F659FCF2-AC83-4072-86A6-F7538781A1FC`;
+- exact direct writable QCOW2 UUID
+  `065112D9-3B2D-4E40-AF74-C6B29CA4D133`, inode `22612246`,
+  size `30,648,565,760` bytes;
+- UTM `5.0.8`, notarized Developer ID `Turing Software, LLC
+  (WDNLXAD4W8)`, `utmctl` SHA-256
+  `bb924a1f97192679f63f1ef1a5f8559dec2d7189277f2d8cd50ba1bdab977817`;
+- Windows build `10.0.26300.9457`, profile `C:\Users\drago`,
+  account `whiny\drago`;
+- QEMU guest agent `109.1.0`, Spice webdavd `2.4.0` and UTM Guest Tools
+  `0.1.274` installed; MSI event status `0`;
+- WHCP-signed QEMU FWCfg, VirtIO RNG and VirtIO Serial drivers;
+- post-reboot `QEMU-GA`, `BalloonService` and `vdservice` running with
+  automatic start; installer and command-prompt processes absent;
+- IPv4 `192.168.64.4`, gateway `192.168.64.1`, DNS resolution and outbound
+  TCP 443 verified; all Windows firewall profiles enabled and no
+  runtime-specific allow rule observed;
+- one controlled Windows restart, boot UTC
+  `2026-10-19T17:17:38.3257590Z`, guest agent recovered at
+  `2026-10-19T17:18:43Z`;
+- AC idle sleep changed from 900 seconds to never, while DC sleep,
+  five-minute AC display-off, hibernation availability, Fast Startup and
+  security settings were left unchanged;
+- a six-minute idle interval from `17:25:12Z` through `17:31:12Z` retained
+  exact IP and successful guest-agent execution.
+
+The mounted `D:\utm-guest-tools.exe` is not Authenticode-signed; its observed
+SHA-256 is
+`d3691378dffcde986c2e09e391f449477a096818113b3e5e46c40f4a6c89f23c`.
+It was not rerun. Installed-component identities and the WHCP driver signers
+were verified independently. Snapshot inventory remains
+`wvb-pre-audit-mode-20261018` and `wvb-pre-acceptance-20261018`; the QCOW2
+backing chain remains explicitly unverified because macOS TCC prevents direct
+container inspection. The bounded runtime-readiness verdict is **PASS**; this
+does not authorize T16, T26 or T32 and does not by itself satisfy clean-package
+lifecycle, topology benchmark or frozen-profile acceptance rows.
+
 ## 16.8 Runtime Owner convergence surface
 
 VM Bridge owns only typed runtime operations:
@@ -2610,8 +2652,8 @@ Bridge code may prepare the consumer/runtime side but cannot claim integration.
 | R090 | Resilience, fuzzing, replay and resource bounds | VM Bridge | all runtime handlers | deterministic negative suites, fuzz/sanitizer budgets, disk/DB/keystore/worker crash | replay/rate/resource negatives, deterministic malformed corpora and AddressSanitizer/libFuzzer runtime-parser target complete; local campaign completed 5,305,588 executions without a crash; extended chaos duration remains a release-environment gate |
 | R091 | Topology benchmark | VM Bridge | `R090`, admitted profiles | three complete runs for tiny/4 KiB/64 KiB/1 MiB plus callback/cancel/process | process-local benchmark harness complete; real topology hold |
 | R100 | SBOM, provenance and signing separation | VM Bridge | reproducible runtime packages, `R081`, `R090` | SPDX/provenance; unsigned reproducibility; external signing receipts only | two isolated checkout builds with compiler path remapping reproduced source archive SHA-256 `cea9bedd…dd7a2`; final macOS tar `6d5fa6ba…dc9a4` and Windows tar `5ac33ea2…33b03` include embedded SPDX, authenticated release envelopes and artifact-bound provenance; separately authenticated bootstraps and signing remain external |
-| R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID verified; original and pre-Audit snapshots retained; official secret-free Audit Mode experiment rolled back and remains UNVERIFIED; isolated testing proved UTM's QMP SPICE port is consumed internally and unavailable to an external screendump client, so the exact VM was not retried and remains stopped at the verified OOBE checkpoint |
-| R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | deterministic packages and lifecycle controls ready; live Windows clean-machine run blocked on guest-agent/login control |
+| R110 | Windows VM acceptance controls | VM Bridge | `R080`–`R100`; isolated forward or maintenance grant | exact reproducible commands, target identity, no unrelated VM/service mutation | exact UUID/disk/account verified; local desktop and guest agent established; one controlled reboot and six-minute idle persistence check passed; AC idle sleep disabled without changing display-off/security; snapshot inventory retained, backing chain explicitly TCC-unverified |
+| R111 | Clean-machine acceptance | VM Bridge | `R110`, frozen release inputs | setup through update/rollback/uninstall on clean supported hosts | Windows runtime readiness PASS; deterministic package lifecycle and real topology execution remain |
 | R120 | Atomic Whiny cutover and duplicate-source removal | VM Bridge + Whiny | frozen native+managed vectors; `R010`, `R050`, `R051`, consumer tests | pin artifact coordinates/digests; remove MOVE/DROP paths in one change; vertical paths green | complete at Whiny commit `870da868`; pinned package SHA-256 `e95244e9…7a6f` |
 | R125 | Runtime Owner operations, host capability selection and workload correlation | VM Bridge | `R011`, `R081`, `R120` | typed operations; local ARM64 vs authoritative x64 selection; durable workload/attempt/receipt join | runtime-owner library and deterministic selection/correlation tests complete |
 | R130 | Final deterministic/security/reality gates and independent review | VM Bridge | `R011`–`R125` | configured quality/build/test, real evidence, zero blocking review findings | receipt binding/privacy review PASS at `170590b`, fuzz/evidence delta adversarial PASS at `f3f0e96`, and isolated package reproducibility review PASS at `07e15bc`; T161 remains held behind T160 and canonical Run reconciliation |
