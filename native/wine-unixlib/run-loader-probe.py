@@ -117,10 +117,20 @@ def execute() -> int:
         "environment": environment(),
     }
     caller = server = None
-    owned_root = owned_evidence = prefix_identity = server_identity = None
+    owned_evidence = prefix_identity = server_identity = None
+    owned_directories: dict[Path, tuple[int, int]] = {}
+    pending_directory = None
     server_dir = None
     handles = []
     code = 1
+
+    def create_directory(path: Path) -> None:
+        nonlocal pending_directory
+        path.mkdir(mode=0o700)
+        pending_directory = path
+        owned_directories[path] = identity(path)
+        pending_directory = None
+
     try:
         verify_inputs()
         for path in (ROOT, EVIDENCE):
@@ -128,13 +138,14 @@ def execute() -> int:
                 raise RuntimeError(f"refusing existing path: {path}")
         EVIDENCE.mkdir(mode=0o700)
         owned_evidence = identity(EVIDENCE)
-        ROOT.mkdir(mode=0o700)
-        owned_root = identity(ROOT)
+        create_directory(ROOT)
         for relative in (
-            "bottle", "home", "tmp", "pair/lib/wine/x86_64-windows",
+            "bottle", "home", "tmp", "pair", "pair/lib", "pair/lib/wine",
+            "pair/lib/wine/x86_64-windows",
             "pair/lib/wine/x86_64-unix",
         ):
-            (ROOT / relative).mkdir(mode=0o700, parents=True)
+            create_directory(ROOT / relative)
+        prefix_identity = owned_directories[PREFIX]
         for source in list(INPUTS)[:3]:
             destination = ROOT / (
                 "loader_probe.exe" if source.name == "loader_probe.exe"
@@ -143,7 +154,6 @@ def execute() -> int:
             shutil.copyfile(source, destination)
             if digest(destination) != INPUTS[source]:
                 raise RuntimeError(f"staged hash mismatch: {destination}")
-        prefix_identity = identity(PREFIX)
         dev, ino = prefix_identity
         server_dir = Path(f"/tmp/.wine-{os.getuid()}/server-{dev:x}-{ino:x}")
         if os.path.lexists(server_dir):
@@ -230,15 +240,19 @@ def execute() -> int:
                 handle.close()
             if errors:
                 raise RuntimeError("owned process shutdown incomplete: " + "; ".join(errors))
-            if owned_root is not None:
-                if identity(ROOT) != owned_root or identity(PREFIX) != prefix_identity:
-                    raise RuntimeError("owned root/prefix identity changed; cleanup stopped")
-                if digest(SERVER) != INPUTS[SERVER]:
-                    raise RuntimeError("server binary changed; cleanup execution stopped")
-                subprocess.run(
-                    [str(SERVER), "--wait"], env=environment(), cwd=ROOT,
-                    check=True, timeout=5, stdout=subprocess.DEVNULL,
-                )
+            if pending_directory is not None:
+                raise RuntimeError(f"created directory identity unknown; cleanup stopped: {pending_directory}")
+            if owned_directories:
+                for path, expected in owned_directories.items():
+                    if identity(path) != expected:
+                        raise RuntimeError(f"owned directory identity changed; cleanup stopped: {path}")
+                if server is not None or caller is not None:
+                    if digest(SERVER) != INPUTS[SERVER]:
+                        raise RuntimeError("server binary changed; cleanup execution stopped")
+                    subprocess.run(
+                        [str(SERVER), "--wait"], env=environment(), cwd=ROOT,
+                        check=True, timeout=5, stdout=subprocess.DEVNULL,
+                    )
                 for process in (caller, server):
                     if process is None:
                         continue

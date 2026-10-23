@@ -20,6 +20,8 @@ assert not predicate.search(line.replace(": builtin", ": native"))
 assert not predicate.search(line.replace("wvb_autoconfig.dll", "other.dll"))
 PY
 
+python3 -B "$root/native/wine-unixlib/tests/loader_probe_test.py"
+
 # These checks neither launch Wine nor read/write credential storage.
 clang -std=c17 -Wall -Wextra -Werror -O2 \
   -I"$root/native/wine-unixlib/tests/sdk" \
