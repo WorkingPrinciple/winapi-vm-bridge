@@ -22,6 +22,12 @@ x86_64-w64-mingw32-gcc \
   "$root/native/wine-unixlib/tests/autoconfig_test.c" \
   -o "$out/autoconfig_test.exe"
 
+x86_64-w64-mingw32-gcc \
+  -std=c17 -Wall -Wextra -Werror -O2 -static -municode \
+  -Wl,--no-insert-timestamp \
+  "$root/native/wine-unixlib/tests/loader_probe.c" \
+  -o "$out/loader_probe.exe"
+
 if [ -z "${WVB_WINEGCC:-}" ]; then
   echo "Builtin source tests and PE caller build passed; builtin pair NOT built: select the exact runtime's Wine SDK with WVB_WINEGCC." >&2
   [ "${WVB_REQUIRE_BUILTIN_BUILD:-0}" != 1 ] || exit 2

@@ -143,6 +143,15 @@ The PE build uses Wine's builtin marker and CRT initialization support; the
 matching Mach-O unixlib exports the existing Unix-call table. Output is staged
 under `out/wine-unixlib/lib/wine/{x86_64-windows,x86_64-unix}`.
 
+The script also builds, but does not execute, `out/wine-unixlib/loader_probe.exe`.
+This synthetic caller loads the builtin, resolves its configuration export
+without calling it, prints the Windows module path/PID, holds for ten seconds
+for separately scoped mapping observation, and unloads. It does not invoke
+Keychain or configure Bridge. Its virtual module path alone is not proof of
+the staged Unixlib identity. Actual use requires an explicitly selected owned
+prefix, scoped transient-server cleanup and runtime authorization; creating a
+new Wine prefix is itself a mutation, not a source check.
+
 The installed CrossOver runtime alone does not include this SDK here. A
 source-only follow-on built the minimal SDK subset and the x64 pair from the
 officially linked
