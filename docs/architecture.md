@@ -190,6 +190,18 @@ infer these. Do not automatically retry a failed or undersized call: the target
 may already have executed. Legacy `wvb_client_call` returns a dispatch error
 without exposing its exact value; its signature is unchanged.
 
+For generated-source composition tests, build the host FFI and the
+`scalar_fixture_broker` example in `wvb-client-ffi`. The example takes four
+arguments: contract SHA-256 hex, operation ID, request schema ID and response
+schema ID (decimal integers). It binds only ephemeral loopback, prints one
+ready JSON record with deliberately synthetic client configuration, and exits
+after 60 seconds. The test driver owns and terminates its exact subprocess.
+Its production `DispatcherCallHandler` invokes a synthetic `i32(i32,i32)` target;
+left arguments -1001 through -1008 select documented source-fixture API,
+dispatch, framing and connection failures (see example source).
+These test-only identities never authorize a real target. This helper is not
+a guest service, generated proxy, Wine test, or runtime-acceptance substitute.
+
 REQ-A03 remains unaccepted. Whiny's bounded local prototype
 `whiny_dispatch_bounded_v1` is not the byte dispatcher export
 `whiny_dispatch_v1` resolved by `NativeDispatcher`. Its existing memory

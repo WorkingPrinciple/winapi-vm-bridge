@@ -1142,6 +1142,7 @@ name = "wvb-client-ffi"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "serde_json",
  "tokio",
  "wvb-broker",
  "wvb-call",

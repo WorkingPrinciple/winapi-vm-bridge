@@ -18,6 +18,7 @@ wvb-session = { path = "../wvb-session" }
 
 [dev-dependencies]
 async-trait.workspace = true
+serde_json.workspace = true
 wvb-broker = { path = "../wvb-broker" }
 wvb-transport = { path = "../wvb-transport" }
 
