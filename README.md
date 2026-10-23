@@ -120,8 +120,10 @@ Whiny consumer boundary after the completed atomic cutover.
   `STATUS_INVALID_INFO_CLASS` and is not retried unchanged. The supported
   source composition now uses a Wine loader-initialized builtin DLL/unixlib
   pair, not a private memory-information-class load. Source tests and the PE
-  caller build do not qualify the pair: the exact CrossOver-compatible Wine
-  SDK, per-bottle activation and real-app receipt remain outstanding.
+  caller build do not qualify the pair. An isolated SDK subset and x64 pair
+  have now been built from CodeWeavers' official 26.3.0 source archive;
+  compatibility with installed build 39832, per-bottle activation and the
+  real-app receipt remain outstanding.
 - Scalar client calls require exact frozen operation-schema bindings.
   Dispatcher execution errors are rejected before body copies; target API
   error values in valid typed results remain distinct. See the

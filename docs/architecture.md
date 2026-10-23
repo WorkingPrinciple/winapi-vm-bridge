@@ -143,10 +143,21 @@ The PE build uses Wine's builtin marker and CRT initialization support; the
 matching Mach-O unixlib exports the existing Unix-call table. Output is staged
 under `out/wine-unixlib/lib/wine/{x86_64-windows,x86_64-unix}`.
 
-The installed CrossOver runtime alone does not include this SDK here. Source
-tests do not prove that its loader locates this staged pair. An exact
-CrossOver-compatible SDK, authorized per-bottle composition/activation and a
-real load/invocation receipt are still required for REQ-A08. This is x64-only
+The installed CrossOver runtime alone does not include this SDK here. A
+source-only follow-on built the minimal SDK subset and the x64 pair from the
+officially linked
+[`crossover-sources-26.3.0.tar.gz`](https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.3.0.tar.gz)
+(SHA-256 `ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872`).
+Its Wine source identifies version 11.0 and LGPL-2.1-or-later. Only native
+Wine build tools and x64 PE Wine CRT/ntdll/kernel32/msvcrt imports were built
+in ignored component-local output; no Wine engine was built, installed or run.
+System Bison 2.3 failed the source's version gate; an already installed Bison
+3.8.2 supplied the supported alternative without installing anything.
+
+This compile result is not proof that installed CrossOver 26.3.0 build 39832
+has the same ABI or that its loader locates this staged pair. Compatibility,
+authorized per-bottle composition/activation and a real load/invocation
+receipt are still required for REQ-A08. This is x64-only
 source work, not ARM64EC/WoW64 or real-app acceptance. The upstream reference
 mechanisms are Wine 10.0's
 [`wine/unixlib.h`](https://github.com/wine-mirror/wine/blob/wine-10.0/include/wine/unixlib.h),
@@ -202,11 +213,29 @@ dispatch, framing and connection failures (see example source).
 These test-only identities never authorize a real target. This helper is not
 a guest service, generated proxy, Wine test, or runtime-acceptance substitute.
 
-REQ-A03 remains unaccepted. Whiny's bounded local prototype
+The transport's 1,048,576-byte `LOGICAL_MAX` counts each `CallRequest.body`
+and `CallResult.body` independently. Separate packed begin/data/end metadata,
+the dispatcher status and transport/encryption envelopes do not consume this
+body allowance; their own frame limits still apply. All generated prefix,
+padding, reserved capacity and error/image trailer bytes inside a body do
+count. An i32 result plus u32 native-error trailer therefore leaves at most
+1,048,568 bytes for a returned bounded request image.
+
+`NativeDispatcher` rejects zero or above-limit response capacity before
+loading, rejects oversized request bodies before invocation, and rejects
+reported result length beyond the allocated capacity. It never size-probes
+by invoking the target twice. These byte-bound checks are not a guard against
+an in-process DLL writing past its supplied pointer; generated platform
+guards and the fault-containment policy remain separate.
+
+REQ-A03 remains unaccepted. D-13 assigns complete codecs and typed thunks to
+Whiny's generator over the existing byte dispatcher and operation/schema IDs,
+with a real compiler/SEH gate first and an isolated-worker alternative if
+that gate fails. Whiny's older bounded local prototype
 `whiny_dispatch_bounded_v1` is not the byte dispatcher export
-`whiny_dispatch_v1` resolved by `NativeDispatcher`. Its existing memory
-descriptors do not yet define a complete request/response payload, guarded
-typed invocation, native-error/writeback or connection-owned handle contract.
+`whiny_dispatch_v1` resolved by `NativeDispatcher`. Descriptor primitives
+alone do not compose complete framing, guarded typed invocation,
+native-error/writeback or a connection-owned handle contract.
 No pointer-bearing wire format or success-shaped bounded FFI stub is added.
 REQ-N12 likewise retains the no-export rule: resident target/dependency
 representation needs the coordinator's resolution of the admission freeze;

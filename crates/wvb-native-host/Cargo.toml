@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 wvb-broker = { path = "../wvb-broker" }
+wvb-call = { path = "../wvb-call" }
 wvb-integrity = { path = "../wvb-integrity" }
 
 [lints]

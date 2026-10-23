@@ -3,8 +3,10 @@
 
 use std::path::PathBuf;
 
+use wvb_broker::DispatchOutcome;
 #[cfg(not(windows))]
-use wvb_broker::{DispatchOutcome, TypedDispatchModule};
+use wvb_broker::TypedDispatchModule;
+use wvb_call::LOGICAL_MAX;
 
 pub const DISPATCHER_ABI_IDENTIFIER: &str = "whiny.dispatch.v1";
 
@@ -21,6 +23,7 @@ pub enum NativeHostError {
     InvalidPath,
     LoadFailed,
     ExportMissing,
+    InvalidResponseCapacity,
 }
 
 impl std::fmt::Display for NativeHostError {
@@ -37,13 +40,42 @@ impl From<wvb_integrity::IntegrityError> for NativeHostError {
     }
 }
 
+fn validate_response_capacity(capacity: usize) -> Result<(), NativeHostError> {
+    if capacity == 0 || capacity > LOGICAL_MAX {
+        return Err(NativeHostError::InvalidResponseCapacity);
+    }
+    Ok(())
+}
+
+#[cfg(any(windows, test))]
+fn bounded_dispatch_outcome(
+    status: i32,
+    mut response: Vec<u8>,
+    response_length: usize,
+) -> DispatchOutcome {
+    if response.len() > LOGICAL_MAX || response_length > response.len() {
+        return DispatchOutcome {
+            status: -1,
+            body: Vec::new(),
+        };
+    }
+    response.truncate(response_length);
+    DispatchOutcome {
+        status,
+        body: response,
+    }
+}
+
 #[cfg(windows)]
 mod windows {
-    use super::{NativeHostConfig, NativeHostError};
+    use super::{
+        NativeHostConfig, NativeHostError, bounded_dispatch_outcome, validate_response_capacity,
+    };
     use std::ffi::{c_char, c_void};
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
     use wvb_broker::{DispatchOutcome, TypedDispatchModule};
+    use wvb_call::LOGICAL_MAX;
     use wvb_integrity::sha256_file;
 
     const LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR: u32 = 0x0000_0100;
@@ -67,9 +99,8 @@ mod windows {
 
     impl NativeDispatcher {
         pub fn load(config: &NativeHostConfig) -> Result<Self, NativeHostError> {
-            if config.response_capacity == 0
-                || sha256_file(&config.dispatcher_path)? != config.dispatcher_sha256
-            {
+            validate_response_capacity(config.response_capacity)?;
+            if sha256_file(&config.dispatcher_path)? != config.dispatcher_sha256 {
                 return Err(NativeHostError::LoadFailed);
             }
             let path = wide_path(&config.dispatcher_path)?;
@@ -100,6 +131,12 @@ mod windows {
 
     impl TypedDispatchModule for NativeDispatcher {
         fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome {
+            if request.len() > LOGICAL_MAX {
+                return DispatchOutcome {
+                    status: -1,
+                    body: Vec::new(),
+                };
+            }
             let mut response = vec![0_u8; self.response_capacity];
             let mut response_length = 0_usize;
             let status = unsafe {
@@ -112,17 +149,7 @@ mod windows {
                     &raw mut response_length,
                 )
             };
-            if response_length > response.len() {
-                return DispatchOutcome {
-                    status: -1,
-                    body: Vec::new(),
-                };
-            }
-            response.truncate(response_length);
-            DispatchOutcome {
-                status,
-                body: response,
-            }
+            bounded_dispatch_outcome(status, response, response_length)
         }
     }
 
@@ -172,7 +199,8 @@ pub struct NativeDispatcher;
 
 #[cfg(not(windows))]
 impl NativeDispatcher {
-    pub fn load(_config: &NativeHostConfig) -> Result<Self, NativeHostError> {
+    pub fn load(config: &NativeHostConfig) -> Result<Self, NativeHostError> {
+        validate_response_capacity(config.response_capacity)?;
         Err(NativeHostError::UnsupportedPlatform)
     }
 }
@@ -187,11 +215,12 @@ impl TypedDispatchModule for NativeDispatcher {
     }
 }
 
-#[cfg(all(test, not(windows)))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(windows))]
     fn non_windows_loader_fails_closed() {
         assert!(matches!(
             NativeDispatcher::load(&NativeHostConfig {
@@ -201,5 +230,46 @@ mod tests {
             }),
             Err(NativeHostError::UnsupportedPlatform)
         ));
+    }
+
+    #[test]
+    fn response_capacity_must_fit_the_actual_call_body_bound() {
+        for capacity in [0, LOGICAL_MAX + 1, usize::MAX] {
+            assert!(matches!(
+                NativeDispatcher::load(&NativeHostConfig {
+                    dispatcher_path: PathBuf::from("must-not-be-loaded.dll"),
+                    dispatcher_sha256: [0; 32],
+                    response_capacity: capacity,
+                }),
+                Err(NativeHostError::InvalidResponseCapacity)
+            ));
+        }
+        assert!(validate_response_capacity(1).is_ok());
+        assert!(validate_response_capacity(LOGICAL_MAX).is_ok());
+    }
+
+    #[test]
+    fn dispatcher_cannot_publish_bytes_beyond_its_capacity() {
+        for length in [5, usize::MAX] {
+            let outcome = bounded_dispatch_outcome(0, vec![0xa5; 4], length);
+            assert_eq!(outcome.status, -1);
+            assert!(outcome.body.is_empty());
+        }
+        let maximum = bounded_dispatch_outcome(0, vec![0xa5; LOGICAL_MAX], LOGICAL_MAX);
+        assert_eq!(maximum.body.len(), LOGICAL_MAX);
+        let oversized = bounded_dispatch_outcome(0, vec![0xa5; LOGICAL_MAX + 1], 4);
+        assert_eq!(oversized.status, -1);
+        assert!(oversized.body.is_empty());
+    }
+
+    #[test]
+    fn host_preserves_dispatch_status_and_only_the_reported_typed_bytes() {
+        let outcome =
+            bounded_dispatch_outcome(0, [0x8000_4005_u32.to_le_bytes(), [0xa5; 4]].concat(), 4);
+        assert_eq!(outcome.status, 0);
+        assert_eq!(outcome.body, 0x8000_4005_u32.to_le_bytes());
+        let failed = bounded_dispatch_outcome(-17, vec![42; 4], 4);
+        assert_eq!(failed.status, -17);
+        assert_eq!(failed.body, vec![42; 4]);
     }
 }

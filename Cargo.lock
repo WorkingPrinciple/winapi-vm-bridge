@@ -1237,6 +1237,7 @@ name = "wvb-native-host"
 version = "0.2.0"
 dependencies = [
  "wvb-broker",
+ "wvb-call",
  "wvb-integrity",
 ]
 
