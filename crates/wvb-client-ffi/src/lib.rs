@@ -336,7 +336,9 @@ fn unix_time_ms() -> u64 {
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use std::sync::{Barrier, Mutex, TryLockError, mpsc};
     use tokio::net::TcpListener;
+    use tokio::sync::Notify;
     use wvb_broker::{
         BrokerError, CallHandler, DispatchOutcome, DispatcherCallHandler,
         OperationSchema as BrokerSchema, TypedDispatchModule, serve_calls,
@@ -344,6 +346,8 @@ mod tests {
     use wvb_call::CallResult;
     use wvb_session::{HelloAck, Readiness, activate_broker};
     use wvb_transport::session_responder;
+
+    static FFI_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     struct NativeScalar;
 
@@ -360,13 +364,26 @@ mod tests {
         }
     }
 
-    struct TestHandler(DispatcherCallHandler);
+    struct CallGate {
+        entered: mpsc::SyncSender<()>,
+        release: Notify,
+    }
+
+    struct TestHandler {
+        inner: DispatcherCallHandler,
+        gate: Option<Arc<CallGate>>,
+    }
 
     #[async_trait]
     impl CallHandler for TestHandler {
         async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
             let selector = request.body.first().copied();
-            let mut result = self.0.handle_call(request).await?;
+            if selector == Some(5) {
+                let gate = self.gate.as_ref().expect("gated call needs a gate");
+                gate.entered.send(()).unwrap();
+                gate.release.notified().await;
+            }
+            let mut result = self.inner.handle_call(request).await?;
             if selector == Some(2) {
                 result.native_status = vec![0];
             }
@@ -378,6 +395,12 @@ mod tests {
     }
 
     fn connect_fixture() -> (Runtime, tokio::task::JoinHandle<Result<(), BrokerError>>) {
+        connect_fixture_with_gate(None)
+    }
+
+    fn connect_fixture_with_gate(
+        gate: Option<Arc<CallGate>>,
+    ) -> (Runtime, tokio::task::JoinHandle<Result<(), BrokerError>>) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let listener = runtime.block_on(TcpListener::bind("127.0.0.1:0")).unwrap();
         let address = listener.local_addr().unwrap().to_string();
@@ -402,22 +425,25 @@ mod tests {
                 broker_wall_unix_ms: 2,
             };
             let (_, active) = activate_broker(provisional, &ack, [6; 16]).await.unwrap();
-            let handler = TestHandler(DispatcherCallHandler::new(
-                [1; 32],
-                [1, 2]
-                    .into_iter()
-                    .map(|operation_id| {
-                        (
-                            operation_id,
-                            BrokerSchema {
-                                request_schema_id: 0x1000_0001,
-                                response_schema_id: 0x1000_0002,
-                            },
-                        )
-                    })
-                    .collect(),
-                Arc::new(NativeScalar),
-            ));
+            let handler = TestHandler {
+                inner: DispatcherCallHandler::new(
+                    [1; 32],
+                    [1, 2]
+                        .into_iter()
+                        .map(|operation_id| {
+                            (
+                                operation_id,
+                                BrokerSchema {
+                                    request_schema_id: 0x1000_0001,
+                                    response_schema_id: 0x1000_0002,
+                                },
+                            )
+                        })
+                        .collect(),
+                    Arc::new(NativeScalar),
+                ),
+                gate,
+            };
             serve_calls(active, Arc::new(handler), 4).await
         });
         let config = WvbClientConfig {
@@ -441,6 +467,7 @@ mod tests {
 
     #[test]
     fn exported_ffi_uses_bound_schemas_and_preserves_failure_domains() {
+        let _serial = FFI_TEST_LOCK.lock().unwrap();
         assert_eq!(
             unsafe {
                 wvb_client_call(
@@ -621,5 +648,124 @@ mod tests {
                 Err(WVB_STATUS_PROTOCOL_ERROR)
             );
         }
+    }
+
+    fn bind_scalar() -> i32 {
+        unsafe { wvb_client_bind_operation([1; 32].as_ptr(), 1, 0x1000_0001, 0x1000_0002) }
+    }
+
+    fn scalar_call(selector: u8) -> (i32, [u8; 4], usize) {
+        let mut response = [0xa5; 4];
+        let mut length = 999;
+        let status = unsafe {
+            wvb_client_call(
+                [1; 32].as_ptr(),
+                1,
+                &raw const selector,
+                1,
+                response.as_mut_ptr(),
+                response.len(),
+                &raw mut length,
+            )
+        };
+        (status, response, length)
+    }
+
+    #[test]
+    fn successful_reconfiguration_discards_previous_operation_bindings() {
+        let _serial = FFI_TEST_LOCK.lock().unwrap();
+        let (_old_runtime, old_server) = connect_fixture();
+        assert_eq!(bind_scalar(), WVB_STATUS_OK);
+        assert_eq!(scalar_call(0), (WVB_STATUS_OK, 42_i32.to_le_bytes(), 4));
+
+        let (_new_runtime, new_server) = connect_fixture();
+        assert_eq!(
+            scalar_call(0),
+            (WVB_STATUS_OPERATION_NOT_BOUND, [0xa5; 4], 0)
+        );
+        assert_eq!(bind_scalar(), WVB_STATUS_OK);
+        assert_eq!(scalar_call(0), (WVB_STATUS_OK, 42_i32.to_le_bytes(), 4));
+        assert_eq!(wvb_client_reset(), WVB_STATUS_OK);
+        old_server.abort();
+        new_server.abort();
+    }
+
+    #[test]
+    fn concurrent_bind_reset_and_reconfigure_wait_for_inflight_call() {
+        let _serial = FFI_TEST_LOCK.lock().unwrap();
+        let (entered, entered_rx) = mpsc::sync_channel(1);
+        let gate = Arc::new(CallGate {
+            entered,
+            release: Notify::new(),
+        });
+        let (_old_runtime, old_server) = connect_fixture_with_gate(Some(gate.clone()));
+        assert_eq!(bind_scalar(), WVB_STATUS_OK);
+        let call = std::thread::spawn(|| scalar_call(5));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(
+            configured().try_write(),
+            Err(TryLockError::WouldBlock)
+        ));
+
+        let ready = Arc::new(Barrier::new(4));
+        let (completed, completed_rx) = mpsc::channel();
+        let bind = {
+            let ready = ready.clone();
+            let completed = completed.clone();
+            std::thread::spawn(move || {
+                ready.wait();
+                let result = bind_scalar();
+                completed.send("bind").unwrap();
+                result
+            })
+        };
+        let reset = {
+            let ready = ready.clone();
+            let completed = completed.clone();
+            std::thread::spawn(move || {
+                ready.wait();
+                let result = wvb_client_reset();
+                completed.send("reset").unwrap();
+                result
+            })
+        };
+        let reconfigure = {
+            let ready = ready.clone();
+            std::thread::spawn(move || {
+                ready.wait();
+                let fixture = connect_fixture();
+                completed.send("reconfigure").unwrap();
+                fixture
+            })
+        };
+        ready.wait();
+        let while_blocked = completed_rx.recv_timeout(Duration::from_millis(50));
+        gate.release.notify_one();
+        assert!(matches!(
+            while_blocked,
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(
+            call.join().unwrap(),
+            (WVB_STATUS_OK, 42_i32.to_le_bytes(), 4)
+        );
+        let mut completions = Vec::new();
+        for _ in 0..3 {
+            completions.push(completed_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+        }
+        completions.sort_unstable();
+        assert_eq!(completions, ["bind", "reconfigure", "reset"]);
+        assert!(matches!(
+            bind.join().unwrap(),
+            WVB_STATUS_OK | WVB_STATUS_NOT_CONFIGURED
+        ));
+        assert_eq!(reset.join().unwrap(), WVB_STATUS_OK);
+        let (_new_runtime, new_server) = reconfigure.join().unwrap();
+        // The racing writers may linearize in any order; establish a clean
+        // terminal state explicitly rather than assuming which writer wins.
+        assert_eq!(wvb_client_reset(), WVB_STATUS_OK);
+        assert!(configured().read().unwrap().is_none());
+        old_server.abort();
+        new_server.abort();
     }
 }
