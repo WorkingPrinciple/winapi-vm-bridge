@@ -155,6 +155,13 @@ the exact staged Unixlib mapping; a search/layout failure is not ABI evidence.
 Actual use requires an explicitly selected owned
 prefix, scoped transient-server cleanup and runtime authorization; creating a
 new Wine prefix is itself a mutation, not a source check.
+`native/wine-unixlib/run-loader-probe.py` defaults to printing its plan and
+requires explicit `--execute` only after separate target/operation/rollback
+approval. Source checks parse its syntax and exercise its builtin-log predicate
+without importing or running the driver. Its runtime branch uses a newly owned
+prefix and foreground server, captured child PIDs, exact staged Unixlib
+mapping, input hashes and scoped cleanup; it is not an OS confinement promise
+or a generated-proxy acceptance test.
 
 The installed CrossOver runtime alone does not include this SDK here. A
 source-only follow-on built the minimal SDK subset and the x64 pair from the

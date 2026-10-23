@@ -4,6 +4,22 @@ root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 out="$root/out/wine-unixlib"
 mkdir -p "$out"
 
+python3 - "$root/native/wine-unixlib/run-loader-probe.py" <<'PY'
+import ast
+from pathlib import Path
+import re
+import sys
+tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"), filename=sys.argv[1])
+assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                  and any(isinstance(target, ast.Name) and target.id == "BUILTIN_TRACE"
+                          for target in node.targets))
+predicate = re.compile(ast.literal_eval(assignment.value.args[0]), re.IGNORECASE | re.MULTILINE)
+line = r'0012:0024:trace:loaddll:build_module Loaded L"C:\\windows\\system32\\wvb_autoconfig.dll" at 0000000012340000: builtin'
+assert predicate.search(line)
+assert not predicate.search(line.replace(": builtin", ": native"))
+assert not predicate.search(line.replace("wvb_autoconfig.dll", "other.dll"))
+PY
+
 # These checks neither launch Wine nor read/write credential storage.
 clang -std=c17 -Wall -Wextra -Werror -O2 \
   -I"$root/native/wine-unixlib/tests/sdk" \
