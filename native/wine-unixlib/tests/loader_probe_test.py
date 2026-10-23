@@ -126,6 +126,20 @@ class PartialCreationCleanupTests(unittest.TestCase):
         self.assertTrue(self.root.is_dir())
         self.assertTrue(self.prefix.is_dir())
 
+    def test_creation_collision_with_unknown_directory_stops_cleanup(self):
+        def collide(path, *args, **kwargs):
+            if path == self.prefix:
+                self.mkdir(path)
+                (path / "sentinel").write_bytes(b"do not delete")
+                raise FileExistsError("injected concurrent creation")
+            return self.mkdir(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "mkdir", new=collide):
+            report = self.execute_failure()
+        self.assertIn("injected concurrent creation", report["error"])
+        self.assertIn("cleanupError", report)
+        self.assertEqual((self.prefix / "sentinel").read_bytes(), b"do not delete")
+
     def test_replaced_created_directory_stops_cleanup(self):
         displaced = self.root / "displaced-home"
 

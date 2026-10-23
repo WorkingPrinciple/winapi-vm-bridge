@@ -126,8 +126,15 @@ def execute() -> int:
 
     def create_directory(path: Path) -> None:
         nonlocal pending_directory
-        path.mkdir(mode=0o700)
         pending_directory = path
+        try:
+            path.mkdir(mode=0o700)
+        except OSError:
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                pending_directory = None
+            raise
         owned_directories[path] = identity(path)
         pending_directory = None
 
