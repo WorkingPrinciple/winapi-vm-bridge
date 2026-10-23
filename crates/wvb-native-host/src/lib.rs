@@ -10,6 +10,9 @@ use wvb_call::LOGICAL_MAX;
 
 pub const DISPATCHER_ABI_IDENTIFIER: &str = "whiny.dispatch.v1";
 
+#[cfg(all(feature = "source-fixture", target_os = "macos"))]
+pub mod source_fixture;
+
 pub struct NativeHostConfig {
     pub dispatcher_path: PathBuf,
     pub dispatcher_sha256: [u8; 32],
@@ -24,6 +27,8 @@ pub enum NativeHostError {
     LoadFailed,
     ExportMissing,
     InvalidResponseCapacity,
+    #[cfg(all(feature = "source-fixture", target_os = "macos"))]
+    SourceFixtureLoad(String),
 }
 
 impl std::fmt::Display for NativeHostError {
@@ -47,7 +52,39 @@ fn validate_response_capacity(capacity: usize) -> Result<(), NativeHostError> {
     Ok(())
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, test, all(feature = "source-fixture", target_os = "macos")))]
+type DispatchFn =
+    unsafe extern "system" fn(u32, *const u8, usize, *mut u8, usize, *mut usize) -> i32;
+
+#[cfg(any(windows, test, all(feature = "source-fixture", target_os = "macos")))]
+unsafe fn invoke_dispatch(
+    dispatch: DispatchFn,
+    response_capacity: usize,
+    operation_id: u32,
+    request: &[u8],
+) -> DispatchOutcome {
+    if validate_response_capacity(response_capacity).is_err() || request.len() > LOGICAL_MAX {
+        return DispatchOutcome {
+            status: -1,
+            body: Vec::new(),
+        };
+    }
+    let mut response = vec![0_u8; response_capacity];
+    let mut response_length = 0_usize;
+    let status = unsafe {
+        dispatch(
+            operation_id,
+            request.as_ptr(),
+            request.len(),
+            response.as_mut_ptr(),
+            response.len(),
+            &raw mut response_length,
+        )
+    };
+    bounded_dispatch_outcome(status, response, response_length)
+}
+
+#[cfg(any(windows, test, all(feature = "source-fixture", target_os = "macos")))]
 fn bounded_dispatch_outcome(
     status: i32,
     mut response: Vec<u8>,
@@ -69,22 +106,18 @@ fn bounded_dispatch_outcome(
 #[cfg(windows)]
 mod windows {
     use super::{
-        NativeHostConfig, NativeHostError, bounded_dispatch_outcome, validate_response_capacity,
+        DispatchFn, NativeHostConfig, NativeHostError, invoke_dispatch, validate_response_capacity,
     };
     use std::ffi::{c_char, c_void};
     use std::os::windows::ffi::OsStrExt;
     use std::ptr;
     use wvb_broker::{DispatchOutcome, TypedDispatchModule};
-    use wvb_call::LOGICAL_MAX;
     use wvb_integrity::sha256_file;
 
     const LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR: u32 = 0x0000_0100;
     const LOAD_LIBRARY_SEARCH_DEFAULT_DIRS: u32 = 0x0000_1000;
 
     type Module = *mut c_void;
-    type DispatchFn =
-        unsafe extern "system" fn(u32, *const u8, usize, *mut u8, usize, *mut usize) -> i32;
-
     unsafe extern "system" {
         fn LoadLibraryExW(path: *const u16, file: *mut c_void, flags: u32) -> Module;
         fn GetProcAddress(module: Module, name: *const c_char) -> *mut c_void;
@@ -131,25 +164,7 @@ mod windows {
 
     impl TypedDispatchModule for NativeDispatcher {
         fn dispatch(&self, operation_id: u32, request: &[u8]) -> DispatchOutcome {
-            if request.len() > LOGICAL_MAX {
-                return DispatchOutcome {
-                    status: -1,
-                    body: Vec::new(),
-                };
-            }
-            let mut response = vec![0_u8; self.response_capacity];
-            let mut response_length = 0_usize;
-            let status = unsafe {
-                (self.dispatch)(
-                    operation_id,
-                    request.as_ptr(),
-                    request.len(),
-                    response.as_mut_ptr(),
-                    response.len(),
-                    &raw mut response_length,
-                )
-            };
-            bounded_dispatch_outcome(status, response, response_length)
+            unsafe { invoke_dispatch(self.dispatch, self.response_capacity, operation_id, request) }
         }
     }
 
@@ -271,5 +286,47 @@ mod tests {
         let failed = bounded_dispatch_outcome(-17, vec![42; 4], 4);
         assert_eq!(failed.status, -17);
         assert_eq!(failed.body, vec![42; 4]);
+    }
+
+    #[test]
+    fn shared_invocation_checks_bounds_before_the_single_export_call() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+        unsafe extern "system" fn export(
+            operation: u32,
+            _: *const u8,
+            _: usize,
+            response: *mut u8,
+            capacity: usize,
+            length: *mut usize,
+        ) -> i32 {
+            CALLS.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(capacity, 4);
+            unsafe {
+                std::ptr::copy_nonoverlapping(0x8000_4005_u32.to_le_bytes().as_ptr(), response, 4);
+                length.write(if operation == 3 { usize::MAX } else { 4 });
+            }
+            if operation == 2 { -17 } else { 0 }
+        }
+
+        for capacity in [0, LOGICAL_MAX + 1] {
+            let outcome = unsafe { invoke_dispatch(export, capacity, 1, &[]) };
+            assert_eq!(outcome.status, -1);
+            assert!(outcome.body.is_empty());
+        }
+        let oversized = unsafe { invoke_dispatch(export, 4, 1, &vec![0; LOGICAL_MAX + 1]) };
+        assert_eq!(oversized.status, -1);
+        assert_eq!(CALLS.load(Ordering::SeqCst), 0);
+        for (operation, status) in [(1, 0), (2, -17), (3, -1)] {
+            let outcome = unsafe { invoke_dispatch(export, 4, operation, &[]) };
+            assert_eq!(outcome.status, status);
+            if operation == 3 {
+                assert!(outcome.body.is_empty());
+            } else {
+                assert_eq!(outcome.body, 0x8000_4005_u32.to_le_bytes());
+            }
+            assert_eq!(CALLS.load(Ordering::SeqCst), operation as usize);
+        }
     }
 }

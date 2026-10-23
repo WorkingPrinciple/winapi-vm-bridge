@@ -6,10 +6,24 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+source-fixture = []
+
 [dependencies]
 wvb-broker = { path = "../wvb-broker" }
 wvb-call = { path = "../wvb-call" }
 wvb-integrity = { path = "../wvb-integrity" }
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio.workspace = true
+wvb-crypto = { path = "../wvb-crypto" }
+wvb-session = { path = "../wvb-session" }
+wvb-transport = { path = "../wvb-transport" }
+
+[[example]]
+name = "source_fixture_broker"
+required-features = ["source-fixture"]
 
 [lints]
 workspace = true

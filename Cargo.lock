@@ -1236,9 +1236,14 @@ dependencies = [
 name = "wvb-native-host"
 version = "0.2.0"
 dependencies = [
+ "serde_json",
+ "tokio",
  "wvb-broker",
  "wvb-call",
+ "wvb-crypto",
  "wvb-integrity",
+ "wvb-session",
+ "wvb-transport",
 ]
 
 [[package]]
