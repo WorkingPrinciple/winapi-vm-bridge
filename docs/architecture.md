@@ -162,6 +162,14 @@ that library directly, checks all six actual PE exports, the import library's
 `wvb_autoconfig.dll` binding, and all five actual Mach-O client imports. The
 native Windows `wvb_client_ffi.dll` remains a different artifact/path, not this
 Wine builtin. No client DLL naming fallback or implicit configuration is used.
+Set `WVB_WINEBUILD` to the same SDK's `winebuild` if it is not next to
+`WVB_WINEGCC`. That exact tool also handles the PE compilation and builds the
+real import thunks directly from the authoritative `.spec` using `--implib`;
+GNU linker's `--out-implib` is not sufficient for Wine-generated `.edata`.
+The source gate links a never-executed PE consumer of all five client symbols
+and inspects its actual `wvb_autoconfig.dll` imports. A DLL-name-only archive
+must fail both the thunk guard and that consumer link; DLL-name inspection
+alone does not establish a usable archive.
 The PE build uses Wine's builtin marker and CRT initialization support; the
 matching Mach-O unixlib exports the existing Unix-call table. Output is staged
 under `out/wine-unixlib/lib/wine/{x86_64-windows,x86_64-unix}`.

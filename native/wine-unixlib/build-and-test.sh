@@ -78,12 +78,17 @@ if [ -z "${WVB_WINEGCC:-}" ]; then
 fi
 
 mkdir -p "$out/lib/wine/x86_64-windows" "$out/lib/wine/x86_64-unix"
+winebuild="${WVB_WINEBUILD:-"$(dirname "$WVB_WINEGCC")/winebuild"}"
+if [ ! -x "$winebuild" ]; then
+  echo "Select the same SDK's winebuild with WVB_WINEBUILD for spec-driven import thunks." >&2
+  exit 2
+fi
 client_library="${WVB_HOST_CLIENT_LIB:-"$root/target/x86_64-apple-darwin/debug/libwvb_client_ffi.dylib"}"
 if [ ! -f "$client_library" ] || ! lipo -verify_arch x86_64 "$client_library"; then
   echo "Build the actual x86_64-apple-darwin wvb-client-ffi dylib first; no architecture fallback." >&2
   exit 2
 fi
-"$WVB_WINEGCC" -b x86_64-w64-mingw32 -m64 -shared \
+"$WVB_WINEGCC" --winebuild "$winebuild" -b x86_64-w64-mingw32 -m64 -shared \
   -std=c17 -Wall -Wextra -Werror -O2 -Wl,--wine-builtin \
   -I"$root/native/wine-unixlib/include" \
   -I"$root/native/include" \
@@ -91,9 +96,15 @@ fi
   "$root/native/wine-unixlib/src/wvb_builtin.c" \
   "$root/native/wine-unixlib/src/wvb_client_builtin.c" \
   "$root/native/wine-unixlib/src/wvb_autoconfig.spec" \
-  -Wl,--out-implib,"$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a" \
   -lntdll \
   -o "$out/lib/wine/x86_64-windows/wvb_autoconfig.dll"
+
+"$winebuild" -b x86_64-w64-mingw32 --implib -F wvb_autoconfig.dll \
+  -E "$root/native/wine-unixlib/src/wvb_autoconfig.spec" \
+  -o "$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a"
+
+python3 -B "$root/native/wine-unixlib/tests/client_import_test.py" \
+  "$root" "$out" "$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a"
 
 clang -arch x86_64 -std=c17 -Wall -Wextra -Werror -O2 \
   -fvisibility=hidden -dynamiclib \
