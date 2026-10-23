@@ -148,7 +148,11 @@ This synthetic caller loads the builtin, resolves its configuration export
 without calling it, prints the Windows module path/PID, holds for ten seconds
 for separately scoped mapping observation, and unloads. It does not invoke
 Keychain or configure Bridge. Its virtual module path alone is not proof of
-the staged Unixlib identity. Actual use requires an explicitly selected owned
+the staged Unixlib identity. It uses default DLL search flags for diagnosis,
+not a system32-only search that could mask staged builtin lookup. Actual use
+still requires builtin-only per-process overrides, a builtin loader trace and
+the exact staged Unixlib mapping; a search/layout failure is not ABI evidence.
+Actual use requires an explicitly selected owned
 prefix, scoped transient-server cleanup and runtime authorization; creating a
 new Wine prefix is itself a mutation, not a source check.
 

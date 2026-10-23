@@ -5,7 +5,7 @@
 
 int wmain(void) {
   HMODULE module =
-      LoadLibraryExW(L"wvb_autoconfig.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+      LoadLibraryExW(L"wvb_autoconfig.dll", NULL, 0);
   if (!module) {
     printf("a08-loader=failed stage=load error=%lu\n",
            (unsigned long)GetLastError());
