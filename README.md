@@ -1,4 +1,26 @@
-# WinAPI VM Bridge
+# xodus-vm-bridge (superseded proof of concept)
+
+**Status: superseded. Archived 2026-10-23 (Whiny D-03).**
+
+This was the first Python proof of concept. It made Windows API calls in a
+VM on behalf of a Mac/Wine client over TCP, using a plaintext bearer token,
+and demonstrated calls such as `GetTickCount64`.
+
+| Concern | Replacement |
+|---|---|
+| Transport, admission, receipts | [winapi-vm-bridge](https://github.com/dragoshont/winapi-vm-bridge) (Noise, Rust) |
+| Real Xbox GDK calls (XUser add/id/gamertag) | Experiment 2 lab broker (private `gdk-lab-broker`) |
+| Proxy generation | [Whiny](https://github.com/dragoshont/whiny) |
+
+Do not deploy it. The token is plaintext, and the protocol is not
+authenticated beyond the bearer token. Keep the repository only for its
+history and for `docs/architecture.md` and `docs/evidence.md`.
+
+---
+
+## Original README
+
+## WinAPI VM Bridge
 
 WinAPI VM Bridge is the runtime and execution plane for invoking approved
 Windows APIs from software running under Wine on macOS. It does not inspect
@@ -14,7 +36,7 @@ Whiny inspection/review/freezing
   -> result, lifecycle events and runtime receipt
 ```
 
-## Ownership boundary
+### Ownership boundary
 
 Whiny exclusively owns:
 
@@ -37,7 +59,7 @@ VM Bridge exclusively owns:
 The dependency direction is one-way. VM Bridge consumes pinned frozen Whiny
 artifacts; it does not infer or regenerate their contract.
 
-## Frozen boundary
+### Frozen boundary
 
 The selected unreleased boundary is:
 
@@ -53,7 +75,7 @@ The old VM-owned inspection/generation code has been removed. Runtime consumer
 tests use the immutable Whiny v0.3.0 artifacts pinned under
 `external/whiny/v0.3.0/`.
 
-## Runtime security model
+### Runtime security model
 
 - Generated bundle contents are untrusted data.
 - An existing `AdapterAdmin` grant scoped to the exact contract hash is required
@@ -68,7 +90,7 @@ tests use the immutable Whiny v0.3.0 artifacts pinned under
 - Arbitrary caller-selected paths, DLLs, exports, assemblies and commands are
   rejected.
 
-## Verified runtime baseline
+### Verified runtime baseline
 
 The `canonical-runtime` baseline through `d5b8e89` includes:
 
@@ -90,7 +112,7 @@ artifact-bound provenance.
 Bootstrap launchers are separate platform-authenticated distribution artifacts;
 they are deliberately not embedded in the unsigned archive they verify.
 
-## Build and test
+### Build and test
 
 ```bash
 cargo fmt --all -- --check
@@ -102,7 +124,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 The portable gate validates the runtime-only workspace and the pinned frozen
 Whiny consumer boundary after the completed atomic cutover.
 
-## Current holds
+### Current holds
 
 - The native and managed frozen scalar bundles are admitted and execute through
   their generic runtime hosts under CrossOver and the exact Windows x64 UTM VM,
@@ -123,7 +145,7 @@ Whiny consumer boundary after the completed atomic cutover.
 - Signing identities, notarization, hosted CI billing and publication remain
   external human-controlled release holds.
 
-## Documentation
+### Documentation
 
 - [Canonical runtime ledger and ADR](docs/implementation-ledger.md)
 - [Architecture](docs/architecture.md)
