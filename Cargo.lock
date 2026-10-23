@@ -1141,11 +1141,14 @@ dependencies = [
 name = "wvb-client-ffi"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "tokio",
+ "wvb-broker",
  "wvb-call",
  "wvb-crypto",
  "wvb-runtime",
  "wvb-session",
+ "wvb-transport",
 ]
 
 [[package]]

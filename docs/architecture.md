@@ -126,9 +126,79 @@ v1 denial or the unsupported status of T16, T26 and T32.
 - OS-backed identity consumed without plaintext repository or registry secrets.
 
 The failed CrossOver by-name unixlib experiment is not a supported
-configuration path. A supported automatic configuration route must use a Wine
-loader-initialized builtin DLL/unixlib handle or another documented mechanism;
-it must not call the rejected private memory-information-class path unchanged.
+configuration path. The source composition now loads `wvb_autoconfig.dll` with
+`LoadLibraryExW`. Its `DllMain` calls Wine's `__wine_init_unix_call`; the exported
+configuration function subsequently uses `WINE_UNIX_CALL` with that initialized
+handle to read the existing Keychain record. There is no by-name Unix-library
+load or numeric private memory-information-class probe. No credential read or
+network connection occurs in `DllMain`. Missing initialization/export/record
+fails explicitly, and failed reads leave the caller's configuration unchanged.
+
+`native/wine-unixlib/build-and-test.sh` runs source composition tests against a
+mock Wine SDK and cross-builds the PE caller without launching Wine or accessing
+Keychain. To also build the x64 builtin pair, select the exact runtime's installed
+Wine SDK with `WVB_WINEGCC=/absolute/path/to/winegcc`; set
+`WVB_REQUIRE_BUILTIN_BUILD=1` to fail rather than skip an unavailable SDK.
+The PE build uses Wine's builtin marker and CRT initialization support; the
+matching Mach-O unixlib exports the existing Unix-call table. Output is staged
+under `out/wine-unixlib/lib/wine/{x86_64-windows,x86_64-unix}`.
+
+The installed CrossOver runtime alone does not include this SDK here. Source
+tests do not prove that its loader locates this staged pair. An exact
+CrossOver-compatible SDK, authorized per-bottle composition/activation and a
+real load/invocation receipt are still required for REQ-A08. This is x64-only
+source work, not ARM64EC/WoW64 or real-app acceptance. The upstream reference
+mechanisms are Wine 10.0's
+[`wine/unixlib.h`](https://github.com/wine-mirror/wine/blob/wine-10.0/include/wine/unixlib.h),
+[`winecrt0/unix_lib.c`](https://github.com/wine-mirror/wine/blob/wine-10.0/dlls/winecrt0/unix_lib.c)
+and [`winegcc`](https://github.com/wine-mirror/wine/blob/wine-10.0/tools/winegcc/winegcc.c);
+these references are not proof of a particular CrossOver ABI.
+
+#### Client FFI operation and error contract
+
+`native/include/wvb_client.h` preserves the existing configuration and scalar
+call layouts. After connecting, composition must bind each operation's exact
+contract hash, operation ID and request/response schema IDs using
+`wvb_client_bind_operation`. These are the same reviewed IDs already consumed
+by `OperatorAdmission` and the broker; they are not inferred from operation IDs
+or negotiated by HELLO. Bindings are client configuration, not new admission
+records or invocation grants. Missing bindings fail before sending. Identical
+binding is idempotent, conflicting binding is rejected, and reset/reconfigure
+clears bindings. The service still validates the supplied request schema
+against its own operation metadata and authorizes invocation independently.
+
+Both scalar entrypoints validate the response schema and the exact four-byte
+little-endian `whiny.dispatch.v1` execution status before copying any body.
+`wvb_client_call_ex` additionally exposes that signed dispatcher status:
+
+| FFI result | Meaning and writes |
+|---|---|
+| `WVB_STATUS_OK` | Dispatch succeeded; opaque typed result bytes copied |
+| `WVB_STATUS_DISPATCH_ERROR` | Nonzero dispatcher execution status; no body copied |
+| `WVB_STATUS_PROTOCOL_ERROR` | Wrong response schema or malformed execution status; no body copied |
+| `WVB_STATUS_OPERATION_NOT_BOUND` | No exact local operation binding; no request sent |
+| `WVB_STATUS_RUNTIME_ERROR` | Connection, transport or runtime failure; no body copied |
+| `WVB_STATUS_INSUFFICIENT_BUFFER` | Dispatch succeeded; required byte count returned, no body copied |
+
+Response length is zero on failure except insufficient capacity. The separate
+dispatcher status is meaningful only on OK, insufficient capacity or dispatch
+error. A target HRESULT/Win32 error is **not** the dispatcher execution status:
+a legitimate failing HRESULT in a successful dispatch body is copied unchanged.
+Generated proxies must check exact body size, decode the declared return/error
+domain and apply the contract's output-write rules; an opaque byte FFI cannot
+infer these. Do not automatically retry a failed or undersized call: the target
+may already have executed. Legacy `wvb_client_call` returns a dispatch error
+without exposing its exact value; its signature is unchanged.
+
+REQ-A03 remains unaccepted. Whiny's bounded local prototype
+`whiny_dispatch_bounded_v1` is not the byte dispatcher export
+`whiny_dispatch_v1` resolved by `NativeDispatcher`. Its existing memory
+descriptors do not yet define a complete request/response payload, guarded
+typed invocation, native-error/writeback or connection-owned handle contract.
+No pointer-bearing wire format or success-shaped bounded FFI stub is added.
+REQ-N12 likewise retains the no-export rule: resident target/dependency
+representation needs the coordinator's resolution of the admission freeze;
+these changes do not copy a protected target or change any bundle schema.
 
 ### Transport/session
 

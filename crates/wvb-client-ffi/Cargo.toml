@@ -16,5 +16,10 @@ wvb-crypto = { path = "../wvb-crypto" }
 wvb-runtime = { path = "../wvb-runtime" }
 wvb-session = { path = "../wvb-session" }
 
+[dev-dependencies]
+async-trait.workspace = true
+wvb-broker = { path = "../wvb-broker" }
+wvb-transport = { path = "../wvb-transport" }
+
 [lints]
 workspace = true

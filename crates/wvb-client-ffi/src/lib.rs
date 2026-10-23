@@ -1,6 +1,7 @@
 //! Windows-loadable C ABI for the canonical bridge client runtime.
 #![allow(unsafe_code)]
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::slice;
@@ -9,7 +10,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
 use tokio::runtime::Runtime;
-use wvb_call::CallRequest;
+use wvb_call::{CallRequest, CallResult};
 use wvb_crypto::StaticPrivateKey;
 use wvb_runtime::{ClientConfig, RuntimeClient};
 use wvb_session::{Hello, Platform};
@@ -20,6 +21,15 @@ pub const WVB_STATUS_NOT_CONFIGURED: i32 = -2;
 pub const WVB_STATUS_RUNTIME_ERROR: i32 = -3;
 pub const WVB_STATUS_INSUFFICIENT_BUFFER: i32 = -4;
 pub const WVB_STATUS_PANIC: i32 = -5;
+pub const WVB_STATUS_DISPATCH_ERROR: i32 = -6;
+pub const WVB_STATUS_PROTOCOL_ERROR: i32 = -7;
+pub const WVB_STATUS_OPERATION_NOT_BOUND: i32 = -8;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct OperationSchema {
+    request: u32,
+    response: u32,
+}
 
 #[repr(C)]
 pub struct WvbClientConfig {
@@ -39,6 +49,7 @@ struct Configured {
     runtime: Arc<Runtime>,
     client: RuntimeClient,
     call_timeout: Duration,
+    operations: BTreeMap<([u8; 32], u32), OperationSchema>,
 }
 
 static CONFIGURED: OnceLock<RwLock<Option<Configured>>> = OnceLock::new();
@@ -115,7 +126,54 @@ pub unsafe extern "C" fn wvb_client_configure(config: *const WvbClientConfig) ->
             runtime,
             client,
             call_timeout: Duration::from_millis(u64::from(config.call_timeout_ms)),
+            operations: BTreeMap::new(),
         });
+        Ok(WVB_STATUS_OK)
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Binds the exact schema IDs from the frozen operation consumed by admission.
+/// This is connection-local client configuration, not an invocation grant.
+/// Conflicting bindings are rejected; reset or reconfigure clears all bindings.
+///
+/// # Safety
+///
+/// `adapter_hash` must reference 32 readable bytes.
+pub unsafe extern "C" fn wvb_client_bind_operation(
+    adapter_hash: *const u8,
+    operation_id: u32,
+    request_schema_id: u32,
+    response_schema_id: u32,
+) -> i32 {
+    ffi_status(|| {
+        if adapter_hash.is_null()
+            || operation_id == 0
+            || request_schema_id == 0
+            || response_schema_id == 0
+        {
+            return Err(WVB_STATUS_INVALID_ARGUMENT);
+        }
+        let adapter_hash: [u8; 32] = unsafe { slice::from_raw_parts(adapter_hash, 32) }
+            .try_into()
+            .map_err(|_| WVB_STATUS_INVALID_ARGUMENT)?;
+        let mut guard = configured().write().map_err(|_| WVB_STATUS_RUNTIME_ERROR)?;
+        let configured = guard.as_mut().ok_or(WVB_STATUS_NOT_CONFIGURED)?;
+        let key = (adapter_hash, operation_id);
+        let schema = OperationSchema {
+            request: request_schema_id,
+            response: response_schema_id,
+        };
+        if let Some(existing) = configured.operations.get(&key) {
+            if *existing != schema {
+                return Err(WVB_STATUS_INVALID_ARGUMENT);
+            }
+        } else {
+            if configured.operations.len() >= 65_536 {
+                return Err(WVB_STATUS_INVALID_ARGUMENT);
+            }
+            configured.operations.insert(key, schema);
+        }
         Ok(WVB_STATUS_OK)
     })
 }
@@ -138,13 +196,59 @@ pub unsafe extern "C" fn wvb_client_call(
     response_cap: usize,
     response_len: *mut usize,
 ) -> i32 {
+    let mut dispatch_status = 0;
+    unsafe {
+        wvb_client_call_ex(
+            adapter_hash,
+            operation_id,
+            request,
+            request_len,
+            response,
+            response_cap,
+            response_len,
+            &raw mut dispatch_status,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+/// Calls the configured runtime, preserving the dispatcher execution status.
+///
+/// A nonzero `whiny.dispatch.v1` status returns `WVB_STATUS_DISPATCH_ERROR`
+/// without copying a body. A target API HRESULT or last-error is not a
+/// dispatcher status: typed target results travel unchanged in a successful
+/// dispatch body. Schema and status framing are checked before any body write.
+/// `response_len` is zero on failure except insufficient response capacity.
+/// `dispatch_status` is meaningful on OK, `INSUFFICIENT_BUFFER` or `DISPATCH_ERROR`.
+/// The caller must validate the operation-specific body shape before use.
+///
+/// # Safety
+///
+/// The pointer requirements of `wvb_client_call` apply. `dispatch_status` must
+/// also reference a writable i32, disjoint from all other input/output regions.
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn wvb_client_call_ex(
+    adapter_hash: *const u8,
+    operation_id: u32,
+    request: *const u8,
+    request_len: usize,
+    response: *mut u8,
+    response_cap: usize,
+    response_len: *mut usize,
+    dispatch_status: *mut i32,
+) -> i32 {
     ffi_status(|| {
         if adapter_hash.is_null()
             || response_len.is_null()
+            || dispatch_status.is_null()
             || request_len != 0 && request.is_null()
             || response_cap != 0 && response.is_null()
         {
             return Err(WVB_STATUS_INVALID_ARGUMENT);
+        }
+        unsafe {
+            response_len.write(0);
+            dispatch_status.write(0);
         }
         let adapter_hash: [u8; 32] = unsafe { slice::from_raw_parts(adapter_hash, 32) }
             .try_into()
@@ -156,13 +260,17 @@ pub unsafe extern "C" fn wvb_client_call(
         };
         let guard = configured().read().map_err(|_| WVB_STATUS_RUNTIME_ERROR)?;
         let configured = guard.as_ref().ok_or(WVB_STATUS_NOT_CONFIGURED)?;
+        let schema = configured
+            .operations
+            .get(&(adapter_hash, operation_id))
+            .ok_or(WVB_STATUS_OPERATION_NOT_BOUND)?;
         let result = configured
             .runtime
             .block_on(configured.client.call(
                 &CallRequest {
                     adapter_hash,
                     operation_id,
-                    request_schema_id: 0x3000_0000 | operation_id,
+                    request_schema_id: schema.request,
                     deduplication_mode: 0,
                     idempotency_key: None,
                     disconnect_policy: 0,
@@ -172,6 +280,11 @@ pub unsafe extern "C" fn wvb_client_call(
                 configured.call_timeout,
             ))
             .map_err(|_| WVB_STATUS_RUNTIME_ERROR)?;
+        let status = validate_result(&result, *schema)?;
+        unsafe { dispatch_status.write(status) };
+        if status != 0 {
+            return Err(WVB_STATUS_DISPATCH_ERROR);
+        }
         unsafe { response_len.write(result.body.len()) };
         if response_cap < result.body.len() {
             return Err(WVB_STATUS_INSUFFICIENT_BUFFER);
@@ -183,6 +296,18 @@ pub unsafe extern "C" fn wvb_client_call(
         }
         Ok(WVB_STATUS_OK)
     })
+}
+
+fn validate_result(result: &CallResult, schema: OperationSchema) -> Result<i32, i32> {
+    if result.response_schema_id != schema.response {
+        return Err(WVB_STATUS_PROTOCOL_ERROR);
+    }
+    let status = result
+        .native_status
+        .as_slice()
+        .try_into()
+        .map_err(|_| WVB_STATUS_PROTOCOL_ERROR)?;
+    Ok(i32::from_le_bytes(status))
 }
 
 #[unsafe(no_mangle)]
@@ -210,9 +335,112 @@ fn unix_time_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use tokio::net::TcpListener;
+    use wvb_broker::{
+        BrokerError, CallHandler, DispatchOutcome, DispatcherCallHandler,
+        OperationSchema as BrokerSchema, TypedDispatchModule, serve_calls,
+    };
+    use wvb_call::CallResult;
+    use wvb_session::{HelloAck, Readiness, activate_broker};
+    use wvb_transport::session_responder;
+
+    struct NativeScalar;
+
+    impl TypedDispatchModule for NativeScalar {
+        fn dispatch(&self, _operation_id: u32, request: &[u8]) -> DispatchOutcome {
+            DispatchOutcome {
+                status: if request == [1] { -17 } else { 0 },
+                body: if request == [4] {
+                    0x8000_4005_u32.to_le_bytes().to_vec()
+                } else {
+                    42_i32.to_le_bytes().to_vec()
+                },
+            }
+        }
+    }
+
+    struct TestHandler(DispatcherCallHandler);
+
+    #[async_trait]
+    impl CallHandler for TestHandler {
+        async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
+            let selector = request.body.first().copied();
+            let mut result = self.0.handle_call(request).await?;
+            if selector == Some(2) {
+                result.native_status = vec![0];
+            }
+            if selector == Some(3) {
+                result.response_schema_id = 99;
+            }
+            Ok(result)
+        }
+    }
+
+    fn connect_fixture() -> (Runtime, tokio::task::JoinHandle<Result<(), BrokerError>>) {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let listener = runtime.block_on(TcpListener::bind("127.0.0.1:0")).unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (broker_key, broker_public) = StaticPrivateKey::generate().unwrap();
+        let server = runtime.spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (_, provisional) = session_responder(stream, &broker_key).await.unwrap();
+            let ack = HelloAck {
+                selected_minor: 0,
+                features: 0,
+                max_logical_payload: 1_048_576,
+                max_streams: 8,
+                initial_connection_credit: 2_097_152,
+                connection_epoch: 42,
+                broker_epoch: [7; 16],
+                actor_id: [8; 16],
+                readiness: Readiness {
+                    overall_status: 1,
+                    generated_at_unix_ms: 2,
+                    source_version: String::from("ffi-test"),
+                },
+                broker_wall_unix_ms: 2,
+            };
+            let (_, active) = activate_broker(provisional, &ack, [6; 16]).await.unwrap();
+            let handler = TestHandler(DispatcherCallHandler::new(
+                [1; 32],
+                [1, 2]
+                    .into_iter()
+                    .map(|operation_id| {
+                        (
+                            operation_id,
+                            BrokerSchema {
+                                request_schema_id: 0x1000_0001,
+                                response_schema_id: 0x1000_0002,
+                            },
+                        )
+                    })
+                    .collect(),
+                Arc::new(NativeScalar),
+            ));
+            serve_calls(active, Arc::new(handler), 4).await
+        });
+        let config = WvbClientConfig {
+            struct_size: u32::try_from(size_of::<WvbClientConfig>()).unwrap(),
+            broker_address: address.as_ptr(),
+            broker_address_len: address.len(),
+            client_private_key: [3; 32],
+            broker_public_key: broker_public,
+            actor_id: [8; 16],
+            client_instance: [4; 16],
+            build_fingerprint: [5; 32],
+            connect_timeout_ms: 2000,
+            call_timeout_ms: 2000,
+        };
+        assert_eq!(
+            unsafe { wvb_client_configure(&raw const config) },
+            WVB_STATUS_OK
+        );
+        (runtime, server)
+    }
 
     #[test]
-    fn ffi_rejects_invalid_arguments_and_reports_unconfigured_state() {
+    fn exported_ffi_uses_bound_schemas_and_preserves_failure_domains() {
         assert_eq!(
             unsafe {
                 wvb_client_call(
@@ -243,5 +471,155 @@ mod tests {
             },
             WVB_STATUS_NOT_CONFIGURED
         );
+
+        // Exercise the exported entrypoint, not a hand-built Rust CallRequest.
+        let (_runtime, server) = connect_fixture();
+        assert_eq!(
+            unsafe {
+                wvb_client_call(
+                    adapter.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    0,
+                    std::ptr::null_mut(),
+                    0,
+                    &raw mut response_length,
+                )
+            },
+            WVB_STATUS_OPERATION_NOT_BOUND
+        );
+        assert_eq!(response_length, 0);
+        assert_eq!(
+            unsafe { wvb_client_bind_operation(adapter.as_ptr(), 1, 0x1000_0001, 0x1000_0002) },
+            WVB_STATUS_OK
+        );
+        assert_eq!(
+            unsafe { wvb_client_bind_operation(adapter.as_ptr(), 1, 0x1000_0001, 0x1000_0002) },
+            WVB_STATUS_OK
+        );
+        assert_eq!(
+            unsafe { wvb_client_bind_operation(adapter.as_ptr(), 1, 0x3000_0001, 0x1000_0002) },
+            WVB_STATUS_INVALID_ARGUMENT
+        );
+        let mut response = [0xa5_u8; 4];
+        let status = unsafe {
+            wvb_client_call(
+                adapter.as_ptr(),
+                1,
+                std::ptr::null(),
+                0,
+                response.as_mut_ptr(),
+                response.len(),
+                &raw mut response_length,
+            )
+        };
+        assert_eq!(status, WVB_STATUS_OK);
+        assert_eq!(response, 42_i32.to_le_bytes());
+        assert_eq!(response_length, 4);
+
+        assert_response_outcomes(&adapter);
+        assert_eq!(wvb_client_reset(), WVB_STATUS_OK);
+        assert!(configured().read().unwrap().is_none());
+        assert_eq!(
+            unsafe { wvb_client_bind_operation(adapter.as_ptr(), 1, 0x1000_0001, 0x1000_0002) },
+            WVB_STATUS_NOT_CONFIGURED
+        );
+        server.abort();
+    }
+
+    fn assert_response_outcomes(adapter: &[u8; 32]) {
+        let mut response = [0xa5; 4];
+        for (selector, expected, expected_dispatch) in [
+            (1, WVB_STATUS_DISPATCH_ERROR, -17),
+            (2, WVB_STATUS_PROTOCOL_ERROR, 0),
+            (3, WVB_STATUS_PROTOCOL_ERROR, 0),
+            (4, WVB_STATUS_OK, 0),
+        ] {
+            let mut dispatch_status = 999;
+            response.fill(0xa5);
+            let mut response_length = 999;
+            let status = unsafe {
+                wvb_client_call_ex(
+                    adapter.as_ptr(),
+                    1,
+                    &raw const selector,
+                    1,
+                    response.as_mut_ptr(),
+                    response.len(),
+                    &raw mut response_length,
+                    &raw mut dispatch_status,
+                )
+            };
+            assert_eq!(status, expected);
+            assert_eq!(dispatch_status, expected_dispatch);
+            if expected == WVB_STATUS_OK {
+                // A failing target HRESULT is still a successful dispatch.
+                assert_eq!(response, 0x8000_4005_u32.to_le_bytes());
+                assert_eq!(response_length, 4);
+            } else {
+                assert_eq!(response, [0xa5; 4]);
+                assert_eq!(response_length, 0);
+            }
+        }
+        response.fill(0xa5);
+        let mut response_length = 0;
+        assert_eq!(
+            unsafe {
+                wvb_client_call(
+                    adapter.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    0,
+                    response.as_mut_ptr(),
+                    3,
+                    &raw mut response_length,
+                )
+            },
+            WVB_STATUS_INSUFFICIENT_BUFFER
+        );
+        assert_eq!(response, [0xa5; 4]);
+        assert_eq!(response_length, 4);
+        assert_eq!(
+            unsafe { wvb_client_bind_operation(adapter.as_ptr(), 2, 0x3000_0002, 0x1000_0002) },
+            WVB_STATUS_OK
+        );
+        assert_eq!(
+            unsafe {
+                wvb_client_call(
+                    adapter.as_ptr(),
+                    2,
+                    std::ptr::null(),
+                    0,
+                    response.as_mut_ptr(),
+                    response.len(),
+                    &raw mut response_length,
+                )
+            },
+            WVB_STATUS_RUNTIME_ERROR
+        );
+        assert_eq!(response, [0xa5; 4]);
+        assert_eq!(response_length, 0);
+    }
+
+    #[test]
+    fn only_an_exact_i32_dispatch_status_and_bound_response_schema_are_valid() {
+        let schema = OperationSchema {
+            request: 1,
+            response: 2,
+        };
+        for status in [vec![], vec![0], vec![0; 3], vec![0; 5], vec![0; 8]] {
+            assert_eq!(
+                validate_result(
+                    &CallResult {
+                        response_schema_id: 2,
+                        operation_uuid: None,
+                        native_status: status,
+                        body: vec![],
+                    },
+                    schema
+                ),
+                Err(WVB_STATUS_PROTOCOL_ERROR)
+            );
+        }
     }
 }

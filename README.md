@@ -118,8 +118,16 @@ Whiny consumer boundary after the completed atomic cutover.
   commands.
 - The previous CrossOver by-name unixlib experiment failed with
   `STATUS_INVALID_INFO_CLASS` and is not retried unchanged. The supported
-  direction is a Wine loader-initialized builtin DLL/unixlib pair, not a private
-  memory-information-class load.
+  source composition now uses a Wine loader-initialized builtin DLL/unixlib
+  pair, not a private memory-information-class load. Source tests and the PE
+  caller build do not qualify the pair: the exact CrossOver-compatible Wine
+  SDK, per-bottle activation and real-app receipt remain outstanding.
+- Scalar client calls require exact frozen operation-schema bindings.
+  Dispatcher execution errors are rejected before body copies; target API
+  error values in valid typed results remain distinct. See the
+  [client FFI contract](docs/architecture.md#client-ffi-operation-and-error-contract).
+  Bounded-memory wire/typed-dispatch integration and protected resident-target
+  composition remain incomplete; no new admission schema is introduced.
 - Signing identities, notarization, hosted CI billing and publication remain
   external human-controlled release holds.
 

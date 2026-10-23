@@ -2,8 +2,18 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 out="$root/out/wine-unixlib"
-rm -rf "$out"
 mkdir -p "$out"
+
+# These checks neither launch Wine nor read/write credential storage.
+clang -std=c17 -Wall -Wextra -Werror -O2 \
+  -I"$root/native/wine-unixlib/tests/sdk" \
+  -I"$root/native/wine-unixlib/include" \
+  -I"$root/native/macos-keychain/include" \
+  "$root/native/wine-unixlib/src/wvb_autoconfig.c" \
+  "$root/native/wine-unixlib/src/wvb_builtin.c" \
+  "$root/native/wine-unixlib/tests/builtin_test.c" \
+  -o "$out/builtin_source_test"
+"$out/builtin_source_test"
 
 x86_64-w64-mingw32-gcc \
   -std=c17 -Wall -Wextra -Werror -O2 -static -municode \
@@ -12,30 +22,28 @@ x86_64-w64-mingw32-gcc \
   "$root/native/wine-unixlib/tests/autoconfig_test.c" \
   -o "$out/autoconfig_test.exe"
 
-"$root/native/macos-keychain/build-and-test.sh"
-wine=/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine
-if [ ! -x "$wine" ]; then
-  echo "CrossOver unavailable; Wine unixlib runtime execution skipped" >&2
-  [ "${WVB_REQUIRE_WINDOWS_RUNNER:-0}" != 1 ] || exit 2
+if [ -z "${WVB_WINEGCC:-}" ]; then
+  echo "Builtin source tests and PE caller build passed; builtin pair NOT built: select the exact runtime's Wine SDK with WVB_WINEGCC." >&2
+  [ "${WVB_REQUIRE_BUILTIN_BUILD:-0}" != 1 ] || exit 2
   exit 0
 fi
-account="wine-unixlib-$$"
-unixlib="$root/out/macos-keychain/wvb_client_ffi.so"
-trap '"$root/out/macos-keychain/keychain_fixture" delete "$account"' EXIT
-"$root/out/macos-keychain/keychain_fixture" store "$account"
-windows_path=$("$wine" --bottle XOdeLabRPC winepath -w "$unixlib")
-set +e
-probe=$("$wine" --bottle XOdeLabRPC "$out/autoconfig_test.exe" \
-  "$windows_path" "$account" 2>&1)
-status=$?
-set -e
-printf '%s\n' "$probe"
-if [ "$status" -eq 0 ]; then
-  echo "Wine unixlib automatic configuration test passed"
-elif [ "$status" -eq 77 ] &&
-     printf '%s\n' "$probe" |
-       grep -q 'wine-unixlib-runtime=unavailable status=-3'; then
-  echo "Wine unixlib runtime loading unavailable; source/build fails closed"
-else
-  exit "$status"
-fi
+
+mkdir -p "$out/lib/wine/x86_64-windows" "$out/lib/wine/x86_64-unix"
+"$WVB_WINEGCC" -b x86_64-w64-mingw32 -m64 -shared \
+  -std=c17 -Wall -Wextra -Werror -O2 -Wl,--wine-builtin \
+  -I"$root/native/wine-unixlib/include" \
+  -I"$root/native/macos-keychain/include" \
+  "$root/native/wine-unixlib/src/wvb_builtin.c" \
+  "$root/native/wine-unixlib/src/wvb_autoconfig.spec" \
+  -lntdll \
+  -o "$out/lib/wine/x86_64-windows/wvb_autoconfig.dll"
+
+clang -arch x86_64 -std=c17 -Wall -Wextra -Werror -O2 \
+  -fvisibility=hidden -dynamiclib \
+  -I"$root/native/macos-keychain/include" \
+  "$root/native/macos-keychain/src/wvb_keychain.c" \
+  "$root/native/macos-keychain/src/wvb_unixlib.c" \
+  -framework Security -framework CoreFoundation \
+  -o "$out/lib/wine/x86_64-unix/wvb_autoconfig.so"
+
+echo "Builtin pair built from selected Wine SDK; runtime load/Keychain/Bridge acceptance NOT performed."

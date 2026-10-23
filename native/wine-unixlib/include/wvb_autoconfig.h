@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <wchar.h>
 
 typedef struct WvbAutoConfig {
   char broker_address[64];
@@ -23,7 +24,9 @@ enum {
   WVB_AUTOCONFIG_KEYCHAIN_FAILED = -4
 };
 
-int32_t wvb_auto_config_load(const wchar_t *unixlib_path,
+/* builtin_path is the absolute installed PE builtin DLL path, not a Unix .so.
+ * Configuration is read only after Wine's loader initializes its unixlib. */
+int32_t wvb_auto_config_load(const wchar_t *builtin_path,
                              const char *account,
                              WvbAutoConfig *config);
 
