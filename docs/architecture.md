@@ -134,14 +134,46 @@ load or numeric private memory-information-class probe. No credential read or
 network connection occurs in `DllMain`. Missing initialization/export/record
 fails explicitly, and failed reads leave the caller's configuration unchanged.
 
+The same x64 builtin now exports the five existing `native/include/wvb_client.h`
+functions: configure, bind-operation, call, call-ex and reset. Private in-process
+Unix-call arguments forward their exact pointers, sizes and client statuses to
+the real host Rust client; they are not a new remote wire format or codec.
+Configuration remains explicit: merely loading the DLL or reading its config
+export does not configure/bind the client or make an unavailable connection
+successful. Unix-call failure returns `WVB_STATUS_RUNTIME_ERROR`, never success;
+call lengths/dispatch outputs are zeroed on that failure. A completed Unix call
+preserves the host client's separate `WvbStatus`, dispatch status, required
+capacity and opaque response bytes. Generated proxies still validate and
+restore declared target HRESULT/last-error from the operation-specific body.
+The original configuration entry remains index0. Pointer-bearing client calls
+require the reviewed native x64 layouts; their WOW64 entries explicitly return
+`STATUS_NOT_SUPPORTED` without dereferencing arguments.
+
 `native/wine-unixlib/build-and-test.sh` runs source composition tests against a
 mock Wine SDK and cross-builds the PE caller without launching Wine or accessing
 Keychain. To also build the x64 builtin pair, select the exact runtime's installed
 Wine SDK with `WVB_WINEGCC=/absolute/path/to/winegcc`; set
 `WVB_REQUIRE_BUILTIN_BUILD=1` to fail rather than skip an unavailable SDK.
+First build the matching real host library with
+`cargo build -p wvb-client-ffi --target x86_64-apple-darwin --locked --offline`.
+The script requires an x64 dylib at that target's debug output, or the explicit
+`WVB_HOST_CLIENT_LIB` path; an arm64 host library is not a substitute. It links
+that library directly, checks all six actual PE exports, the import library's
+`wvb_autoconfig.dll` binding, and all five actual Mach-O client imports. The
+native Windows `wvb_client_ffi.dll` remains a different artifact/path, not this
+Wine builtin. No client DLL naming fallback or implicit configuration is used.
 The PE build uses Wine's builtin marker and CRT initialization support; the
 matching Mach-O unixlib exports the existing Unix-call table. Output is staged
 under `out/wine-unixlib/lib/wine/{x86_64-windows,x86_64-unix}`.
+Set `WVB_BUILD_OUT` to a separate absolute directory inside this worktree's
+`out/` when preparing new candidates without replacing runtime-pinned artifacts.
+The generated import library is `x86_64-windows/libwvb_autoconfig.dll.a`.
+The host Rust dylib's actual install name is retained, including its absolute
+Cargo `debug/deps` path in a local debug build. Deployment must explicitly pin
+and preserve that dependency or separately review a relocation; the two Wine
+files alone are not a self-contained deployable pair. Source/mock compilation
+and symbol linkage do not establish installed-engine loading, guest faults,
+configured RPC, generated-proxy or application acceptance.
 
 The script also builds, but does not execute, `out/wine-unixlib/loader_probe.exe`.
 This synthetic caller loads the builtin, resolves its configuration export

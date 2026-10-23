@@ -42,6 +42,7 @@ int32_t wvb_unix_load_runtime_config(WvbUnixLoadArgs *args) {
   return STATUS_SUCCESS;
 }
 
+#ifndef WVB_EXTERNAL_UNIX_CALL_TABLE
 static NTSTATUS load_runtime_config(void *args) {
   return wvb_unix_load_runtime_config((WvbUnixLoadArgs *)args);
 }
@@ -51,3 +52,4 @@ __attribute__((visibility("default"))) const unixlib_entry_t
 
 __attribute__((visibility("default"))) const unixlib_entry_t
     __wine_unix_call_wow64_funcs[] = {load_runtime_config};
+#endif
