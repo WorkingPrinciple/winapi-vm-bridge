@@ -31,11 +31,7 @@ int32_t wvb_unix_load_runtime_config(WvbUnixLoadArgs *args) {
     memset(&args->record, 0, sizeof(args->record));
     return STATUS_UNSUCCESSFUL;
   }
-  if (args->record.magic != WVB_KEYCHAIN_RECORD_MAGIC ||
-      args->record.version != WVB_KEYCHAIN_RECORD_VERSION ||
-      args->record.state != WVB_KEYCHAIN_RECORD_ACTIVE ||
-      !memchr(args->record.broker_address, '\0',
-              sizeof(args->record.broker_address))) {
+  if (!wvb_runtime_record_header_valid(&args->record)) {
     memset(&args->record, 0, sizeof(args->record));
     return STATUS_INVALID_PARAMETER;
   }

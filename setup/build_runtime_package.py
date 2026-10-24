@@ -72,6 +72,21 @@ def deterministic_environment() -> dict[str, str]:
     return environment
 
 
+def build_macos_provisioner(destination: Path) -> None:
+    subprocess.run(
+        [
+            "clang", "-std=c17", "-Wall", "-Wextra", "-Werror", "-O2",
+            "-I", "native/macos-keychain/include",
+            "native/macos-keychain/src/wvb_keychain.c",
+            "native/macos-keychain/src/wvb_provision.c",
+            "-framework", "Security", "-framework", "CoreFoundation",
+            "-o", str(destination),
+        ],
+        check=True,
+    )
+    destination.chmod(0o755)
+
+
 def build(
     platform: str, source_sha256: str, output: Path, variant: str | None = None
 ) -> tuple[Path, Path]:
@@ -121,6 +136,8 @@ def build(
             copy_file(source, payload / "bin" / source.name, True)
             if binary == "wvb-package":
                 copy_file(source, lifecycle / source.name, True)
+        if platform == "macos":
+            build_macos_provisioner(payload / "bin/wvb-provision")
         shutil.copytree(
             "external/whiny/v0.3.0",
             payload / "share/whiny/v0.3.0",

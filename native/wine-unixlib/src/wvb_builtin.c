@@ -42,13 +42,7 @@ int32_t __cdecl wvb_builtin_load_config(const char *account,
     SetLastError((DWORD)status);
     return WVB_AUTOCONFIG_KEYCHAIN_FAILED;
   }
-  if (args.record.magic != WVB_KEYCHAIN_RECORD_MAGIC ||
-      args.record.version != WVB_KEYCHAIN_RECORD_VERSION ||
-      args.record.state != WVB_KEYCHAIN_RECORD_ACTIVE ||
-      !memchr(args.record.broker_address, '\0',
-              sizeof(args.record.broker_address)) ||
-      !args.record.broker_address[0] || !args.record.connect_timeout_ms ||
-      !args.record.call_timeout_ms) {
+  if (!wvb_runtime_record_valid(&args.record)) {
     zero(&args, sizeof(args));
     SetLastError(ERROR_INVALID_DATA);
     return WVB_AUTOCONFIG_KEYCHAIN_FAILED;

@@ -117,6 +117,64 @@ v1 denial or the unsupported status of T16, T26 and T32.
 
 ### Wine/client side
 
+`wvb-provision create ACCOUNT` is a macOS-only, create-only client configuration
+prerequisite, not pairing. It is built by
+`native/macos-keychain/build-and-test.sh` and included in new macOS runtime
+packages as `bin/wvb-provision` (no change to existing installed packages).
+For source-only build/API-double checks without touching Keychain, use:
+
+```sh
+WVB_BUILD_OUT="$PWD/out/provision-source" \
+  sh native/macos-keychain/build-and-test.sh --source-only
+```
+
+The operator command is:
+
+```sh
+authorized-record-producer | /absolute/path/to/wvb-provision create ACCOUNT
+```
+
+`authorized-record-producer` denotes the operator's **already authorized**
+secure producer, not a shipped executable or a pairing implementation. It must
+write exactly one existing native `WvbKeychainRecordV1` binary record to its
+private anonymous stdout pipe, close it, and securely erase its own copies.
+Do not substitute a secret literal, shell expansion, environment variable or
+plaintext file. No source of authorized record bytes or active endpoint is
+invented by this command. `ACCOUNT` is a nonsecret selector of 1–127 printable
+ASCII bytes excluding spaces/control characters; it is not logged or hashed.
+There is no file, export, overwrite, delete, reset or key-generation option.
+
+The command accepts only an owned anonymous stdin pipe (not a terminal, file
+or named FIFO), with one five-second deadline covering all input and EOF.
+Short/extra input fails; at most `sizeof(WvbKeychainRecordV1)+1` bytes are read.
+Shared runtime validation checks the existing magic, version, ACTIVE state,
+nonempty bounded NUL-terminated broker address and nonzero connect/call budgets
+**before** any Keychain operation. These are existing record rules, not proof
+of a numeric reachable endpoint, valid keys, actor authorization or admission.
+No record layout, runtime-v2 service or Wine/client ABI changes.
+
+Creation uses one `SecItemAdd`, never lookup/update/delete: a duplicate selector
+fails atomically without reading or replacing its existing secret. The dedicated
+CLI process disables Security interaction before creation; the add request also
+requires authentication-UI failure, so locked/denied/auth-required stores fail
+without an interactive prompt. The C Security compatibility selectors are
+deprecated on recent SDKs but intentionally retained here; no Objective-C
+authentication context or new runtime dependency is introduced.
+Only fixed `created`, `selector exists`, `invalid input`, `noninteractive policy
+failed`, or `create failed` messages are emitted. Exit codes are 0 (created),
+64 (input/usage), 65 (policy/create failure), and 74 (output failure).
+No account, address, key, record bytes, OS error details or digest are emitted.
+
+The input buffer is volatile-erased on every return path; the CFData passed to
+Security borrows that buffer without a second application-owned key copy.
+The producer remains responsible for its storage. OS/Keychain-internal copies
+and IPC duration are not controlled or proven erased by this command; the
+five-second bound is on input, not a cancellable Keychain transaction. A broken
+receipt/output after add does not prove creation failed: do not automatically
+retry, overwrite or delete. No runtime provisioning was performed by source
+checks. This prerequisite alone does not establish pairing, forwarding, setup,
+app execution or runtime acceptance.
+
 - process-wide connection pool per broker identity;
 - no blocking or network work in `DllMain`;
 - bounded call and transfer queues;
