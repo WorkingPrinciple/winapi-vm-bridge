@@ -72,34 +72,36 @@ pub struct RuntimeClient {
 
 impl RuntimeClient {
     pub async fn connect(config: ClientConfig) -> Result<Self, RuntimeError> {
-        let stream =
-            tokio::time::timeout(config.connect_timeout, TcpStream::connect(config.address))
-                .await
-                .map_err(|_| {
-                    RuntimeError::Io(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "broker connection timed out",
-                    ))
-                })??;
-        stream.set_nodelay(true)?;
-        let provisional =
-            session_initiator(stream, &config.local_private_key, &config.broker_public_key).await?;
-        let (ack, connection) =
-            activate_client(provisional, &config.hello, config.hello_message_id).await?;
-        if ack.actor_id != config.expected_actor {
-            return Err(RuntimeError::ActorMismatch);
-        }
-        let client = Client::spawn(
-            connection,
-            ack.connection_epoch,
-            config.message_nonce,
-            config.queue_capacity,
-        );
-        Ok(Self {
-            client,
-            actor_id: ack.actor_id,
-            negotiated: ack,
+        tokio::time::timeout(config.connect_timeout, async {
+            let stream = TcpStream::connect(config.address).await?;
+            stream.set_nodelay(true)?;
+            let provisional =
+                session_initiator(stream, &config.local_private_key, &config.broker_public_key)
+                    .await?;
+            let (ack, connection) =
+                activate_client(provisional, &config.hello, config.hello_message_id).await?;
+            if ack.actor_id != config.expected_actor {
+                return Err(RuntimeError::ActorMismatch);
+            }
+            let client = Client::spawn(
+                connection,
+                ack.connection_epoch,
+                config.message_nonce,
+                config.queue_capacity,
+            );
+            Ok(Self {
+                client,
+                actor_id: ack.actor_id,
+                negotiated: ack,
+            })
         })
+        .await
+        .map_err(|_| {
+            RuntimeError::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "broker connection timed out",
+            ))
+        })?
     }
 
     pub async fn call(
@@ -167,6 +169,57 @@ mod tests {
             },
             client_wall_unix_ms: 1,
         }
+    }
+
+    async fn assert_connect_deadline(stall_activation: bool) {
+        let (client_key, _) = StaticPrivateKey::generate().unwrap();
+        let (broker_key, broker_public) = StaticPrivateKey::generate().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let broker = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            if stall_activation {
+                let (_, connection) = session_responder(stream, &broker_key).await.unwrap();
+                let _ = released.await;
+                drop(connection);
+            } else {
+                let _ = released.await;
+                drop(stream);
+            }
+        });
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            RuntimeClient::connect(ClientConfig {
+                address,
+                local_private_key: client_key,
+                broker_public_key: broker_public,
+                expected_actor: [8; 16],
+                hello: hello(),
+                hello_message_id: [5; 16],
+                message_nonce: [9; 8],
+                queue_capacity: 16,
+                connect_timeout: Duration::from_millis(50),
+            }),
+        )
+        .await;
+        release.send(()).unwrap();
+        broker.await.unwrap();
+        assert!(
+            matches!(result, Ok(Err(RuntimeError::Io(ref error)))
+                    if error.kind() == std::io::ErrorKind::TimedOut),
+            "whole connect must time out while activation={stall_activation} is stalled"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_deadline_includes_stalled_noise() {
+        assert_connect_deadline(false).await;
+    }
+
+    #[tokio::test]
+    async fn connect_deadline_includes_stalled_activation() {
+        assert_connect_deadline(true).await;
     }
 
     #[tokio::test]

@@ -405,6 +405,12 @@ these changes do not copy a protected target or change any bundle schema.
 - replay windows and actor-scoped rate limits;
 - truthful timeout, cancellation and disconnect outcomes.
 
+The configured client connect duration bounds TCP establishment, pinned Noise
+handshake and HELLO activation together, without restarting the budget at stage
+boundaries. A call's configured duration likewise covers command-queue wait and
+response wait together. Caller timeout does not cancel remote execution, retire
+the connection or prove that a native operation did not execute.
+
 ### Windows broker
 
 - least-privileged service account;
