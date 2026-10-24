@@ -11,7 +11,8 @@ mod fixture {
     use std::time::Duration;
 
     use serde_json::json;
-    use tokio::net::{TcpListener, TcpStream};
+    use tokio::io::{AsyncRead, AsyncWrite};
+    use tokio::net::TcpListener;
     use wvb_broker::{DispatcherCallHandler, OperationSchema, serve_calls};
     use wvb_call::LOGICAL_MAX;
     use wvb_crypto::StaticPrivateKey;
@@ -35,6 +36,7 @@ mod fixture {
         operation: u32,
         request_schema: u32,
         response_schema: u32,
+        one_connection: bool,
     }
 
     fn hash(value: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
@@ -54,8 +56,8 @@ mod fixture {
     }
 
     fn arguments(args: &[String]) -> Result<Fixture, Box<dyn std::error::Error>> {
-        if args.len() != 7 {
-            return Err("usage: source_fixture_broker ABSOLUTE_DISPATCHER_LIBRARY DISPATCHER_SHA256_HEX CONTRACT_SHA256_HEX OP REQUEST_SCHEMA RESPONSE_SCHEMA".into());
+        if args.len() != 7 && !(args.len() == 8 && args[7] == "--one-connection") {
+            return Err("usage: source_fixture_broker ABSOLUTE_DISPATCHER_LIBRARY DISPATCHER_SHA256_HEX CONTRACT_SHA256_HEX OP REQUEST_SCHEMA RESPONSE_SCHEMA [--one-connection]".into());
         }
         let operation = args[4].parse()?;
         let request_schema = args[5].parse()?;
@@ -77,15 +79,18 @@ mod fixture {
             operation,
             request_schema,
             response_schema,
+            one_connection: args.len() == 8,
         })
     }
 
-    async fn connection(
-        stream: TcpStream,
+    async fn connection<S>(
+        stream: S,
         key: Arc<StaticPrivateKey>,
         handler: Arc<DispatcherCallHandler>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        stream.set_nodelay(true)?;
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let (_, provisional) = session_responder(stream, &key).await?;
         let ack = HelloAck {
             selected_minor: 0,
@@ -106,6 +111,15 @@ mod fixture {
         let (_, active) = activate_broker(provisional, &ack, [6; 16]).await?;
         serve_calls(active, handler, 4).await?;
         Ok(())
+    }
+
+    async fn one_connection(
+        deadline: tokio::time::Instant,
+        work: impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        tokio::time::timeout_at(deadline, work)
+            .await
+            .map_err(|_| "source-fixture one-connection lifetime expired")?
     }
 
     pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -151,6 +165,20 @@ mod fixture {
             })
         );
         std::io::stdout().flush()?;
+        if fixture.one_connection {
+            return one_connection(
+                tokio::time::Instant::now() + Duration::from_secs(60),
+                async {
+                    let (stream, _) = listener.accept().await?;
+                    stream.set_nodelay(true)?;
+                    tokio::time::timeout(Duration::from_secs(10), connection(stream, key, handler))
+                        .await
+                        .map_err(|_| "source-fixture bounded connection timeout")?
+                },
+            )
+            .await
+            .map_err(|error| -> Box<dyn std::error::Error> { error });
+        }
         let deadline = tokio::time::sleep(Duration::from_secs(60));
         tokio::pin!(deadline);
         loop {
@@ -161,7 +189,11 @@ mod fixture {
                     let key = key.clone();
                     let handler = handler.clone();
                     tokio::spawn(async move {
-                        match tokio::time::timeout(Duration::from_secs(10), connection(stream, key, handler)).await {
+                        let work = async {
+                            stream.set_nodelay(true)?;
+                            connection(stream, key, handler).await
+                        };
+                        match tokio::time::timeout(Duration::from_secs(10), work).await {
                             Ok(Ok(())) => {}
                             Ok(Err(error)) => eprintln!("source-fixture connection ended: {error}"),
                             Err(_) => eprintln!("source-fixture connection ended: bounded connection timeout"),
@@ -198,6 +230,15 @@ mod fixture {
             assert_eq!(fixture.operation, 7);
             assert_eq!(fixture.request_schema, 0x1234_5678);
             assert_eq!(fixture.response_schema, 0x3456_7891);
+            assert!(!fixture.one_connection);
+            let mut single = args.to_vec();
+            single.push("--one-connection".into());
+            assert!(arguments(&single).unwrap().one_connection);
+            single[7] = "--unknown".into();
+            assert!(arguments(&single).is_err());
+            single[7] = "--one-connection".into();
+            single.push("--one-connection".into());
+            assert!(arguments(&single).is_err());
             assert!(arguments(&args[..6]).is_err());
             for (index, value) in [
                 (1, "relative.dylib"),
@@ -213,6 +254,92 @@ mod fixture {
                 invalid[index] = value.into();
                 assert!(arguments(&invalid).is_err());
             }
+        }
+
+        #[tokio::test]
+        async fn one_connection_waits_for_actual_work_and_propagates_its_outcome() {
+            let (release, complete) = tokio::sync::oneshot::channel();
+            let work = async {
+                complete.await?;
+                Ok(())
+            };
+            let result =
+                one_connection(tokio::time::Instant::now() + Duration::from_secs(60), work);
+            tokio::pin!(result);
+            assert!(
+                std::future::poll_fn(|cx| {
+                    std::task::Poll::Ready(result.as_mut().poll(cx).is_pending())
+                })
+                .await
+            );
+            release.send(()).unwrap();
+            result.await.unwrap();
+            let error = one_connection(
+                tokio::time::Instant::now() + Duration::from_secs(60),
+                async { Err("explicit connection failure".into()) },
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.to_string(), "explicit connection failure");
+        }
+
+        #[tokio::test]
+        async fn one_connection_deadline_is_failure_even_before_accept_completes() {
+            let error = one_connection(tokio::time::Instant::now(), std::future::pending())
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "source-fixture one-connection lifetime expired"
+            );
+        }
+
+        struct UnusedDispatcher;
+        impl wvb_broker::TypedDispatchModule for UnusedDispatcher {
+            fn dispatch(&self, _: u32, _: &[u8]) -> wvb_broker::DispatchOutcome {
+                panic!("incomplete handshake must not dispatch");
+            }
+        }
+
+        #[tokio::test]
+        async fn one_connection_deadline_covers_an_accepted_stalled_handshake() {
+            let (_peer, stream) = tokio::io::duplex(1024);
+            let (key, _) = StaticPrivateKey::generate().unwrap();
+            let handler = Arc::new(DispatcherCallHandler::new(
+                [2; 32],
+                BTreeMap::new(),
+                Arc::new(UnusedDispatcher),
+            ));
+            let error = one_connection(
+                tokio::time::Instant::now(),
+                connection(stream, Arc::new(key), handler),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "source-fixture one-connection lifetime expired"
+            );
+        }
+
+        #[tokio::test]
+        async fn one_connection_propagates_real_handshake_eof() {
+            let (peer, stream) = tokio::io::duplex(1024);
+            drop(peer);
+            let (key, _) = StaticPrivateKey::generate().unwrap();
+            let handler = Arc::new(DispatcherCallHandler::new(
+                [2; 32],
+                BTreeMap::new(),
+                Arc::new(UnusedDispatcher),
+            ));
+            assert!(
+                one_connection(
+                    tokio::time::Instant::now() + Duration::from_secs(60),
+                    connection(stream, Arc::new(key), handler),
+                )
+                .await
+                .is_err()
+            );
         }
 
         #[test]
