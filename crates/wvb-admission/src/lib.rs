@@ -1,9 +1,13 @@
 //! Admission of immutable, operator-approved Whiny bundles into the runtime.
 
+#[cfg(feature = "test-authority")]
 mod correlated;
+#[cfg(feature = "test-authority")]
 mod handoff;
+#[cfg(feature = "test-authority")]
 mod scalar;
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,15 +18,18 @@ use wvb_integrity::{
     stable_file_identity, validate_portable_relative_path,
 };
 
+#[cfg(feature = "test-authority")]
 pub use correlated::{
     BoundCorrelatedEvidence, Cleanup as CorrelatedCleanup, CorrelatedEvidenceApproval,
     CorrelatedEvidenceError, CorrelatedEvidenceInputs, FileDigest as CorrelatedFileDigest,
 };
+#[cfg(feature = "test-authority")]
 pub use handoff::{
     BoundFrozenHandoff, ChallengeSequence, Custody, FileIdentity, FrozenHandoffApproval,
     FrozenHandoffInputs, HandoffAdmissionError, ReceiptPolicy, SideEffects,
     WHINY_FROZEN_HANDOFF_IDENTIFIER, WHINY_VALIDATOR_REVISION,
 };
+#[cfg(feature = "test-authority")]
 pub use scalar::{
     BoundScalarTestAuthority, BoundScalarTestProfile, ScalarProfile, ScalarTestAuthorityApproval,
     ScalarTestAuthorityError, ScalarTestExecutionAuthorization,
@@ -40,34 +47,34 @@ pub const BUNDLE_FORMAT_MAJOR: u32 = 1;
 pub const DISPATCHER_ABI_IDENTIFIER: &str = "whiny.dispatch.v1";
 pub const DISPATCHER_ABI_MAJOR: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct FormatVersion {
     pub identifier: String,
     pub major: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Compatibility {
     pub contract: FormatVersion,
     pub bundle: FormatVersion,
     pub dispatcher_abi: FormatVersion,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum BundleFileKind {
     Dispatcher,
     Target,
     Dependency,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BundleFile {
     pub kind: BundleFileKind,
     pub relative_path: String,
     pub sha256: [u8; 32],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OperationAdmission {
     pub operation_id: u32,
     pub request_schema_id: u32,
@@ -76,7 +83,7 @@ pub struct OperationAdmission {
 
 /// Runtime-owned approval record created by an authorized operator after a
 /// Whiny validator has frozen the bundle. It is not the Whiny contract schema.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OperatorAdmission {
     pub compatibility: Compatibility,
     pub contract_sha256: [u8; 32],
@@ -125,7 +132,7 @@ impl AdmittedBundle {
         &self.files
     }
 
-    pub(crate) fn authorize_operation(
+    pub fn authorize_operation(
         &self,
         registry: &Registry,
         actor_id: ActorId,

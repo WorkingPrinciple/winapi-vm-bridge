@@ -103,6 +103,10 @@ def build(
         "--release",
         "--locked",
         "-p",
+        "wvb-client-ffi",
+        "--features",
+        "wvb-client-ffi/cli,wvb-runtime/legacy-admin",
+        "-p",
         "wvb-runtime",
         "-p",
         "wvb-package",
@@ -131,7 +135,7 @@ def build(
         payload = package / "payload"
         lifecycle = package / "bin"
         suffix = ".exe" if platform == "windows" else ""
-        for binary in ["wvb-runtime", "wvb-package", "wvb-receipt"]:
+        for binary in ["wvb", "wvb-runtime", "wvb-package", "wvb-receipt"]:
             source = build_root / f"{binary}{suffix}"
             copy_file(source, payload / "bin" / source.name, True)
             if binary == "wvb-package":

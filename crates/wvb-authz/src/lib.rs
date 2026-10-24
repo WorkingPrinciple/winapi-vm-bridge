@@ -1,5 +1,6 @@
 //! Default-deny actor and operation authorization.
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use wvb_state::{StateError, Store};
 
@@ -7,7 +8,7 @@ pub type ActorId = [u8; 16];
 pub type AdapterHash = [u8; 32];
 
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum Role {
     Invoke = 1,
     Operator = 2,
@@ -33,7 +34,7 @@ impl TryFrom<u16> for Role {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Grant {
     pub role: Role,
     pub adapter_hash: Option<AdapterHash>,

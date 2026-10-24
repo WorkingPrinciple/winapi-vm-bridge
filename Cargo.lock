@@ -1089,6 +1089,7 @@ dependencies = [
 name = "wvb-authz"
 version = "0.2.0"
 dependencies = [
+ "serde",
  "tempfile",
  "wvb-state",
 ]
@@ -1142,14 +1143,23 @@ name = "wvb-client-ffi"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "clap",
+ "ring",
+ "serde",
  "serde_json",
+ "tempfile",
  "tokio",
+ "wvb-admission",
+ "wvb-authz",
  "wvb-broker",
  "wvb-call",
  "wvb-crypto",
+ "wvb-integrity",
+ "wvb-native-host",
  "wvb-runtime",
  "wvb-session",
  "wvb-transport",
+ "zeroize",
 ]
 
 [[package]]
