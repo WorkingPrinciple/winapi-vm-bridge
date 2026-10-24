@@ -157,8 +157,33 @@ an unverified file. `RemoteGetCurrentProcessId` is the diagnostic operation
 name; the actual DLL entry is `GetCurrentProcessId`. A raw product `call`
 through its generated dispatcher is not evidence that the generated PE proxy
 was executed. That proxy is generated separately by the unchanged Whiny tool.
-The initial generator's Windows-header symbol collision is a Whiny limitation,
-not grounds to hand-edit the generated proxy or weaken the contract.
+Use a Whiny generator that emits internal proxy symbols, aliases the original
+exports in its `.def`, and imports recorder APIs from kernel32. The original
+generator's Windows-header symbol collision is not grounds to hand-edit its
+output or weaken the contract.
+
+The same driver can invoke the actual generated PE proxy through an explicitly
+prepared, private Wine prefix and the existing builtin/native FFI pair:
+
+```bash
+python3 setup/run_generated_call.py \
+  --proxy-caller /absolute/path/proxy_call.exe \
+  --wine /absolute/path/wine --proxy /absolute/path/proxy.dll \
+  --config /absolute/path/call.json --response /absolute/path/new-result.bin \
+  --trace /absolute/path/new-trace.jsonl --expected-u32 GUEST_READY_PID
+```
+
+The existing `native/wine-unixlib/build-and-test.sh` SDK build also compiles
+`native/fixtures/kernel32-pid/proxy_call.c` as `pid_proxy_call.exe` against the
+real builtin import library, not a mock transport. Set `WINEPREFIX` to the already initialized owned
+prefix and `WINEDLLPATH` to the pinned builtin pair. This mode never initializes
+a prefix or enables automatic Keychain/bootstrap configuration; it uses the
+same private key file and public configuration as `wvb call`. Its explicit
+connect/call budgets are both 5000ms. The caller loads the real named export,
+records exactly one call, compares its returned PID, resets and unloads.
+The driver requires a complete, paired remote call trace bound to the proxy
+and contract hashes. Neither this owner probe nor the raw call is unchanged-app
+or GamingServices acceptance.
 
 The admission crate's historical scalar/correlated test-authority machinery is
 behind `test-authority`; it is not compiled into this product by default. Core

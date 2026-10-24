@@ -162,12 +162,20 @@ x86_64-w64-mingw32-gcc -std=c17 -Wall -Wextra -Werror -O2 \
   "$root/native/wine-unixlib/tests/scalar_call_probe.c" \
   "$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a" \
   -o "$out/scalar_call_probe.exe"
+x86_64-w64-mingw32-gcc -std=c17 -Wall -Wextra -Werror -O2 \
+  -static -static-libgcc -municode -Wl,--no-insert-timestamp \
+  -I"$root/native/include" \
+  "$root/native/fixtures/kernel32-pid/proxy_call.c" \
+  "$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a" \
+  -o "$out/pid_proxy_call.exe"
 python3 -B - "$root" "$out" <<'PY'
 from pathlib import Path
 import runpy
 import sys
 gate = runpy.run_path(str(Path(sys.argv[1]) / "native/wine-unixlib/tests/client_import_test.py"))
 gate["require_imports"](Path(sys.argv[2]) / "scalar_call_probe.exe",
+                        {"wvb_client_configure", "wvb_client_reset"})
+gate["require_imports"](Path(sys.argv[2]) / "pid_proxy_call.exe",
                         {"wvb_client_configure", "wvb_client_reset"})
 print("Calling PE fixture links only explicit configure/reset from builtin")
 PY
