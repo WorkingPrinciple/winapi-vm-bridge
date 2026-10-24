@@ -154,12 +154,14 @@ mock Wine SDK and cross-builds the PE caller without launching Wine or accessing
 Keychain. To also build the x64 builtin pair, select the exact runtime's installed
 Wine SDK with `WVB_WINEGCC=/absolute/path/to/winegcc`; set
 `WVB_REQUIRE_BUILTIN_BUILD=1` to fail rather than skip an unavailable SDK.
-First build the matching real host library with
-`cargo build -p wvb-client-ffi --target x86_64-apple-darwin --locked --offline`.
-The script requires an x64 dylib at that target's debug output, or the explicit
-`WVB_HOST_CLIENT_LIB` path; an arm64 host library is not a substitute. It links
-that library directly, checks all six actual PE exports, the import library's
-`wvb_autoconfig.dll` binding, and all five actual Mach-O client imports. The
+The selected SDK build also builds the real `wvb-client-ffi` x64 Rust static
+archive, locked/offline, with Cargo's target directory confined to
+`$WVB_BUILD_OUT/host-client`; it does not change a shared Cargo target or
+installed runtime. `WVB_HOST_CLIENT_LIB` may select an already built actual
+x64 static archive; a dylib or arm64 library is rejected, not substituted.
+The Unixlib incorporates all five existing client functions, while exporting
+only its existing Unix-call tables and config entry. The script checks all
+six actual PE exports and the import library's `wvb_autoconfig.dll` binding. The
 native Windows `wvb_client_ffi.dll` remains a different artifact/path, not this
 Wine builtin. No client DLL naming fallback or implicit configuration is used.
 Set `WVB_WINEBUILD` to the same SDK's `winebuild` if it is not next to
@@ -172,18 +174,28 @@ must fail both the thunk guard and that consumer link; DLL-name inspection
 alone does not establish a usable archive.
 The PE build uses Wine's builtin marker and CRT initialization support; the
 matching Mach-O unixlib exports the existing Unix-call table. Output is staged
-under `out/wine-unixlib/lib/wine/{x86_64-windows,x86_64-unix}`.
+under `out/wine-unixlib-static/lib/wine/{x86_64-windows,x86_64-unix}`.
 Set `WVB_BUILD_OUT` to a separate absolute directory inside this worktree's
 `out/` when preparing new candidates without replacing runtime-pinned artifacts.
 The generated import library is `x86_64-windows/libwvb_autoconfig.dll.a`.
-The host Rust dylib's actual install name is retained, including its absolute
-Cargo `debug/deps` path in a local debug build. Deployment must explicitly pin
-and preserve that dependency or separately review a relocation; the two Wine
-files alone are not a self-contained deployable pair. Source/mock compilation
-and symbol linkage do not establish installed-engine loading, guest faults,
-configured RPC, generated-proxy or application acceptance.
+The Unixlib install name is `@loader_path/wvb_autoconfig.so`. Its real Rust
+client is statically included, so the two Wine files no longer depend on an
+absolute Cargo dylib or an additional client DLL. Required dynamic dependencies
+are the system Security/CoreFoundation frameworks, libiconv and libSystem;
+Rust's native static link requirements are supplied by clang's implicit
+libSystem plus explicit iconv/c/m. Inspection rejects extra dependencies,
+loader-search paths, missing static client functions or leaked Rust exports.
+Source checks copy the real pair/import archive/calling fixture to a separate
+`relocated-candidate` artifact directory, check unchanged bytes/closure, and
+link native Unix-call and all-five PE consumers against that copy without
+loading it. A changed existing relocation destination fails closed; choose
+a fresh output root for a different candidate. Historical runtime-pinned
+dylib-linked artifacts are not rewritten by this change.
+Source/mock compilation and relocation/link checks do not establish
+installed-engine loading, guest faults, configured RPC, generated-proxy or
+application acceptance.
 
-The script also builds, but does not execute, `out/wine-unixlib/loader_probe.exe`.
+The script also builds, but does not execute, `out/wine-unixlib-static/loader_probe.exe`.
 This synthetic caller loads the builtin, resolves its configuration export
 without calling it, prints the Windows module path/PID, holds for ten seconds
 for separately scoped mapping observation, and unloads. It does not invoke
