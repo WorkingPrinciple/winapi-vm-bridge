@@ -40,7 +40,7 @@ static inline int wvb_runtime_account_valid(const char *account) {
   for (size_t i = 0; i < 128; ++i) {
     unsigned char byte = (unsigned char)account[i];
     if (!byte) return 1;
-    if (byte < 33 || byte > 126) return 0;
+    if (byte < 32 || byte > 126) return 0;
   }
   return 0;
 }

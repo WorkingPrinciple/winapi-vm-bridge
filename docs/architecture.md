@@ -131,7 +131,7 @@ WVB_BUILD_OUT="$PWD/out/provision-source" \
 The operator command is:
 
 ```sh
-authorized-record-producer | /absolute/path/to/wvb-provision create ACCOUNT
+authorized-record-producer | /absolute/path/to/wvb-provision create "ACCOUNT"
 ```
 
 `authorized-record-producer` denotes the operator's **already authorized**
@@ -141,7 +141,9 @@ private anonymous stdout pipe, close it, and securely erase its own copies.
 Do not substitute a secret literal, shell expansion, environment variable or
 plaintext file. No source of authorized record bytes or active endpoint is
 invented by this command. `ACCOUNT` is a nonsecret selector of 1–127 printable
-ASCII bytes excluding spaces/control characters; it is not logged or hashed.
+ASCII bytes (0x20–0x7e), including opaque leading/trailing/sole spaces without
+trimming; quote it as one argument. Controls/non-ASCII are rejected. It is not
+logged or hashed.
 There is no file, export, overwrite, delete, reset or key-generation option.
 
 The command accepts only an owned anonymous stdin pipe (not a terminal, file
@@ -162,7 +164,11 @@ deprecated on recent SDKs but intentionally retained here; no Objective-C
 authentication context or new runtime dependency is introduced.
 Only fixed `created`, `selector exists`, `invalid input`, `noninteractive policy
 failed`, or `create failed` messages are emitted. Exit codes are 0 (created),
-64 (input/usage), 65 (policy/create failure), and 74 (output failure).
+64 (input/usage), 65 (policy/create failure), 71 (SIGPIPE policy setup failure),
+and 74 (output failure). The dedicated CLI ignores SIGPIPE before input or
+Keychain access so a closed output pipe returns 74 after erasure, not signal
+termination. If installing that policy fails it erases and returns 71 without
+attempting potentially unsafe output or accessing Keychain.
 No account, address, key, record bytes, OS error details or digest are emitted.
 
 The input buffer is volatile-erased on every return path; the CFData passed to

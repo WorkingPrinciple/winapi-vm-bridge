@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "wvb_keychain.h"
@@ -17,6 +19,8 @@ static unsigned polls;
 static unsigned clocks;
 static unsigned reports;
 static int output_failure;
+static int signal_failure;
+static const char *expected_account = "selector";
 
 static OSStatus test_add(CFDictionaryRef attributes, CFTypeRef *result) {
   assert(!result);
@@ -34,6 +38,10 @@ static OSStatus test_add(CFDictionaryRef attributes, CFTypeRef *result) {
   else assert(interaction_calls);
   assert(CFEqual(CFDictionaryGetValue(attributes, kSecAttrService),
                  CFSTR("com.dragoshont.winapi-vm-bridge.runtime-v2")));
+  char account[128];
+  assert(CFStringGetCString(CFDictionaryGetValue(attributes, kSecAttrAccount),
+                           account, sizeof(account), kCFStringEncodingASCII));
+  assert(strcmp(account, expected_account) == 0);
   adds++;
   return add_status;
 }
@@ -119,6 +127,10 @@ static int test_report(FILE *stream, const char *format, const char *message) {
   reports++;
   return output_failure ? -1 : (int)strlen(message) + 1;
 }
+void (*test_signal(int number, void (*handler)(int)))(int) {
+  assert(number == SIGPIPE && handler == SIG_IGN);
+  return signal_failure ? SIG_ERR : signal(number, handler);
+}
 
 #define wvb_runtime_zero observed_zero
 #define SecKeychainSetUserInteractionAllowed test_interaction
@@ -127,6 +139,7 @@ static int test_report(FILE *stream, const char *format, const char *message) {
 #define clock_gettime test_clock
 #define fprintf test_report
 #define fstat test_fstat
+#define signal test_signal
 #define main provision_main
 #include "../src/wvb_provision.c"
 #undef main
@@ -135,8 +148,71 @@ static int test_report(FILE *stream, const char *format, const char *message) {
 #undef clock_gettime
 #undef fprintf
 #undef fstat
+#undef signal
 #undef wvb_runtime_zero
 #undef SecKeychainSetUserInteractionAllowed
+
+static unsigned process_creates;
+static int32_t process_create(const char *account,
+                              const WvbKeychainRecordV1 *record) {
+  assert(strcmp(account, "selector") == 0 && wvb_runtime_record_valid(record));
+  process_creates++;
+  return WVB_KEYCHAIN_OK;
+}
+
+#define main process_provision_main
+#define monotonic_ms process_monotonic_ms
+#define read_record process_read_record
+#define wvb_runtime_zero observed_zero
+#define SecKeychainSetUserInteractionAllowed test_interaction
+#define wvb_keychain_create_runtime process_create
+#include "../src/wvb_provision.c"
+#undef main
+#undef monotonic_ms
+#undef read_record
+#undef wvb_runtime_zero
+#undef SecKeychainSetUserInteractionAllowed
+#undef wvb_keychain_create_runtime
+
+static int closed_output_test(const WvbKeychainRecordV1 *record) {
+  int input[2], output[2];
+  assert(!pipe(input) && !pipe(output));
+  close(output[0]);
+  pid_t child = fork();
+  assert(child >= 0);
+  if (!child) {
+    close(input[1]);
+    assert(dup2(input[0], STDIN_FILENO) >= 0);
+    assert(dup2(output[1], STDOUT_FILENO) >= 0);
+    close(input[0]);
+    close(output[1]);
+    assert(signal(SIGPIPE, SIG_DFL) != SIG_ERR);
+    unsigned before_zero = zeros;
+    char *args[] = {"wvb-provision", "create", "selector", NULL};
+    int result = process_provision_main(3, args);
+    assert(process_creates == 1 && zeros == before_zero + 1);
+    _exit(result);
+  }
+  close(input[0]);
+  close(output[1]);
+  assert(write(input[1], record, sizeof(*record)) == sizeof(*record));
+  close(input[1]);
+  int status = 0;
+  int64_t deadline = process_monotonic_ms() + 7000;
+  for (;;) {
+    pid_t joined = waitpid(child, &status, WNOHANG);
+    assert(joined >= 0);
+    if (joined == child) break;
+    assert(process_monotonic_ms() < deadline);
+    struct timespec delay = {0, 10000000};
+    nanosleep(&delay, NULL);
+  }
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 74) {
+    fputs("closed-output child did not exit 74\n", stderr);
+    return 0;
+  }
+  return 1;
+}
 
 static int invoke(const void *data, size_t length, const char *account) {
   int descriptors[2];
@@ -150,6 +226,7 @@ static int invoke(const void *data, size_t length, const char *account) {
   polls = 0;
   clocks = 0;
   cli_copy = 1;
+  expected_account = account;
   int result = provision_main(3, args);
   cli_copy = 0;
   assert(dup2(saved, STDIN_FILENO) >= 0);
@@ -164,6 +241,14 @@ int main(void) {
       .state = WVB_KEYCHAIN_RECORD_ACTIVE,
       .broker_address = "127.0.0.1:1",
       .connect_timeout_ms = 1, .call_timeout_ms = 1};
+  const char *space_accounts[] = {"inside space", " leading", "trailing ", " "};
+  for (unsigned i = 0; i < 4; ++i) {
+    if (!wvb_runtime_account_valid(space_accounts[i])) {
+      fputs("opaque printable-space selector rejected\n", stderr);
+      return 1;
+    }
+  }
+  assert(closed_output_test(&record));
   assert(sizeof(record) == 208);
   memset(record.client_private_key, 0xa5, sizeof(record.client_private_key));
   expected = &record;
@@ -176,7 +261,7 @@ int main(void) {
   assert(wvb_keychain_create_runtime("selector", &record) == WVB_KEYCHAIN_OS_ERROR);
   unsigned before = adds;
   assert(wvb_keychain_create_runtime("", &record) == WVB_KEYCHAIN_INVALID_ARGUMENT);
-  assert(wvb_keychain_create_runtime("bad selector", &record) ==
+  assert(wvb_keychain_create_runtime("bad\tselector", &record) ==
          WVB_KEYCHAIN_INVALID_ARGUMENT);
   assert(wvb_keychain_create_runtime("\x80", &record) == WVB_KEYCHAIN_INVALID_ARGUMENT);
   char long_account[129]; memset(long_account, 'a', 128); long_account[128] = 0;
@@ -205,7 +290,7 @@ int main(void) {
   assert(invoke(&record, 0, "selector") != 0);
   unsigned char excess[sizeof(record) + 1] = {0};
   assert(invoke(excess, sizeof(excess), "selector") != 0);
-  assert(invoke(&record, sizeof(record), "bad selector") != 0);
+  assert(invoke(&record, sizeof(record), "bad\tselector") != 0);
   interaction_status = errSecInteractionNotAllowed;
   assert(invoke(&record, sizeof(record), "selector") != 0);
   assert(adds == before && interaction_calls == 1);
@@ -241,8 +326,21 @@ int main(void) {
   output_failure = 1;
   assert(invoke(&record, sizeof(record), "selector") == 74);
   output_failure = 0;
+  for (unsigned i = 0; i < 4; ++i)
+    assert(invoke(&record, sizeof(record), space_accounts[i]) == 0);
+  for (unsigned byte = 1; byte < 32; ++byte) {
+    char invalid[] = {(char)byte, 0};
+    assert(!wvb_runtime_account_valid(invalid));
+  }
+  assert(!wvb_runtime_account_valid("\x7f"));
+  assert(zeros == 36 && reports == zeros);
+  unsigned before_adds = adds, before_interaction = interaction_calls;
+  signal_failure = 1;
+  assert(invoke(&record, sizeof(record), "selector") == 71);
+  assert(adds == before_adds && interaction_calls == before_interaction);
+  assert(zeros == 37 && reports == 36);
+  signal_failure = 0;
   puts("provision validation/create-only API doubles passed");
-  assert(zeros == 32 && reports == zeros);
   wvb_runtime_zero(&record, sizeof(record));
   return 0;
 }

@@ -4,6 +4,7 @@
 #include <Security/Security.h>
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -44,6 +45,10 @@ int main(int argc, char **argv) {
     WvbKeychainRecordV1 record;
     unsigned char bytes[sizeof(WvbKeychainRecordV1) + 1];
   } input = {0};
+  if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+    wvb_runtime_zero(&input, sizeof(input));
+    return 71;
+  }
   int result = 64;
   const char *message = "provision: invalid input";
   if (argc != 3 || strcmp(argv[1], "create") ||
