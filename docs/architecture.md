@@ -218,6 +218,16 @@ mock Wine SDK and cross-builds the PE caller without launching Wine or accessing
 Keychain. To also build the x64 builtin pair, select the exact runtime's installed
 Wine SDK with `WVB_WINEGCC=/absolute/path/to/winegcc`; set
 `WVB_REQUIRE_BUILTIN_BUILD=1` to fail rather than skip an unavailable SDK.
+For a source-bound Calimocho SDK build, additionally set
+`WVB_WINE_SOURCE` to the exact separate Wine Git checkout and
+`WVB_WINE_SOURCE_COMMIT` to its full selected commit, and explicitly supply
+both SDK tools (`WVB_WINEGCC` and `WVB_WINEBUILD`). The build fails before
+creating outputs if that checkout is dirty or at a different commit; it adds
+that source's `include` directory to the builtin PE compilation. It never
+generates headers or writes to the selected source/install tree. The installed
+SDK's import libraries remain tool inputs and must be pinned separately from
+the source commit. Use a new `WVB_BUILD_OUT` for every candidate; a successful
+source build is not permission to select, install or load it.
 The selected SDK build also builds the real `wvb-client-ffi` x64 Rust static
 archive, locked/offline, with Cargo's target directory confined to
 `$WVB_BUILD_OUT/host-client`; it does not change a shared Cargo target or

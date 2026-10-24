@@ -1,6 +1,7 @@
 """Inspect and link relocated real artifacts only; never dlopen or execute a PE."""
 
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -114,6 +115,33 @@ def main(root, out):
 
 
 class ClosureTests(unittest.TestCase):
+    def test_source_bound_sdk_requires_explicit_identity_and_tools(self):
+        self.check_source_guard({}, "requires WVB_WINE_SOURCE_COMMIT")
+
+    def test_wrong_source_commit_stops_before_build(self):
+        self.check_source_guard(
+            {"WVB_WINE_SOURCE_COMMIT": "0" * 40,
+             "WVB_WINEGCC": "/not-executed/winegcc",
+             "WVB_WINEBUILD": "/not-executed/winebuild"},
+            "not the exact clean commit",
+        )
+
+    def check_source_guard(self, settings, expected):
+        root = Path(__file__).resolve().parents[3]
+        out = root / "out/source-bound-guard-must-not-be-created"
+        self.assertFalse(out.exists())
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("WVB_")}
+        env.update(WVB_BUILD_OUT=str(out), WVB_WINE_SOURCE=str(root))
+        env.update(settings)
+        result = subprocess.run(
+            ["sh", str(root / "native/wine-unixlib/build-and-test.sh")],
+            env=env, capture_output=True, text=True, timeout=5,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn(expected, result.stderr)
+        self.assertFalse(out.exists())
+
     def check(self, **changes):
         values = dict(dependencies=SYSTEM | {INSTALL_NAME}, install_name=INSTALL_NAME,
                       defined=CLIENTS, undefined=set(), exported=EXPORTS, commands="")

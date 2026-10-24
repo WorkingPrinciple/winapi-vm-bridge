@@ -6,6 +6,24 @@ case "$out" in
   "$root/out/"*) ;;
   *) echo "WVB_BUILD_OUT must be inside the current worktree's out directory." >&2; exit 2 ;;
 esac
+set --
+if [ -n "${WVB_WINE_SOURCE:-}" ]; then
+  [ -n "${WVB_WINE_SOURCE_COMMIT:-}" ] &&
+    [ -n "${WVB_WINEGCC:-}" ] && [ -n "${WVB_WINEBUILD:-}" ] || {
+    echo "Source-bound SDK requires WVB_WINE_SOURCE_COMMIT, WVB_WINEGCC and WVB_WINEBUILD." >&2
+    exit 2
+  }
+  [ "$(git -C "$WVB_WINE_SOURCE" rev-parse HEAD)" = "$WVB_WINE_SOURCE_COMMIT" ] &&
+    [ -z "$(git -C "$WVB_WINE_SOURCE" status --porcelain)" ] || {
+    echo "Selected Wine source identity is not the exact clean commit." >&2
+    exit 2
+  }
+  [ -f "$WVB_WINE_SOURCE/include/wine/unixlib.h" ] || {
+    echo "Selected source lacks the Wine Unix-call ABI header." >&2
+    exit 2
+  }
+  set -- -I"$WVB_WINE_SOURCE/include"
+fi
 mkdir -p "$out"
 
 python3 - "$root/native/wine-unixlib/run-loader-probe.py" <<'PY'
@@ -121,6 +139,7 @@ if ! lipo -verify_arch x86_64 "$client_library"; then
 fi
 "$WVB_WINEGCC" --winebuild "$winebuild" -b x86_64-w64-mingw32 -m64 -shared \
   -std=c17 -Wall -Wextra -Werror -O2 -Wl,--wine-builtin \
+  "$@" \
   -I"$root/native/wine-unixlib/include" \
   -I"$root/native/include" \
   -I"$root/native/macos-keychain/include" \
