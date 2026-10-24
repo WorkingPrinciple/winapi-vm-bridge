@@ -25,4 +25,6 @@ FARPROC GetProcAddress(HMODULE module, const char *name);
 BOOL FreeLibrary(HMODULE module);
 void SetLastError(DWORD error);
 DWORD GetLastError(void);
+DWORD GetCurrentProcessId(void);
+void Sleep(DWORD milliseconds);
 #endif

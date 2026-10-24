@@ -58,6 +58,13 @@ clang -std=c17 -Wall -Wextra -Werror -O2 \
   -o "$out/client_forwarding_source_test"
 "$out/client_forwarding_source_test"
 
+clang -std=c17 -Wall -Wextra -Werror -O2 \
+  -I"$root/native/wine-unixlib/tests/sdk" -I"$root/native/include" \
+  "$root/native/wine-unixlib/tests/scalar_call_probe.c" \
+  "$root/native/wine-unixlib/tests/scalar_call_probe_test.c" \
+  -o "$out/scalar_call_probe_source_test"
+"$out/scalar_call_probe_source_test"
+
 x86_64-w64-mingw32-gcc \
   -std=c17 -Wall -Wextra -Werror -O2 -static -municode \
   -I"$root/native/wine-unixlib/include" \
@@ -105,6 +112,22 @@ fi
 
 python3 -B "$root/native/wine-unixlib/tests/client_import_test.py" \
   "$root" "$out" "$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a"
+
+x86_64-w64-mingw32-gcc -std=c17 -Wall -Wextra -Werror -O2 \
+  -static -static-libgcc -municode -Wl,--no-insert-timestamp \
+  -I"$root/native/include" \
+  "$root/native/wine-unixlib/tests/scalar_call_probe.c" \
+  "$out/lib/wine/x86_64-windows/libwvb_autoconfig.dll.a" \
+  -o "$out/scalar_call_probe.exe"
+python3 -B - "$root" "$out" <<'PY'
+from pathlib import Path
+import runpy
+import sys
+gate = runpy.run_path(str(Path(sys.argv[1]) / "native/wine-unixlib/tests/client_import_test.py"))
+gate["require_imports"](Path(sys.argv[2]) / "scalar_call_probe.exe",
+                        {"wvb_client_configure", "wvb_client_reset"})
+print("Calling PE fixture links only explicit configure/reset from builtin")
+PY
 
 clang -arch x86_64 -std=c17 -Wall -Wextra -Werror -O2 \
   -fvisibility=hidden -dynamiclib \

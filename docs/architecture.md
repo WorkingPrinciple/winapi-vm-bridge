@@ -209,6 +209,20 @@ prefix and foreground server, captured child PIDs, exact staged Unixlib
 mapping, input hashes and scoped cleanup; it is not an OS confinement promise
 or a generated-proxy acceptance test.
 
+`tests/scalar_call_probe.c` is a separately built **calling** source fixture,
+not the noncalling loader probe. It explicitly configures the existing client
+ABI with the local scalar helper's known synthetic identity and public key,
+loads the actual generated proxy, starts its recorder, calls `add(20,22)` once,
+requires 42, finishes recording, holds 10s for separately granted mapping
+observation, resets and unloads. Its native source mocks cover setup/call/
+recorder/reset/unload failures without Wine, real client calls or sleeping.
+The SDK build compiles but never executes its PE; import inspection requires
+only configure/reset from `wvb_autoconfig.dll`. Execution, local listening,
+fresh-prefix initialization, process cleanup and retention/restoration still
+need their own exact reviewed grant. The existing scalar helper uses a
+synthetic typed target behind the production dispatcher-call handler, not a
+Windows guest DLL; this fixture cannot establish real-guest/app acceptance.
+
 The installed CrossOver runtime alone does not include this SDK here. A
 source-only follow-on built the minimal SDK subset and the x64 pair from the
 officially linked
