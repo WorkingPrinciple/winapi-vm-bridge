@@ -673,6 +673,110 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn disconnect_cannot_succeed_while_completed_result_send_is_held() {
+        use std::pin::Pin;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::task::{Context, Poll};
+        use tokio::io::ReadBuf;
+        use tokio::sync::oneshot;
+
+        struct HeldResultIo {
+            io: tokio::io::DuplexStream,
+            hold: Arc<AtomicBool>,
+            blocked: Option<oneshot::Sender<()>>,
+            release: oneshot::Receiver<()>,
+        }
+
+        impl AsyncRead for HeldResultIo {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buffer: &mut ReadBuf<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.io).poll_read(cx, buffer)
+            }
+        }
+
+        impl AsyncWrite for HeldResultIo {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                bytes: &[u8],
+            ) -> Poll<std::io::Result<usize>> {
+                if self.hold.load(Ordering::SeqCst) {
+                    if let Some(blocked) = self.blocked.take() {
+                        blocked.send(()).unwrap();
+                    }
+                    if std::future::Future::poll(Pin::new(&mut self.release), cx).is_pending() {
+                        return Poll::Pending;
+                    }
+                    self.hold.store(false, Ordering::SeqCst);
+                }
+                Pin::new(&mut self.io).poll_write(cx, bytes)
+            }
+
+            fn poll_flush(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.io).poll_flush(cx)
+            }
+
+            fn poll_shutdown(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.io).poll_shutdown(cx)
+            }
+        }
+
+        let (client_crypto, broker_crypto) = paired_transports();
+        let (client_io, broker_io) = duplex(64 * 1024);
+        let hold = Arc::new(AtomicBool::new(false));
+        let (blocked_sender, blocked) = oneshot::channel();
+        let (release, release_receiver) = oneshot::channel();
+        let broker_io = HeldResultIo {
+            io: broker_io,
+            hold: hold.clone(),
+            blocked: Some(blocked_sender),
+            release: release_receiver,
+        };
+        let mut client = SecureConnection::new(client_io, client_crypto, 99);
+        let server = tokio::spawn(serve_calls(
+            SecureConnection::new(broker_io, broker_crypto, 99),
+            Arc::new(EchoCall),
+            4,
+        ));
+        let count = send_test_call(&mut client, 1, 1, false).await;
+        for _ in 0..count {
+            client.receive().await.unwrap();
+        }
+        hold.store(true, Ordering::SeqCst);
+        send_test_call(&mut client, 3, 2, false).await;
+        tokio::time::timeout(Duration::from_secs(2), blocked)
+            .await
+            .unwrap()
+            .unwrap();
+        // The second handler has completed; its result send has entered AsyncWrite
+        // but cannot write even its first header byte until explicitly released.
+        client.close().await.unwrap();
+        assert!(!server.is_finished());
+        release.send(()).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                Err(BrokerError::Transport(TransportError::Io(ref error)))
+                    if error.kind() == std::io::ErrorKind::BrokenPipe
+            ),
+            "{result:?}"
+        );
+    }
+
     struct ScalarAdd;
     struct ProcessFixture {
         limits: Limits,
