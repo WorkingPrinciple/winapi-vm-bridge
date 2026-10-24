@@ -199,7 +199,11 @@ The script also builds, but does not execute, `out/wine-unixlib-static/loader_pr
 This synthetic caller loads the builtin, resolves its configuration export
 without calling it, prints the Windows module path/PID, holds for ten seconds
 for separately scoped mapping observation, and unloads. It does not invoke
-Keychain or configure Bridge. Its virtual module path alone is not proof of
+Keychain or configure Bridge. With one explicit absolute Windows proxy path,
+the same probe instead loads that generated DLL and resolves `add` without
+calling it, preserving the observation hold and unload. Source mocks cover
+both modes and assert that neither resolved export is ever invoked.
+Its virtual module path alone is not proof of
 the staged Unixlib identity. It uses default DLL search flags for diagnosis,
 not a system32-only search that could mask staged builtin lookup. Actual use
 still requires builtin-only per-process overrides, a builtin loader trace and

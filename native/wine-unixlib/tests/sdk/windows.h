@@ -26,5 +26,6 @@ BOOL FreeLibrary(HMODULE module);
 void SetLastError(DWORD error);
 DWORD GetLastError(void);
 DWORD GetCurrentProcessId(void);
+DWORD GetModuleFileNameW(HMODULE module, wchar_t *path, DWORD capacity);
 void Sleep(DWORD milliseconds);
 #endif

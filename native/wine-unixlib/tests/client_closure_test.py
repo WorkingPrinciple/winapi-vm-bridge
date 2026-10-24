@@ -78,6 +78,7 @@ def main(root, out):
         "lib/wine/x86_64-windows/libwvb_autoconfig.dll.a",
         "lib/wine/x86_64-unix/wvb_autoconfig.so",
         "scalar_call_probe.exe",
+        "loader_probe.exe",
     ):
         source = out / relative
         destination = relocated / relative

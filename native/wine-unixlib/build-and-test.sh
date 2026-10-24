@@ -66,6 +66,13 @@ clang -std=c17 -Wall -Wextra -Werror -O2 \
   -o "$out/scalar_call_probe_source_test"
 "$out/scalar_call_probe_source_test"
 
+clang -std=c17 -Wall -Wextra -Werror -O2 \
+  -I"$root/native/wine-unixlib/tests/sdk" \
+  "$root/native/wine-unixlib/tests/loader_probe.c" \
+  "$root/native/wine-unixlib/tests/loader_probe_source_test.c" \
+  -o "$out/loader_probe_source_test"
+"$out/loader_probe_source_test"
+
 x86_64-w64-mingw32-gcc \
   -std=c17 -Wall -Wextra -Werror -O2 -static -municode \
   -I"$root/native/wine-unixlib/include" \

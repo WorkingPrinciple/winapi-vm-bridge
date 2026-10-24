@@ -2,17 +2,30 @@
 #include <windows.h>
 
 #include <stdio.h>
+#include <wchar.h>
 
-int wmain(void) {
+int wmain(int argc, wchar_t **argv) {
+  if (argc < 1 || argc > 2 ||
+      (argc == 2 &&
+       (wcslen(argv[1]) < 3 ||
+        !((argv[1][0] >= L'A' && argv[1][0] <= L'Z') ||
+          (argv[1][0] >= L'a' && argv[1][0] <= L'z')) ||
+        argv[1][1] != L':' ||
+        (argv[1][2] != L'\\' && argv[1][2] != L'/')))) {
+    fputs("expected no argument or one absolute Windows proxy path\n", stderr);
+    return 74;
+  }
+  const wchar_t *requested = argc == 2 ? argv[1] : L"wvb_autoconfig.dll";
+  const char *export_name = argc == 2 ? "add" : "wvb_builtin_load_config";
   HMODULE module =
-      LoadLibraryExW(L"wvb_autoconfig.dll", NULL, 0);
+      LoadLibraryExW(requested, NULL, 0);
   if (!module) {
     printf("a08-loader=failed stage=load error=%lu\n",
            (unsigned long)GetLastError());
     return 70;
   }
 
-  FARPROC entry = GetProcAddress(module, "wvb_builtin_load_config");
+  FARPROC entry = GetProcAddress(module, export_name);
   if (!entry) {
     const DWORD error = GetLastError();
     FreeLibrary(module);
@@ -31,8 +44,8 @@ int wmain(void) {
     return 72;
   }
 
-  printf("a08-loader=loaded export=present windows-pid=%lu module=%ls\n",
-         (unsigned long)GetCurrentProcessId(), path);
+  printf("a08-loader=loaded export=present windows-pid=%lu module=%ls selected-export=%s\n",
+         (unsigned long)GetCurrentProcessId(), path, export_name);
   fflush(stdout);
   Sleep(10000);
   if (!FreeLibrary(module)) {
