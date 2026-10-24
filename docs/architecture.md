@@ -348,6 +348,17 @@ real loader/target identity, bounded/SEH results and process restoration.
 The asynchronous connection timeout cannot preempt a blocked synchronous
 native export; worker containment and production startup remain separate gaps.
 
+Encrypted receive progress survives cancellation between broker result sends.
+Only zero-byte EOF at a new physical-frame boundary with no unfinished logical
+reassembly is classified as `TransportError::Closed`; a partial length header,
+short ciphertext or EOF between logical fragments remains an explicit error.
+The call broker treats that closure as normal only after a call result has
+been fully sent and no incoming assembly or queued/running result remains.
+Disconnect before any completed call or while call work is pending still fails.
+The fixture therefore logs those failures unchanged, rather than ignoring an
+`UnexpectedEof` string. This source distinction does not change the runtime
+empty-stderr gate or retroactively classify a prior EOF receipt as idle.
+
 The transport's 1,048,576-byte `LOGICAL_MAX` counts each `CallRequest.body`
 and `CallResult.body` independently. Separate packed begin/data/end metadata,
 the dispatcher status and transport/encryption envelopes do not consume this

@@ -118,6 +118,11 @@ struct ActiveFrame {
 
 impl Reassembler {
     #[must_use]
+    pub const fn is_idle(&self) -> bool {
+        self.active.is_none()
+    }
+
+    #[must_use]
     pub const fn new(first_physical_sequence: u64) -> Self {
         Self {
             active: None,
