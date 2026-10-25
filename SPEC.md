@@ -12,3 +12,4 @@
 | --- | --- | --- | --- |
 | 2026-10-25 | add | REQ-WX12-01, REQ-WX12-02, REQ-WX12-03 | Source-only: no VM start/control/snapshot/exec or screen/input actions. Host build/tests only. Console sign-in is a human prerequisite; no credentials, account changes or sign-in automation. |
 | 2026-10-25 | add | REQ-WX12-01, REQ-WX12-02 | Commit after each implementation step. |
+| 2026-10-25 | revise | REQ-WX12-01, REQ-WX12-02 | Local game-development use, not a public library: keep one bounded capability and reuse the existing transport; no SDK or generic command-execution framework. |

@@ -16,6 +16,7 @@ pub enum Role {
     PairingAdmin = 4,
     Auditor = 5,
     ServiceAdmin = 6,
+    PackageObserver = 7,
 }
 
 impl TryFrom<u16> for Role {
@@ -29,6 +30,7 @@ impl TryFrom<u16> for Role {
             4 => Ok(Self::PairingAdmin),
             5 => Ok(Self::Auditor),
             6 => Ok(Self::ServiceAdmin),
+            7 => Ok(Self::PackageObserver),
             _ => Err(RestoreError::InvalidRecord),
         }
     }

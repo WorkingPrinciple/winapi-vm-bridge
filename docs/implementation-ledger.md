@@ -88,6 +88,15 @@ The process crate is a codec, not a process executor.
 No general Windows service installer, pairing command or automatic key
 provisioner is implied by these two commands.
 
+The separate local-development `serve-observer` capability consumes a pinned
+WX-07 EXE/plan, not a new adapter bundle ABI. It reuses authenticated transport
+and requires exact independent Invoke and PackageObserver grants. Its single
+session-1 interactive task calls Invoke-CommandInDesktopPackage and validates
+the observer's native session/PFN proof before returning unchanged hash-bound
+output. Source/host checks are not Windows package-execution acceptance.
+The owner STOP forbids live VM actions; r9 comparison and native cleanup remain
+pending. See [the bounded capability and resume steps](package-observer.md).
+
 A real generated DLL call can support transport acceptance. It does not prove
 unchanged-app consumption, GamingServices compatibility or a behavioral
 replacement. Retained scalar/managed receipts and fixture artifacts retain
