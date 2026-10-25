@@ -136,6 +136,10 @@ The response also includes `activation_control` and its `activation_control_sha2
 binding the separate wrapper record's context, package, worker PID/session and
 declared `prevent_breakaway` launch setting. This is wrapper-declared launch
 metadata, not a fourth ABI shape or native claim-bit attestation.
+The initial r03 control file predates the explicit `context` field; its context
+is bound by the surrounding pinned plan and authenticated response. New records
+also carry the context directly for standalone inspection; retained r03 bytes
+and hashes have not been rewritten.
 The response is JSON with `observations_utf8` (the unchanged output file as a
 UTF-8 string), `output_sha256`, `output_bytes`, context/AppId, observer hash,
 `proof`, `run_directory`, `task_completed=true`, `task_retained=true` and

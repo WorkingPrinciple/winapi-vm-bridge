@@ -130,6 +130,7 @@ if ($Worker) {
         $step = 'desktop-package-launch'
         $activation = @{
             chain = 'interactive-session-1-task -> Invoke-CommandInDesktopPackage -> observer'
+            context = $plan.context
             worker_session_id = [Diagnostics.Process]::GetCurrentProcess().SessionId
             worker_pid = $PID
             package_family_name = $plan.package_family_name
