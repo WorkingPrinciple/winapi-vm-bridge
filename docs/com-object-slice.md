@@ -80,6 +80,39 @@ Pairing-only checks were insufficient; COM demo acceptance now additionally
 requires the actual pinned `whiny trace` command to succeed with `complete:true`.
 Original r04 artifacts are retained without rewriting their targets.
 
+### Recorder-validated r05
+
+A new one-shot r05 used the actual Whiny `2e87889` regenerated proxy SHA256
+`98aff3d0b106ded2f86558b877743f04c3a56193a31c06be54f5c84dde2b482b`.
+The contract, guest dispatcher and native target were unchanged. It again
+matched all four r03 oracle cells and passed the real official validator with
+exit0, `complete:true`, five calls, twelve events and zero dropped events.
+The validator was invoked without `--allow-incomplete`; the pinned release's
+launcher SHA256 is
+`c569c873cb35fa85369f91b9c21fd8e0cbdcd743bb09a3a7cdf7561504a6925d`.
+The driver retains raw validator exit/stdout/stderr and rejects failed,
+incomplete, malformed or incorrectly bound reports without repeating the call.
+The private wineserver drained naturally.
+
+Artifacts under `out/com-object-system-r05/runtime-once/`:
+`result.json` SHA256
+`49c2bf3128ebf243c0afdcbeb507344531085ab9392d0b13c3f264f75b895cee`;
+the unmodified proxy-written `trace.jsonl` SHA256
+`6cf6c8a3916a7b4ed452ac1e97489bef42f5b6c203a363125cac8cdd73b396cf`;
+official `trace.validation.json` SHA256
+`bd14e5b9f5a6f274ccc38c4125b868381556d2e665f754090f17c2f77e2df287`;
+and `trace.validation-observed.json` SHA256
+`ecf7a6baa79a5f12fdabbefa1bf2561ac10f43a920bacdd74ac79cfe32b3a0b3`.
+These are supporting fixture evidence, not WinRT or unchanged-app A04.
+The r05 monitor (`com-r05-r05-monitor.json`, SHA256
+`6f3ad3fbc049386b27f48fd21d8f7696fe9d6062a494f9ff204922cd75eb5518`)
+retained actual process handles and observed broker PID3656 and admitted OOP
+server PID2448 in SYSTEM/session0 with both OS exit codes0 and the exact server
+path/hash. Its new server-log append has SHA256
+`b635b7ad09555a2b9d36294e53cd9a624770f0ca13251d5a33bc8cde0df3a4cb`.
+
+### Original r04 numeric and lifecycle evidence
+
 The one-shot SYSTEM r04 generated run used Whiny `f02d2be`, Calimocho Wine
 11.20, the actual Bridge builtin/Unixlib pair and the retained r03 native target.
 It compared the hash-pinned native oracle stdout
