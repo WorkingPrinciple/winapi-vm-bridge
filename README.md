@@ -238,8 +238,9 @@ Its explicit `--demo-com` host driver reuses the PID demo's private-prefix
 lifecycle and retains one-shot caller evidence without inferring native-oracle
 parity or inventing an unavailable generated trace.
 With a hash-pinned native oracle, the driver compares all four HRESULT/output
-cells before reporting native parity. The owned SYSTEM r04 run matched the r03
-Automation baseline, including zero output on E_INVALIDARG; see the
+cells before reporting native parity. The owned SYSTEM r05 run matched the r03
+Automation baseline, including zero output on E_INVALIDARG, and passed the
+actual official `whiny trace` schema/completeness gate; see the
 [bounded evidence](docs/com-object-slice.md#supporting-runtime-evidence).
 Source tests and fixture builds alone do not prove this. This is not
 general WinRT, GamingServices or unchanged-app A04 support.

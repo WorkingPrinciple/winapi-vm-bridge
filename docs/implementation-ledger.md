@@ -58,8 +58,11 @@ metadata-only COM declarations as executable dispatch. Native pointers stay in
 the owner thread; disconnect retires references before apartment/module teardown.
 Explicit current-user or owner-approved machine64 LocalServer32 path/hash checks constrain the owned test fixture,
 not arbitrary packaged-service activation. See [the bounded spec](com-object-slice.md).
-The generated SYSTEM r04 supporting run matched all four native HRESULT/output
-cells, including observed Automation zero-on-failure writeback. This is bounded
+The generated SYSTEM r05 supporting run matched all four native HRESULT/output
+cells, including observed Automation zero-on-failure writeback, and passed the
+actual official `whiny trace` command with five calls/twelve events, complete and
+without dropped events. R04's pairing checks alone did not catch invalid GUID
+braces in trace targets; its trace is not schema-valid recorder evidence. This is bounded
 owned-fixture evidence, not generic COM/WinRT, callbacks, async, or unchanged-app
 A04 support.
 The process crate is a codec, not a process executor.
