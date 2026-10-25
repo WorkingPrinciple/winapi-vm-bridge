@@ -192,18 +192,48 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 self.assertIn("paired option for --demo-com only", error.getvalue())
                 launch.assert_not_called()
 
+    def test_com_demo_rejects_missing_or_wrong_validator_pin_before_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            validator = root / "whiny"
+            validator.write_bytes(b"validator")
+            for tool, pin in ((None, None), (validator, "0" * 64)):
+                with self.subTest(tool=tool), \
+                        patch("setup.run_generated_call.run_isolated_demo") as launch:
+                    with self.assertRaisesRegex(ValueError, "COM trace"):
+                        run_com_demo(root / "wine", "0" * 64, "0" * 64, root / "caller",
+                                     root / "proxy", root / "pair", root / "config", root / "runtime",
+                                     whiny=tool, whiny_sha256=pin)
+                    launch.assert_not_called()
+
     def test_com_recording_must_be_complete_paired_and_bound(self):
-        for mode in ("good", "unmatched", "wrong-hash", "empty", "release-failed"):
+        for mode in ("good", "unmatched", "wrong-hash", "empty", "release-failed",
+                     "validator-rejects", "validator-incomplete", "validator-timeout"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 arguments, rows, value = self.com_inputs(Path(directory).resolve())
                 rows[2]["recording"] = True
+                validator = Path(directory) / "whiny"
+                validator.write_bytes(b"pinned Whiny validator")
+                validator_hash = hashlib.sha256(validator.read_bytes()).hexdigest()
                 def invoke(command, **kwargs):
+                    if command[0] == str(validator):
+                        self.assertEqual(command[1:], ["trace", str(arguments[5])])
+                        if mode == "validator-timeout":
+                            raise subprocess.TimeoutExpired(command, 30, output=b"partial")
+                        summary = {
+                            "complete": mode != "validator-incomplete", "calls": 5, "events": 12,
+                            "dropped_events": 0, "route": "remote",
+                            "contract_sha256": bytes(value["contract_sha256"]).hex(),
+                            "proxy_artifact_sha256": hashlib.sha256(arguments[2].read_bytes()).hexdigest(),
+                        }
+                        return subprocess.CompletedProcess(command, 2 if mode == "validator-rejects" else 0,
+                            json.dumps(summary), "INVALID_CALL_TRACE" if mode == "validator-rejects" else "")
                     records = []
-                    method = "com_scalar.exe!{BA9A4DA2-79FE-4B31-8DB4-201AF0266C12}#3"
+                    method = "com_scalar.exe!BA9A4DA2-79FE-4B31-8DB4-201AF0266C12#3"
                     calls = [
-                        ("com_scalar.exe!{BA9A4DA2-79FE-4B31-8DB4-201AF0266C11}::activate", "ok"),
+                        ("com_scalar.exe!BA9A4DA2-79FE-4B31-8DB4-201AF0266C11::activate", "ok"),
                         (method, "invalid_input"), (method, "ok"), (method, "call_failed"),
-                        ("com_scalar.exe!{BA9A4DA2-79FE-4B31-8DB4-201AF0266C12}::release",
+                        ("com_scalar.exe!BA9A4DA2-79FE-4B31-8DB4-201AF0266C12::release",
                          "call_failed" if mode == "release-failed" else "ok"),
                     ]
                     events = [("run_start", "", "", "")]
@@ -226,11 +256,15 @@ class GeneratedCallDriverTests(unittest.TestCase):
                         "\n".join(json.dumps(row) for row in rows), "")
                 with patch("setup.run_generated_call.subprocess.run", side_effect=invoke) as run:
                     if mode == "good":
-                        self.assertTrue(run_com_proxy(*arguments)["generated_recording"])
+                        result = run_com_proxy(*arguments, whiny=validator, whiny_sha256=validator_hash)
+                        self.assertTrue(result["generated_recording"])
+                        self.assertTrue(result["trace_validated"])
                     else:
-                        with self.assertRaisesRegex(ValueError, "COM trace"):
-                            run_com_proxy(*arguments)
-                    run.assert_called_once()
+                        with self.assertRaisesRegex(
+                                RuntimeError if mode == "validator-timeout" else ValueError, "COM trace"):
+                            run_com_proxy(*arguments, whiny=validator, whiny_sha256=validator_hash)
+                    self.assertEqual(run.call_count, 2 if mode in (
+                        "good", "validator-rejects", "validator-incomplete", "validator-timeout") else 1)
 
     def test_one_call_exact_result_and_no_implicit_retry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -487,6 +521,9 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 folder.mkdir(parents=True)
                 (folder / name).write_bytes(b"matched builtin")
             hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in (wine, server)]
+            validator = root / "whiny"
+            validator.write_bytes(b"pinned validator")
+            validator_hash = hashlib.sha256(validator.read_bytes()).hexdigest()
             process = Mock()
             process.poll.return_value = None
             for failed in (False, True):
@@ -500,11 +537,13 @@ class GeneratedCallDriverTests(unittest.TestCase):
                         call.side_effect = RuntimeError("guest completion unknown")
                         with self.assertRaisesRegex(RuntimeError, "guest completion unknown"):
                             run_com_demo(wine, *hashes, caller, proxy, root / "pair",
-                                         root / "config.json", runtime)
+                                         root / "config.json", runtime,
+                                         whiny=validator, whiny_sha256=validator_hash)
                     else:
-                        call.return_value = {"supporting_only": True}
+                        call.return_value = {"supporting_only": True, "trace_validated": True}
                         self.assertEqual(run_com_demo(wine, *hashes, caller, proxy, root / "pair",
-                                          root / "config.json", runtime), call.return_value)
+                                          root / "config.json", runtime,
+                                          whiny=validator, whiny_sha256=validator_hash), call.return_value)
                     call.assert_called_once()
                     self.assertEqual(call.call_args.args[7]["WINEPREFIX"], str(runtime / "bottle"))
                     self.assertEqual(runtime.stat().st_mode & 0o777, 0o700)

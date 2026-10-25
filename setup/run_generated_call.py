@@ -145,12 +145,57 @@ def run_proxy_call(wine: Path, caller: Path, proxy: Path, config: Path,
             "wine_sha256": wine_sha256}
 
 
+def checked_trace_validator(whiny: Path | None, expected_sha256: str | None) -> Path:
+    if whiny is None or expected_sha256 is None:
+        raise ValueError("COM trace requires an explicit hash-pinned Whiny trace validator")
+    if hashlib.sha256(whiny.read_bytes()).hexdigest() != expected_sha256:
+        raise ValueError("COM trace validator hash mismatch; no call sent")
+    return whiny.absolute()
+
+
+def validate_com_recording(whiny: Path, trace: Path, contract_hash: str, proxy_hash: str) -> str:
+    observation = trace.with_suffix(".validation-observed.json")
+    report = trace.with_suffix(".validation.json")
+    command = [str(whiny), "trace", str(trace)]
+    try:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired as error:
+        def text(value):
+            return value.decode(errors="replace") if isinstance(value, bytes) else value
+        with observation.open("x", encoding="utf-8") as stream:
+            json.dump({"command": command, "timed_out": True,
+                       "stdout": text(error.stdout), "stderr": text(error.stderr)}, stream)
+        raise RuntimeError("COM trace validator timed out after the calls; evidence retained; no retry") from error
+    with observation.open("x", encoding="utf-8") as stream:
+        json.dump({"command": [str(whiny), "trace", str(trace)], "exit_code": completed.returncode,
+                   "stdout": completed.stdout, "stderr": completed.stderr}, stream)
+    if completed.returncode:
+        raise ValueError(f"COM trace rejected by whiny trace: {completed.stderr.strip()}; no retry")
+    summary = json.loads(completed.stdout)
+    if (not isinstance(summary, dict) or summary.get("complete") is not True
+            or any(type(summary.get(field)) is not int for field in ("calls", "events", "dropped_events"))
+            or summary.get("calls") != 5 or summary.get("events") != 12
+            or summary.get("dropped_events") != 0 or summary.get("route") != "remote"
+            or summary.get("contract_sha256") != contract_hash
+            or summary.get("proxy_artifact_sha256") != proxy_hash):
+        raise ValueError("COM trace validator did not prove this complete five-call recording")
+    with report.open("x", encoding="utf-8") as stream:
+        stream.write(completed.stdout)
+    return hashlib.sha256(report.read_bytes()).hexdigest()
+
+
 def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
                   response: Path, trace: Path, wine_sha256: str,
-                  environment: dict[str, str], diagnostics: Path) -> dict:
+                  environment: dict[str, str], diagnostics: Path,
+                  whiny: Path | None = None, whiny_sha256: str | None = None) -> dict:
     """Run the owned COM fixture caller once; native oracle comparison is separate."""
     value, key, proxy_hash = proxy_inputs(
         wine, caller, proxy, config, response, trace, wine_sha256, environment, 10000)
+    if whiny is not None or whiny_sha256 is not None:
+        whiny = checked_trace_validator(whiny, whiny_sha256)
+        if any(trace.with_suffix(suffix).exists()
+               for suffix in (".validation-observed.json", ".validation.json")):
+            raise ValueError("COM trace validation evidence already exists; never reuse a run")
     contract = json.loads(Path(value["contract_path"]).read_text(encoding="utf-8"))
     if not isinstance(contract, dict):
         raise ValueError("COM contract must be an object")
@@ -245,16 +290,22 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
             if pending:
                 raise ValueError("COM trace has calls without returns")
             server_name = target_path.replace("\\", "/").rsplit("/", 1)[-1]
-            method = f"{server_name}!{{{iid}}}#3"
+            method = f"{server_name}!{iid}#3"
             if returns != [
-                    (f"{server_name}!{{{clsid}}}::activate", "ok"),
+                    (f"{server_name}!{clsid}::activate", "ok"),
                     (method, "invalid_input"), (method, "ok"), (method, "call_failed"),
-                    (f"{server_name}!{{{iid}}}::release", "ok")]:
+                    (f"{server_name}!{iid}::release", "ok")]:
                 raise ValueError("COM trace does not prove the exact activation/method/release outcomes")
+            whiny = checked_trace_validator(whiny, whiny_sha256)
+            validation_hash = validate_com_recording(
+                whiny, trace, bytes(value["contract_sha256"]).hex(), proxy_hash)
         elif trace.exists():
             raise ValueError("COM caller reported no recording but created a trace")
     return {"event": "result", "route": "generated-com-proxy", "supporting_only": True,
             "native_oracle_compared": False, "generated_recording": recording,
+            "trace_validated": recording,
+            "trace_validation_sha256": validation_hash if recording else None,
+            "trace_validator_sha256": whiny_sha256 if recording else None,
             "caller_windows_pid": rows[0]["caller_pid"], "proxy_sha256": proxy_hash,
             "wine_sha256": wine_sha256}
 
@@ -306,17 +357,21 @@ def compare_com_oracle(native: list[dict], generated: Path) -> dict:
 def run_com_demo(wine: Path, wine_sha256: str, server_sha256: str,
                  caller: Path, proxy: Path, builtin_root: Path, config: Path,
                  runtime_root: Path, oracle_stdout: Path | None = None,
-                 oracle_sha256: str | None = None) -> dict:
+                 oracle_sha256: str | None = None, whiny: Path | None = None,
+                 whiny_sha256: str | None = None) -> dict:
     if (oracle_stdout is None) != (oracle_sha256 is None):
         raise ValueError("native COM oracle path and hash must be supplied together")
     native = read_com_oracle(oracle_stdout, oracle_sha256) if (
         oracle_stdout is not None and oracle_sha256 is not None) else None
+    whiny = checked_trace_validator(whiny, whiny_sha256)
 
     def invoke(root, environment):
         response = root / "response.jsonl"
         result = run_com_proxy(wine.absolute(), root / "proxy_call.exe", root / "proxy.dll", config,
                                response, root / "trace.jsonl", wine_sha256, environment,
-                               root / "caller.stderr")
+                               root / "caller.stderr", whiny, whiny_sha256)
+        if result.get("trace_validated") is not True:
+            raise ValueError("COM demo requires a schema-valid generated recording")
         if native is not None:
             result["native_oracle_cells"] = compare_com_oracle(native, response)
             result["native_oracle_compared"] = True
@@ -442,21 +497,26 @@ def main() -> int:
     parser.add_argument("--expected-u32", type=int)
     parser.add_argument("--oracle-stdout", type=Path)
     parser.add_argument("--oracle-sha256")
+    parser.add_argument("--whiny", type=Path)
+    parser.add_argument("--whiny-sha256")
     args = parser.parse_args()
     if ((args.oracle_stdout is None) != (args.oracle_sha256 is None)
             or (not args.demo_com and (args.oracle_stdout is not None or args.oracle_sha256 is not None))):
         parser.error("oracle stdout/hash are a paired option for --demo-com only")
+    if ((args.whiny is None) != (args.whiny_sha256 is None)
+            or (not args.demo_com and (args.whiny is not None or args.whiny_sha256 is not None))):
+        parser.error("whiny executable/hash are a paired option for --demo-com only")
     if args.demo_pid or args.demo_com:
         if (not all((args.proxy_caller, args.wine, args.wine_sha256, args.wineserver_sha256,
                      args.proxy, args.builtin_root, args.runtime_root))
                 or any((args.trace, args.response, args.request))
                 or (args.demo_pid and args.expected_u32 is None)
-                or (args.demo_com and args.expected_u32 is not None)):
-            parser.error("demo requires proxy-caller/wine/runtime hashes/proxy/builtin-root/runtime-root; PID also requires expected-u32; output paths are derived")
+                or (args.demo_com and (args.expected_u32 is not None or args.whiny is None))):
+            parser.error("demo requires proxy-caller/wine/runtime hashes/proxy/builtin-root/runtime-root; PID also requires expected-u32; COM requires whiny/whiny-sha256; output paths are derived")
         arguments = (args.wine, args.wine_sha256, args.wineserver_sha256,
                      args.proxy_caller, args.proxy, args.builtin_root, args.config, args.runtime_root)
         result = run_pid_demo(*arguments, args.expected_u32) if args.demo_pid else run_com_demo(
-            *arguments, args.oracle_stdout, args.oracle_sha256)
+            *arguments, args.oracle_stdout, args.oracle_sha256, args.whiny, args.whiny_sha256)
     elif args.proxy_caller:
         if not all((args.wine, args.wine_sha256, args.proxy, args.trace, args.response, args.expected_u32)):
             parser.error("proxy mode requires --wine, --wine-sha256, --proxy, --trace, --response and --expected-u32")

@@ -73,6 +73,13 @@ restore prior state, retain receipts. This is supporting evidence, not A04.
 
 ## Supporting runtime evidence
 
+The r04 numeric parity, process and cleanup receipts below remain valid, but
+its trace is **not schema-valid recorder evidence**: generated `{GUID}` targets
+were outside the official target alphabet. Whiny `2e87889` removes those braces.
+Pairing-only checks were insufficient; COM demo acceptance now additionally
+requires the actual pinned `whiny trace` command to succeed with `complete:true`.
+Original r04 artifacts are retained without rewriting their targets.
+
 The one-shot SYSTEM r04 generated run used Whiny `f02d2be`, Calimocho Wine
 11.20, the actual Bridge builtin/Unixlib pair and the retained r03 native target.
 It compared the hash-pinned native oracle stdout

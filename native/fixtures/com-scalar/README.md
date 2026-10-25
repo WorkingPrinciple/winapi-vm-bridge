@@ -83,7 +83,9 @@ python3 setup/run_generated_call.py --demo-com \
   --config /absolute/private/call.json \
   --runtime-root /absolute/new-private-runtime \
   --oracle-stdout /absolute/pinned/native-oracle.stdout.txt \
-  --oracle-sha256 "$ORACLE_STDOUT_SHA256"
+  --oracle-sha256 "$ORACLE_STDOUT_SHA256" \
+  --whiny /absolute/pinned/release/bin/whiny \
+  --whiny-sha256 "$WHINY_LAUNCHER_SHA256"
 ```
 
 The config uses the existing product call fields with 5000ms connect and
@@ -92,9 +94,13 @@ contract hash, retains raw caller stdout/stderr even on failure, and checks
 the successful output, failed HRESULT with zero output, and final release.
 It reuses the PID demo's private-prefix initialization and bounded owned-server
 drain. Never reuse a runtime root or retry after an unknown completion.
-`generated_recording=false` explicitly means the generated recorder was absent;
-no trace is fabricated. When present, a complete artifact/contract/process-bound
-paired trace is required. The paired oracle path/hash options validate the
+The COM demo requires a real recording and the explicit pinned `whiny trace`
+validator. The lower-level caller can report an absent recorder honestly, but
+that cannot pass demo acceptance. Complete artifact/contract/process binding
+and paired outcomes are necessary, not sufficient: the official validator must
+exit0 with `complete:true`, five calls, twelve events and no dropped events.
+Its raw exit/stdout/stderr observation and successful JSON report are retained;
+failure or timeout never retries the target. The paired oracle path/hash options validate the
 native baseline before launching Wine, then compare successful HRESULT/output
 and failed HRESULT/output in four explicit cells. Only equal cells set
 `native_oracle_compared=true`; without these options it remains false.
