@@ -94,8 +94,12 @@ and requires exact independent Invoke and PackageObserver grants. Its single
 session-1 interactive task calls Invoke-CommandInDesktopPackage and validates
 the observer's native session/PFN proof before returning unchanged hash-bound
 output. Source/host checks are not Windows package-execution acceptance.
-The owner STOP forbids live VM actions; r9 comparison and native cleanup remain
-pending. See [the bounded capability and resume steps](package-observer.md).
+The owner later resumed bounded live acceptance. r02 retained Flags `0x25`
+but timed out returning its result. Fresh authorized r03 omitted
+PreventBreakaway through its pinned plan, delivered authenticated session-1/PFN
+output and matched all three r9 cells (Flags `0x5`). Exact task/rule/key cleanup
+was independently checked. See [the bounded native
+acceptance](package-observer.md#accepted-native-r03-control).
 
 A real generated DLL call can support transport acceptance. It does not prove
 unchanged-app consumption, GamingServices compatibility or a behavioral

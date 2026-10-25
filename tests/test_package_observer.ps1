@@ -8,6 +8,24 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
     $source, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
 
+$activationAssignment = $ast.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left.Extent.Text -eq '$activation'
+}, $true)
+if ($null -eq $activationAssignment) { throw 'Missing activation-control record.' }
+$plan = [pscustomobject]@{
+    context = 'host-test-context'
+    package_family_name = 'host-test-package'
+    app_id = 'host-test-app'
+    prevent_breakaway = $false
+}
+$activation = & ([scriptblock]::Create($activationAssignment.Right.Extent.Text))
+$activationJson = $activation | ConvertTo-Json -Compress | ConvertFrom-Json
+if ($activationJson.context -ne $plan.context) {
+    throw 'Activation-control JSON must retain the selected plan context.'
+}
+
 Add-Type @'
 public static class WvbObserverSession {
     public static bool IsActive = false;

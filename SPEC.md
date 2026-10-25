@@ -4,7 +4,7 @@
 | --- | --- | --- | --- | --- |
 | REQ-WX12-01 | Execute only an operator-pinned WX-07 observer in a named package through the existing authenticated CALL transport, with an independent exact capability grant. No caller-selected commands or paths. | Host tests reject missing, wildcard, expired and wrong-scope grants, changed artifacts, invalid requests and oversized output; existing call behavior is preserved. | Bridge | accepted |
 | REQ-WX12-02 | Require a human-signed-in, active interactive session 1; execute through an interactive scheduled task and Invoke-CommandInDesktopPackage. Return exact output, SHA256, session ID and in-process GetCurrentPackageFamilyName proof. Fail closed on wrong/missing identity and uncertain execution; never retry automatically. | Host tests exercise fail-closed proof/result validation and the generated task boundary. Windows compilation succeeds. Native behavior remains unclaimed until resumed live acceptance. | Bridge | accepted |
-| REQ-WX12-03 | Reproduce historical r9 only after the owner's explicit resume of VM/screen control. | On the authorized guest, pin the generated observer and package, run once in session 1, verify native identity proof and compare the retained exact output to the full historical SHA256 beginning 0a5fee77. Reconcile task/process cleanup. | Owner + Bridge | blocked |
+| REQ-WX12-03 | Reproduce historical r9 after the owner's explicit resume, retaining hash-bound generated output. | On the authorized guest, pin the generated observer and package, run once in session 1, verify native identity proof and semantically compare the three r9 cells: Site B status 0/Flags 5/Origin 3/Attributes 3; claim-only status 0/Flags 5/Origin 3; all-NULL status 0. Reconcile exact task/process cleanup; no credentials or automated sign-in. | Owner + Bridge | accepted |
 
 ## Corrections
 
@@ -14,6 +14,10 @@
 | 2026-10-25 | add | REQ-WX12-01, REQ-WX12-02 | Commit after each implementation step. |
 | 2026-10-25 | revise | REQ-WX12-01, REQ-WX12-02 | Local game-development use, not a public library: keep one bounded capability and reuse the existing transport; no SDK or generic command-execution framework. |
 | 2026-10-25 | revise | REQ-WX12-02 | PR #16 follow-up: diagnostics read failures/oversize must preserve the observer failure and run path; always check worker-gate structure and explicitly report session-1 runtime-check skips. Host regression checks and same-branch push only; VM/screen STOP unchanged. |
+| 2026-10-25 | revise | REQ-WX12-03 | Owner-directed 15:42 resume relayed by coordinator, bound to sidecar SHA256 0494ca577f87491f5a6df940c6aa8b95bc13d470e19c69dd71024ecf4aff8c44. Bounded WX-12 live acceptance is now authorized. Compare the three r9 cells semantically, not identical raw historical bytes; retain generated-output hashes. If session 1 lacks a signed-in human, stop and report that prerequisite. No credentials, account changes or sign-in automation. |
+| 2026-10-25 | revise | REQ-WX12-02, REQ-WX12-03 | Native r01 reached authenticated backend activation but refused before task creation: PowerShell 5 Join-Path rejects Rust verbatim canonical drive paths. Normalize only local drive paths at the PowerShell boundary. Run the staged worker source inline using EncodedCommand rather than requiring file execution; do not change machine/user execution policy. Reconcile before any fresh run. |
+| 2026-10-25 | revise | REQ-WX12-02, REQ-WX12-03 | Coordinator authorizes ONE fresh r03 run under owner resume to fix CALL delivery: bounded launcher headroom and exact terminal task wait. Record activation-path control evidence and investigate phnt 0x20 as a hypothesis; do not change frozen fixtures or replay r02. |
+| 2026-10-25 | revise | REQ-WX12-03 | Before r03 launch, coordinator explicitly authorized the controlled r9-matching run without PreventBreakaway, recorded as prevent_breakaway=false in the pinned plan/control evidence. Existing plan behavior defaults true. Predict Flags5; require observed CALL success, matching cells and exact cleanup before acceptance. No further observer run authorized. |
 
 ## Source acceptance evidence (2026-10-25)
 
@@ -39,7 +43,7 @@ pins. There is no external VM action or claimed r9 observation.
   with host regressions. No subsequent native/independent PASS is claimed.
 
 REQ-WX12-03 stays blocked by the owner STOP. The full resume procedure is in
-[docs/package-observer.md](docs/package-observer.md#source-checks-and-pending-native-acceptance).
+[docs/package-observer.md](docs/package-observer.md#source-checks-and-native-acceptance-procedure).
 The full historical SHA256/output must be recovered; a prefix is not a pin.
 Generated provenance changes output bytes, so literal historical hash equality
 must not be inferred from matching r9 cells or silently replaced by that weaker
@@ -63,3 +67,48 @@ Final checks: 163 workspace tests passed (12 CLI binary tests), workspace fmt
 and all-targets/all-features clippy passed, Windows x64 GNU CLI build and
 target clippy passed, PowerShell host regressions passed. Native acceptance
 and the owner STOP remain unchanged.
+
+## Resumed native observation (2026-10-25, after 15:42)
+
+The owner resume above supersedes the earlier STOP/blocked-by-consent text.
+At r02, REQ-WX12-03 was blocked by **observed acceptance failures**, not sign-in:
+the task produced native session-1 package proof, but claim Flags were `0x25`,
+not historical `0x5`, and the broker launcher deadline expired instead of
+returning the generated output through CALL. No automatic observer replay
+followed the timed-out call. Details and full pins are in
+[docs/package-observer.md](docs/package-observer.md#resumed-native-r02-result).
+
+The raw 2800-byte output was recovered by a read-only exact-path pull:
+SHA256 `5d194d8f568db5539d90e81ba5619513de87d9b8b1f18973790df56c6fcb7e15`.
+Task LastResult was 0, task instances 0 and broker retained-handle exit was 2.
+Exact task, both scoped firewall rules, guest keys/grant configs and ephemeral
+host keys were removed. Independent follow-up verified absence of the task,
+rules, sensitive guest files and exact-path owned processes, with unchanged
+output hash. No retained observer process handle was collected; do not upgrade
+the process snapshot to an OS-exit attestation.
+
+## Accepted controlled r03 (2026-10-25)
+
+The authorized fresh r03 used `prevent_breakaway=false`, matching r9's launch
+configuration, and returned a successful authenticated CALL (dispatch status 0).
+All three native cells matched the semantic acceptance criterion: Site B
+0/Flags 5/Origin 3/Attributes 3, claim-only 0/Flags 5/Origin 3, all-NULL 0.
+Native session 1/PFN and every input/module hash were validated.
+The unchanged 2798-byte output SHA256 is
+`fc169200e2d4698146619d5a740b72afb90bec9a9b9ea1ee60f196c0552e6e68`.
+The coordinator accepted r03 in the external spec commit `d5dc140`.
+REQ-WX12-03 is accepted for this configuration, not every activation path.
+
+The bounded launcher now permits 120 seconds of setup/collection overhead
+beyond the observer timeout and waits on the exact scheduler task's terminal
+state. Exact task/rule/key cleanup was independently verified after broker
+retained-handle exit 0. No retained observer OS exit-handle claim is made.
+Full response/control pins, the separately labelled r02 result and the
+source-backed activation-bit hypothesis are in
+[the r03 evidence](docs/package-observer.md#accepted-native-r03-control).
+No additional observer run is authorized or needed.
+
+Final r03 source checks passed: workspace tests with all features, formatting,
+all-targets/all-features clippy, Windows x64 GNU release build/target clippy,
+and PowerShell host regressions. Installed Whiny accepted the exact r03 output
+as three cells with its unchanged output hash; only scratch files were generated.

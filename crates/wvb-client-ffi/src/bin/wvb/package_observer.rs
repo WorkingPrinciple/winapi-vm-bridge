@@ -16,10 +16,32 @@ use wvb_integrity::{canonical_root, resolve_regular_file, sha256_bytes};
 const SCRIPT: &str = include_str!("../../../../../setup/windows-vm/run-package-observer.ps1");
 const OPERATION: u32 = 1;
 const SCHEMA: u32 = 1;
+const LAUNCHER_OVERHEAD_MS: u64 = 120_000;
+
+fn launcher_budget(timeout_ms: u64, lifetime_ms: u64) -> Result<u64> {
+    let budget = timeout_ms
+        .checked_add(LAUNCHER_OVERHEAD_MS)
+        .ok_or("launcher budget overflow")?;
+    if budget
+        .checked_add(10_000)
+        .is_none_or(|total| total > lifetime_ms)
+    {
+        return Err("observer launcher and response budgets exceed server lifetime".into());
+    }
+    Ok(budget)
+}
 
 #[cfg(any(windows, test))]
 fn launcher_command(stage: &Path) -> Result<String> {
     let stage = stage.to_str().ok_or("run directory is not valid Unicode")?;
+    // PowerShell 5 providers do not consistently accept Rust's canonical \\?\ paths.
+    let stage = stage.strip_prefix(r"\\?\").unwrap_or(stage);
+    if stage.len() < 3
+        || !stage.as_bytes()[0].is_ascii_alphabetic()
+        || &stage.as_bytes()[1..3] != b":\\"
+    {
+        return Err("observer staging requires an absolute local Windows drive path".into());
+    }
     Ok(format!(
         "& {{ {SCRIPT} }} -Stage '{}'",
         stage.replace('\'', "''")
@@ -51,6 +73,12 @@ pub(super) struct Plan {
     app_id: String,
     timeout_ms: u64,
     max_output_bytes: usize,
+    #[serde(default = "default_prevent_breakaway")]
+    prevent_breakaway: bool,
+}
+
+fn default_prevent_breakaway() -> bool {
+    true
 }
 
 fn hash_string(value: &str) -> bool {
@@ -289,7 +317,7 @@ fn execute(plan: &Plan, observer: &[u8], root: &Path) -> Result<Vec<u8>> {
         .stdout(Stdio::null())
         .stderr(stderr)
         .spawn()?;
-    let deadline = Instant::now() + Duration::from_millis(plan.timeout_ms + 8000);
+    let deadline = Instant::now() + Duration::from_millis(plan.timeout_ms + LAUNCHER_OVERHEAD_MS);
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -311,7 +339,15 @@ fn execute(plan: &Plan, observer: &[u8], root: &Path) -> Result<Vec<u8>> {
     }
     let path = resolve_regular_file(&canonical_root(&stage.join("output"))?, "observations.json")?;
     let bytes = bounded_read(&path, plan.max_output_bytes)?;
-    encode_result(plan, &bytes, &stage)
+    let control_path = resolve_regular_file(
+        &canonical_root(&stage.join("output"))?,
+        "activation-control.json",
+    )?;
+    let control = bounded_read(&control_path, 8192)?;
+    let mut result: Value = serde_json::from_slice(&encode_result(plan, &bytes, &stage)?)?;
+    result["activation_control"] = serde_json::from_slice(&control)?;
+    result["activation_control_sha256"] = json!(hex(&sha256_bytes(&control)));
+    Ok(serde_json::to_vec(&result)?)
 }
 
 #[cfg(any(windows, test))]
@@ -366,9 +402,10 @@ pub(super) async fn serve(config: Config) -> Result<()> {
         .checked_mul(6)
         .ok_or("output bound overflow")?
         + 8192;
-    if capacity > wvb_call::LOGICAL_MAX || plan.timeout_ms + 10_000 > config.lifetime_ms {
+    if capacity > wvb_call::LOGICAL_MAX {
         return Err("observer result or time budget exceeds server bounds".into());
     }
+    launcher_budget(plan.timeout_ms, config.lifetime_ms)?;
     let root = canonical_root(config.plan_path.parent().ok_or("plan has no parent")?)?;
     plan.verify_observer(&root)?;
     let run_root = canonical_root(&config.run_root)?;
@@ -400,6 +437,18 @@ pub(super) async fn serve(config: Config) -> Result<()> {
 mod tests {
     use super::*;
     use wvb_authz::Grant;
+
+    #[test]
+    fn task_setup_and_terminal_wait_have_bounded_headroom_before_response_deadline() {
+        assert_eq!(launcher_budget(60_000, 200_000).unwrap(), 180_000);
+        assert!(launcher_budget(60_000, 189_999).is_err());
+        assert_eq!(launcher_budget(60_000, 190_000).unwrap(), 180_000);
+        assert!(launcher_budget(u64::MAX, 600_000).is_err());
+        assert!(SCRIPT.contains("$task = $taskFolder.GetTask($taskName)"));
+        assert!(SCRIPT.contains("$task.GetInstances(0).Count -eq 0"));
+        assert!(!SCRIPT.contains("Get-ScheduledTaskInfo"));
+        assert!(SCRIPT.contains("activation-control.json"));
+    }
 
     #[test]
     fn task_failure_preserves_run_identity_when_diagnostics_are_oversized_or_unavailable() {
@@ -465,6 +514,7 @@ mod tests {
             app_id: "Microsoft.Xbox.App".into(),
             timeout_ms: 5000,
             max_output_bytes: 4096,
+            prevent_breakaway: true,
         }
     }
 
@@ -738,8 +788,11 @@ mod tests {
         assert!(SCRIPT.contains("SessionId -ne 1"));
         assert!(SCRIPT.contains("WTSQuerySessionInformationW"));
         assert!(SCRIPT.contains("Get-SessionOneSid"));
-        assert!(SCRIPT.contains("Invoke-CommandInDesktopPackage -PackageFamilyName"));
-        assert!(SCRIPT.contains("-AppId $plan.app_id"));
+        assert!(SCRIPT.contains("Invoke-CommandInDesktopPackage @launch"));
+        assert!(SCRIPT.contains("AppId = $plan.app_id"));
+        assert!(
+            SCRIPT.contains("if ($plan.prevent_breakaway) { $launch.PreventBreakaway = $true }")
+        );
         assert!(SCRIPT.contains("--context "));
         assert!(SCRIPT.contains(" --out "));
         assert!(!SCRIPT.contains("-Password"));
@@ -750,6 +803,29 @@ mod tests {
             launcher_command(Path::new("C:\\operator's runs\\run"))
                 .unwrap()
                 .ends_with("-Stage 'C:\\operator''s runs\\run'")
+        );
+        assert!(
+            launcher_command(Path::new(r"\\?\C:\runs\run"))
+                .unwrap()
+                .ends_with("-Stage 'C:\\runs\\run'")
+        );
+        assert!(launcher_command(Path::new(r"\\?\UNC\server\share")).is_err());
+        assert!(launcher_command(Path::new("relative")).is_err());
+        assert!(SCRIPT.contains("-EncodedCommand"));
+        assert!(!SCRIPT.contains("-NonInteractive -File"));
+        let mut legacy = serde_json::to_value(plan()).unwrap();
+        legacy.as_object_mut().unwrap().remove("prevent_breakaway");
+        assert!(
+            serde_json::from_value::<Plan>(legacy)
+                .unwrap()
+                .prevent_breakaway
+        );
+        let mut control = serde_json::to_value(plan()).unwrap();
+        control["prevent_breakaway"] = json!(false);
+        assert!(
+            !serde_json::from_value::<Plan>(control)
+                .unwrap()
+                .prevent_breakaway
         );
     }
 

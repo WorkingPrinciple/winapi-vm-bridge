@@ -269,8 +269,11 @@ generated-call driver; historical artifacts remain unchanged.
 WX-07 observer run through the existing authenticated call transport. It requires
 active interactive session 1 and checks native package identity before accepting
 hash-bound observations. It does not create a sign-in session or control a VM.
-See [configuration, scope and pending native acceptance](docs/package-observer.md).
-The owner's VM-control STOP remains in force; no live WX-12/r9 result is claimed.
+See [configuration, scope and bounded native acceptance](docs/package-observer.md).
+Authorized r03 delivered authenticated session-1 package output matching the
+three historical r9 cells with `prevent_breakaway=false`. Separately retained
+r02 used `true`, observed Flags `0x25` and timed out returning its result.
+This is one pinned configuration's acceptance, not general application parity.
 
 ## Source checks
 
