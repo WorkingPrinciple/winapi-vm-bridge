@@ -171,7 +171,10 @@ def validate_com_recording(whiny: Path, trace: Path, contract_hash: str, proxy_h
                    "stdout": completed.stdout, "stderr": completed.stderr}, stream)
     if completed.returncode:
         raise ValueError(f"COM trace rejected by whiny trace: {completed.stderr.strip()}; no retry")
-    summary = json.loads(completed.stdout)
+    try:
+        summary = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise ValueError("COM trace validator returned invalid JSON; evidence retained; no retry") from error
     if (not isinstance(summary, dict) or summary.get("complete") is not True
             or any(type(summary.get(field)) is not int for field in ("calls", "events", "dropped_events"))
             or summary.get("calls") != 5 or summary.get("events") != 12

@@ -208,7 +208,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
 
     def test_com_recording_must_be_complete_paired_and_bound(self):
         for mode in ("good", "unmatched", "wrong-hash", "empty", "release-failed",
-                     "validator-rejects", "validator-incomplete", "validator-timeout"):
+                     "validator-rejects", "validator-incomplete", "validator-timeout", "validator-json"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 arguments, rows, value = self.com_inputs(Path(directory).resolve())
                 rows[2]["recording"] = True
@@ -220,6 +220,8 @@ class GeneratedCallDriverTests(unittest.TestCase):
                         self.assertEqual(command[1:], ["trace", str(arguments[5])])
                         if mode == "validator-timeout":
                             raise subprocess.TimeoutExpired(command, 30, output=b"partial")
+                        if mode == "validator-json":
+                            return subprocess.CompletedProcess(command, 0, "not JSON", "")
                         summary = {
                             "complete": mode != "validator-incomplete", "calls": 5, "events": 12,
                             "dropped_events": 0, "route": "remote",
@@ -264,7 +266,8 @@ class GeneratedCallDriverTests(unittest.TestCase):
                                 RuntimeError if mode == "validator-timeout" else ValueError, "COM trace"):
                             run_com_proxy(*arguments, whiny=validator, whiny_sha256=validator_hash)
                     self.assertEqual(run.call_count, 2 if mode in (
-                        "good", "validator-rejects", "validator-incomplete", "validator-timeout") else 1)
+                        "good", "validator-rejects", "validator-incomplete",
+                        "validator-timeout", "validator-json") else 1)
 
     def test_one_call_exact_result_and_no_implicit_retry(self):
         with tempfile.TemporaryDirectory() as directory:
