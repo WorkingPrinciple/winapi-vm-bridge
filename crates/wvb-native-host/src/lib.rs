@@ -8,6 +8,8 @@ use wvb_broker::DispatchOutcome;
 use wvb_broker::TypedDispatchModule;
 use wvb_call::LOGICAL_MAX;
 
+pub mod object;
+
 pub const DISPATCHER_ABI_IDENTIFIER: &str = "whiny.dispatch.v1";
 
 #[cfg(all(feature = "source-fixture", target_os = "macos"))]
@@ -17,6 +19,21 @@ pub struct NativeHostConfig {
     pub dispatcher_path: PathBuf,
     pub dispatcher_sha256: [u8; 32],
     pub response_capacity: usize,
+}
+
+pub struct ComTargetConfig {
+    pub clsid: String,
+    pub path: PathBuf,
+    pub sha256: [u8; 32],
+    pub registration_scope: ComRegistrationScope,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComRegistrationScope {
+    #[default]
+    CurrentUser,
+    LocalMachine,
 }
 
 #[derive(Debug)]
@@ -124,6 +141,216 @@ mod windows {
         fn FreeLibrary(module: Module) -> i32;
     }
 
+    #[link(name = "ole32")]
+    unsafe extern "system" {
+        fn CoInitializeEx(reserved: *mut c_void, model: u32) -> i32;
+        fn CoUninitialize();
+    }
+
+    type ActivateObject = unsafe extern "system" fn(*mut *mut c_void) -> i32;
+    type InvokeObject = unsafe extern "system" fn(*mut c_void, u32, *mut u32) -> i32;
+    type ReleaseObject = unsafe extern "system" fn(*mut c_void) -> u32;
+
+    #[link(name = "advapi32")]
+    unsafe extern "system" {
+        fn RegOpenKeyExW(
+            key: *mut c_void,
+            subkey: *const u16,
+            options: u32,
+            access: u32,
+            opened: *mut *mut c_void,
+        ) -> i32;
+        fn RegCloseKey(key: *mut c_void) -> i32;
+        fn RegGetValueW(
+            key: *mut c_void,
+            subkey: *const u16,
+            value: *const u16,
+            flags: u32,
+            kind: *mut u32,
+            data: *mut c_void,
+            bytes: *mut u32,
+        ) -> i32;
+    }
+
+    fn verify_com_registration(target: &super::ComTargetConfig) -> Result<(), String> {
+        if matches!(
+            target.registration_scope,
+            super::ComRegistrationScope::LocalMachine
+        ) {
+            // HKCR can prefer per-user registrations; never silently activate a shadow.
+            let key = format!("Software\\Classes\\CLSID\\{{{}}}", target.clsid)
+                .encode_utf16()
+                .chain(Some(0))
+                .collect::<Vec<_>>();
+            let mut opened = ptr::null_mut();
+            let status = unsafe {
+                RegOpenKeyExW(
+                    (-2_147_483_647_isize) as *mut c_void,
+                    key.as_ptr(),
+                    0,
+                    0x0000_0101,
+                    &raw mut opened,
+                )
+            };
+            if status == 0 {
+                let closed = unsafe { RegCloseKey(opened) };
+                return Err(format!(
+                    "machine activation has a current-user CLSID shadow; close={closed}"
+                ));
+            }
+            if status != 2 && status != 3 {
+                return Err(format!("current-user CLSID shadow check status={status}"));
+            }
+        }
+        let key = format!(
+            "Software\\Classes\\CLSID\\{{{}}}\\LocalServer32",
+            target.clsid
+        )
+        .encode_utf16()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+        let mut buffer = vec![0_u16; 16_384];
+        let mut size = u32::try_from(buffer.len() * 2).map_err(|error| error.to_string())?;
+        // Windows predefined HKEY values are sign-extended LONGs.
+        let hive = match target.registration_scope {
+            super::ComRegistrationScope::CurrentUser => -2_147_483_647_isize,
+            super::ComRegistrationScope::LocalMachine => -2_147_483_646_isize,
+        } as *mut c_void;
+        let status = unsafe {
+            RegGetValueW(
+                hive,
+                key.as_ptr(),
+                ptr::null(),
+                0x0001_0002, // REG_SZ, explicit 64-bit registry view.
+                ptr::null_mut(),
+                buffer.as_mut_ptr().cast(),
+                &raw mut size,
+            )
+        };
+        if status != 0 {
+            return Err(format!(
+                "{:?} LocalServer32 read status={status}",
+                target.registration_scope
+            ));
+        }
+        let length = usize::try_from(size).map_err(|error| error.to_string())? / 2;
+        if length == 0 || length > buffer.len() || buffer[length - 1] != 0 {
+            return Err("invalid LocalServer32 string".into());
+        }
+        let command =
+            String::from_utf16(&buffer[..length - 1]).map_err(|error| error.to_string())?;
+        let rest = command
+            .strip_prefix('"')
+            .ok_or("LocalServer32 executable must be quoted")?;
+        let (executable, _) = rest
+            .split_once('"')
+            .ok_or("LocalServer32 closing quote missing")?;
+        let actual = std::fs::canonicalize(executable).map_err(|error| error.to_string())?;
+        let expected = std::fs::canonicalize(&target.path).map_err(|error| error.to_string())?;
+        if actual != expected
+            || sha256_file(&actual).map_err(|error| error.to_string())? != target.sha256
+        {
+            return Err("LocalServer32 does not resolve to the admitted target".into());
+        }
+        Ok(())
+    }
+
+    struct ComBackend {
+        module: Module,
+        activate: ActivateObject,
+        invoke: InvokeObject,
+        release: ReleaseObject,
+        target: super::ComTargetConfig,
+    }
+
+    impl super::object::ObjectBackend for ComBackend {
+        fn activate(&mut self) -> (i32, Option<usize>) {
+            if let Err(error) = verify_com_registration(&self.target) {
+                eprintln!("wvb: COM registration rejected before activation: {error}");
+                return (i32::from_le_bytes(0x8007_0005_u32.to_le_bytes()), None);
+            }
+            let mut object = ptr::null_mut();
+            let hr = unsafe { (self.activate)(&raw mut object) };
+            (hr, (!object.is_null()).then_some(object as usize))
+        }
+
+        fn invoke(&mut self, object: usize, input: u32) -> (i32, u32) {
+            let mut output = 0;
+            let hr = unsafe { (self.invoke)(object as *mut c_void, input, &raw mut output) };
+            (hr, output)
+        }
+
+        fn release(&mut self, object: usize) {
+            unsafe {
+                (self.release)(object as *mut c_void);
+            }
+        }
+    }
+
+    impl Drop for ComBackend {
+        fn drop(&mut self) {
+            unsafe {
+                FreeLibrary(self.module);
+                CoUninitialize();
+            }
+        }
+    }
+
+    pub fn load_com_backend(
+        config: &NativeHostConfig,
+        target: super::ComTargetConfig,
+    ) -> Result<Box<dyn super::object::ObjectBackend>, wvb_broker::BrokerError> {
+        let error = |reason: &str| wvb_broker::BrokerError::Handler(reason.into());
+        if unsafe { CoInitializeEx(ptr::null_mut(), 0) } < 0 {
+            return Err(error("MTA initialization failed"));
+        }
+        let loaded = (|| {
+            if sha256_file(&config.dispatcher_path).map_err(|e| error(&e.to_string()))?
+                != config.dispatcher_sha256
+            {
+                return Err(error("object dispatcher hash mismatch"));
+            }
+            let path = wide_path(&config.dispatcher_path).map_err(|e| error(&e.to_string()))?;
+            let module = unsafe {
+                LoadLibraryExW(
+                    path.as_ptr(),
+                    ptr::null_mut(),
+                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+                )
+            };
+            if module.is_null() {
+                return Err(error("object dispatcher load failed"));
+            }
+            let exports = unsafe {
+                (
+                    load_symbol::<ActivateObject>(module, b"whiny_object_activate_v1\0"),
+                    load_symbol::<InvokeObject>(module, b"whiny_object_invoke_v1\0"),
+                    load_symbol::<ReleaseObject>(module, b"whiny_object_release_v1\0"),
+                )
+            };
+            if let (Some(activate), Some(invoke), Some(release)) = exports {
+                Ok(Box::new(ComBackend {
+                    module,
+                    activate,
+                    invoke,
+                    release,
+                    target,
+                }) as Box<dyn super::object::ObjectBackend>)
+            } else {
+                unsafe {
+                    FreeLibrary(module);
+                }
+                Err(error("object dispatcher missing generated ABI export"))
+            }
+        })();
+        if loaded.is_err() {
+            unsafe {
+                CoUninitialize();
+            }
+        }
+        loaded
+    }
+
     pub struct NativeDispatcher {
         module: usize,
         dispatch: DispatchFn,
@@ -209,6 +436,19 @@ mod windows {
 #[cfg(windows)]
 pub use windows::PlatformDispatcher as NativeDispatcher;
 
+#[cfg(windows)]
+pub use windows::load_com_backend;
+
+#[cfg(not(windows))]
+pub fn load_com_backend(
+    _config: &NativeHostConfig,
+    _target: ComTargetConfig,
+) -> Result<Box<dyn object::ObjectBackend>, wvb_broker::BrokerError> {
+    Err(wvb_broker::BrokerError::Handler(
+        "COM object backend requires Windows".into(),
+    ))
+}
+
 #[cfg(not(windows))]
 pub struct NativeDispatcher;
 
@@ -233,6 +473,21 @@ impl TypedDispatchModule for NativeDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn com_registry_scope_is_explicit_and_does_not_accept_fallback_modes() {
+        assert!(matches!(
+            ComRegistrationScope::default(),
+            ComRegistrationScope::CurrentUser
+        ));
+        assert!(matches!(
+            serde_json::from_str::<ComRegistrationScope>("\"local-machine\"").unwrap(),
+            ComRegistrationScope::LocalMachine
+        ));
+        for invalid in ["\"auto\"", "\"merged\"", "\"local-machine-32\""] {
+            assert!(serde_json::from_str::<ComRegistrationScope>(invalid).is_err());
+        }
+    }
 
     #[test]
     #[cfg(not(windows))]

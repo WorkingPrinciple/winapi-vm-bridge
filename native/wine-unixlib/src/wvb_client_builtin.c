@@ -79,3 +79,11 @@ WvbStatus wvb_client_reset(void) {
   return forward(WVB_UNIX_CLIENT_RESET, &args) ? args.status
                                               : WVB_STATUS_RUNTIME_ERROR;
 }
+
+WvbStatus wvb_client_handle_close(const uint8_t token[28], int32_t *native_status) {
+  if (!token || !native_status) return WVB_STATUS_INVALID_ARGUMENT;
+  *native_status = 0;
+  WvbUnixClientHandleClose args = {token, native_status, WVB_STATUS_RUNTIME_ERROR};
+  return forward(WVB_UNIX_CLIENT_HANDLE_CLOSE, &args) ? args.status
+                                                    : WVB_STATUS_RUNTIME_ERROR;
+}

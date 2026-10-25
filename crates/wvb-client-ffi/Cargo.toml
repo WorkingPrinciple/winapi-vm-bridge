@@ -31,6 +31,7 @@ wvb-native-host = { path = "../wvb-native-host", optional = true }
 wvb-transport = { path = "../wvb-transport", optional = true }
 tokio.workspace = true
 wvb-call = { path = "../wvb-call" }
+wvb-control = { path = "../wvb-control" }
 wvb-crypto = { path = "../wvb-crypto" }
 wvb-runtime = { path = "../wvb-runtime" }
 wvb-session = { path = "../wvb-session" }

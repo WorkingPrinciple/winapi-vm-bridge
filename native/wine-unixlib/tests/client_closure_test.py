@@ -10,7 +10,7 @@ import unittest
 
 CLIENTS = {
     "_wvb_client_configure", "_wvb_client_bind_operation", "_wvb_client_call",
-    "_wvb_client_call_ex", "_wvb_client_reset",
+    "_wvb_client_call_ex", "_wvb_client_reset", "_wvb_client_handle_close",
 }
 EXPORTS = {
     "___wine_unix_call_funcs", "___wine_unix_call_wow64_funcs",

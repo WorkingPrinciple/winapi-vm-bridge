@@ -1,6 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#define WVB_CLIENT_HAS_HANDLE_CLOSE 1
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -49,6 +50,9 @@ WvbStatus wvb_client_call_ex(const uint8_t adapter_hash[32], uint32_t operation_
                              uint8_t *response, size_t response_cap,
                              size_t *response_len, int32_t *dispatch_status);
 WvbStatus wvb_client_reset(void);
+/* token is epoch[16], slot/generation/type u32LE; authenticated actor is implicit.
+ * No retry. Native close status is meaningful only after a complete response. */
+WvbStatus wvb_client_handle_close(const uint8_t token[28], int32_t *native_status);
 #ifdef __cplusplus
 }
 #endif

@@ -311,6 +311,61 @@ fn validate_result(result: &CallResult, schema: OperationSchema) -> Result<i32, 
 }
 
 #[unsafe(no_mangle)]
+/// Closes a connection-owned remote object without retrying.
+///
+/// # Safety
+///
+/// `token` references 28 readable bytes and `native_status` references a
+/// disjoint writable i32. Neither pointer may be null.
+pub unsafe extern "C" fn wvb_client_handle_close(token: *const u8, native_status: *mut i32) -> i32 {
+    ffi_status(|| {
+        if token.is_null() || native_status.is_null() {
+            return Err(WVB_STATUS_INVALID_ARGUMENT);
+        }
+        unsafe { native_status.write(0) };
+        let bytes = unsafe { slice::from_raw_parts(token, 28) };
+        let guard = configured().read().map_err(|_| WVB_STATUS_RUNTIME_ERROR)?;
+        let configured = guard.as_ref().ok_or(WVB_STATUS_NOT_CONFIGURED)?;
+        let request = wvb_control::HandleClose {
+            broker_epoch: bytes[..16]
+                .try_into()
+                .map_err(|_| WVB_STATUS_INVALID_ARGUMENT)?,
+            owner_actor_id: configured.client.actor_id(),
+            slot: u32::from_le_bytes(
+                bytes[16..20]
+                    .try_into()
+                    .map_err(|_| WVB_STATUS_INVALID_ARGUMENT)?,
+            ),
+            generation: u32::from_le_bytes(
+                bytes[20..24]
+                    .try_into()
+                    .map_err(|_| WVB_STATUS_INVALID_ARGUMENT)?,
+            ),
+            handle_type: u32::from_le_bytes(
+                bytes[24..28]
+                    .try_into()
+                    .map_err(|_| WVB_STATUS_INVALID_ARGUMENT)?,
+            ),
+        };
+        let status = configured
+            .runtime
+            .block_on(
+                configured
+                    .client
+                    .close_handle(request, configured.call_timeout),
+            )
+            .map_err(|_| WVB_STATUS_RUNTIME_ERROR)?;
+        let native = status.native_status.ok_or(WVB_STATUS_PROTOCOL_ERROR)?;
+        let native = i32::from_le_bytes(native.try_into().map_err(|_| WVB_STATUS_PROTOCOL_ERROR)?);
+        unsafe { native_status.write(native) };
+        if status.disposition != 0 {
+            return Err(WVB_STATUS_DISPATCH_ERROR);
+        }
+        Ok(WVB_STATUS_OK)
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn wvb_client_reset() -> i32 {
     ffi_status(|| {
         *configured().write().map_err(|_| WVB_STATUS_RUNTIME_ERROR)? = None;
@@ -392,10 +447,57 @@ mod tests {
             }
             Ok(result)
         }
+
+        async fn handle_close(
+            &self,
+            request: wvb_control::HandleClose,
+        ) -> Result<wvb_control::HandleStatus, BrokerError> {
+            assert_eq!(request.owner_actor_id, [8; 16]);
+            assert_eq!(request.broker_epoch, [7; 16]);
+            assert_eq!(request.generation, 3);
+            assert_eq!(request.handle_type, 9);
+            Ok(wvb_control::HandleStatus {
+                disposition: u16::from(request.slot != 17),
+                native_status: Some(
+                    (if request.slot == 17 { 0_i32 } else { -7_i32 })
+                        .to_le_bytes()
+                        .to_vec(),
+                ),
+                receipt: None,
+            })
+        }
     }
 
     fn connect_fixture() -> (Runtime, tokio::task::JoinHandle<Result<(), BrokerError>>) {
         connect_fixture_with_gate(None)
+    }
+
+    #[test]
+    fn exported_handle_close_uses_existing_control_and_authenticated_actor() {
+        let _serial = FFI_TEST_LOCK.lock().unwrap();
+        let (runtime, server) = connect_fixture();
+        let mut native = 999;
+        assert_eq!(
+            unsafe { wvb_client_handle_close(std::ptr::null(), &raw mut native) },
+            WVB_STATUS_INVALID_ARGUMENT
+        );
+        let mut token = [7; 28];
+        token[16..20].copy_from_slice(&17_u32.to_le_bytes());
+        token[20..24].copy_from_slice(&3_u32.to_le_bytes());
+        token[24..28].copy_from_slice(&9_u32.to_le_bytes());
+        assert_eq!(
+            unsafe { wvb_client_handle_close(token.as_ptr(), &raw mut native) },
+            WVB_STATUS_OK
+        );
+        assert_eq!(native, 0);
+        token[16..20].copy_from_slice(&18_u32.to_le_bytes());
+        assert_eq!(
+            unsafe { wvb_client_handle_close(token.as_ptr(), &raw mut native) },
+            WVB_STATUS_DISPATCH_ERROR
+        );
+        assert_eq!(native, -7);
+        assert_eq!(wvb_client_reset(), WVB_STATUS_OK);
+        assert!(runtime.block_on(server).unwrap().is_ok());
     }
 
     fn connect_fixture_with_gate(

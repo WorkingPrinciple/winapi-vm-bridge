@@ -16,8 +16,8 @@ use serde_json::json;
 use wvb_admission::{AdmissionEngine, BundleFileKind, FrozenInputs, OperatorAdmission};
 use wvb_authz::{Grant, Registry};
 use wvb_broker::{
-    AuthorizedCallHandler, DispatcherCallHandler, OperationSchema, actor_for_session_key,
-    serve_calls,
+    AuthorizedCallHandler, CallHandler, DispatcherCallHandler, OperationSchema,
+    actor_for_session_key, serve_calls,
 };
 use wvb_call::LOGICAL_MAX;
 use wvb_client_ffi::{
@@ -26,7 +26,8 @@ use wvb_client_ffi::{
 };
 use wvb_crypto::StaticPrivateKey;
 use wvb_integrity::{canonical_root, resolve_regular_file, sha256_bytes};
-use wvb_native_host::{NativeDispatcher, NativeHostConfig};
+use wvb_native_host::object::{ObjectSession, ObjectSlice};
+use wvb_native_host::{ComRegistrationScope, ComTargetConfig, NativeDispatcher, NativeHostConfig};
 use wvb_session::{HelloAck, Readiness, activate_broker};
 use wvb_transport::session_responder;
 use zeroize::{Zeroize, Zeroizing};
@@ -78,6 +79,66 @@ struct ServeConfig {
     approval: OperatorAdmission,
     response_capacity: usize,
     lifetime_ms: u64,
+    #[serde(default)]
+    com_registration_scope: ComRegistrationScope,
+}
+
+#[derive(Deserialize)]
+struct ContractSlice {
+    object_slice: Option<ObjectSlice>,
+    #[serde(default)]
+    operations: Vec<ContractOperation>,
+}
+
+#[derive(Deserialize)]
+struct ContractOperation {
+    id: u32,
+    request_schema_id: u32,
+    response_schema_id: u32,
+    native_error: Option<NativeErrorRule>,
+}
+
+#[derive(Deserialize)]
+struct NativeErrorRule {
+    output_validity: String,
+}
+
+impl ContractSlice {
+    fn validated_object(
+        self,
+        operations: &BTreeMap<u32, OperationSchema>,
+    ) -> Result<Option<ObjectSlice>> {
+        let Some(slice) = self.object_slice else {
+            return Ok(None);
+        };
+        slice.validate(operations)?;
+        let mut seen = std::collections::BTreeSet::new();
+        if self.operations.len() != operations.len() {
+            return Err("object contract/admission operation count mismatch".into());
+        }
+        for operation in self.operations {
+            let schema = operations
+                .get(&operation.id)
+                .ok_or("unadmitted object operation")?;
+            let expected = if operation.id == slice.method_operation_id {
+                "zero-on-failure"
+            } else {
+                "success-only"
+            };
+            if !seen.insert(operation.id)
+                || operation.request_schema_id != schema.request_schema_id
+                || operation.response_schema_id != schema.response_schema_id
+                || operation
+                    .native_error
+                    .as_ref()
+                    .map(|rule| rule.output_validity.as_str())
+                    != Some(expected)
+            {
+                return Err("object contract schema/output rule does not match admission".into());
+            }
+        }
+        Ok(Some(slice))
+    }
 }
 
 #[derive(Deserialize)]
@@ -197,11 +258,11 @@ async fn serve(config: ServeConfig) -> Result<()> {
         .iter()
         .find(|file| file.kind == BundleFileKind::Dispatcher)
         .ok_or("admitted bundle has no dispatcher")?;
-    let module = NativeDispatcher::load(&NativeHostConfig {
+    let native_config = NativeHostConfig {
         dispatcher_path: dispatcher.canonical_path.clone(),
         dispatcher_sha256: dispatcher.sha256,
         response_capacity: config.response_capacity,
-    })?;
+    };
     let operations = config
         .approval
         .operations
@@ -216,11 +277,17 @@ async fn serve(config: ServeConfig) -> Result<()> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let typed = Arc::new(DispatcherCallHandler::new(
-        admitted.contract_sha256(),
-        operations,
-        Arc::new(module),
-    ));
+    let object_slice =
+        serde_json::from_slice::<ContractSlice>(&contract)?.validated_object(&operations)?;
+    let scalar: Option<Arc<dyn CallHandler>> = if object_slice.is_none() {
+        Some(Arc::new(DispatcherCallHandler::new(
+            admitted.contract_sha256(),
+            operations.clone(),
+            Arc::new(NativeDispatcher::load(&native_config)?),
+        )))
+    } else {
+        None
+    };
     let key = read_key(&config.private_key_path)?;
     let broker_key = StaticPrivateKey::from_bytes(*key);
     drop(key);
@@ -235,12 +302,43 @@ async fn serve(config: ServeConfig) -> Result<()> {
         "listen": listener.local_addr()?.to_string(), "lifetime_ms":config.lifetime_ms});
     println!("{ready}");
     std::io::stdout().flush()?;
+    let mut session_handler: Option<Arc<dyn CallHandler>> = None;
     let work = async {
         let (stream, _) = listener.accept().await?;
         stream.set_nodelay(true)?;
         let (remote, provisional) = session_responder(stream, &broker_key).await?;
         let actor = actor_for_session_key(&registry, &remote)?;
         admitted.reverify_files()?;
+        let typed: Arc<dyn CallHandler> = if let Some(slice) = &object_slice {
+            let target = admitted
+                .files()
+                .iter()
+                .find(|file| file.kind == BundleFileKind::Target)
+                .ok_or("object contract has no admitted target")?;
+            let target = ComTargetConfig {
+                clsid: slice.activation.clsid.clone(),
+                path: target.canonical_path.clone(),
+                sha256: target.sha256,
+                registration_scope: config.com_registration_scope,
+            };
+            Arc::new(ObjectSession::start(
+                actor,
+                nonce,
+                admitted.contract_sha256(),
+                slice.clone(),
+                operations.clone(),
+                move || wvb_native_host::load_com_backend(&native_config, target),
+            )?)
+        } else {
+            scalar.clone().ok_or("missing scalar dispatcher")?
+        };
+        let mut authorized = AuthorizedCallHandler::new(actor, registry.clone(), typed);
+        if let Some(slice) = &object_slice {
+            authorized = authorized
+                .with_close_operation(admitted.contract_sha256(), slice.close_operation_id);
+        }
+        let authorized: Arc<dyn CallHandler> = Arc::new(authorized);
+        session_handler = Some(authorized.clone());
         let ack = HelloAck {
             selected_minor: 0,
             features: 0,
@@ -258,12 +356,14 @@ async fn serve(config: ServeConfig) -> Result<()> {
             broker_wall_unix_ms: now_ms()?,
         };
         let (_, active) = activate_broker(provisional, &ack, nonce).await?;
-        let authorized = Arc::new(AuthorizedCallHandler::new(actor, registry, typed));
         serve_calls(active, authorized, 1).await?;
         Ok::<_, Box<dyn Error>>(())
     };
-    tokio::time::timeout(Duration::from_millis(config.lifetime_ms), work)
-        .await
+    let result = tokio::time::timeout(Duration::from_millis(config.lifetime_ms), work).await;
+    if let Some(handler) = session_handler {
+        handler.disconnect().await?;
+    }
+    result
         .map_err(|_| "serve lifetime expired; native completion/quiescence unknown; no replay")??;
     println!("{}", json!({"event":"completed", "pid":std::process::id()}));
     Ok(())
@@ -388,6 +488,68 @@ mod tests {
     use super::*;
     use wvb_authz::Role;
     use wvb_broker::{DispatchOutcome, TypedDispatchModule};
+
+    #[test]
+    fn object_output_rule_and_schemas_must_match_the_frozen_operation_admission() {
+        let operations = (1..=3)
+            .map(|id| {
+                (
+                    id,
+                    OperationSchema {
+                        request_schema_id: id * 2,
+                        response_schema_id: id * 2 + 1,
+                    },
+                )
+            })
+            .collect();
+        let contract = json!({
+            "object_slice": {
+                "abi":"com-u32-v1",
+                "activation":{"kind":"com-local-server","clsid":"BA9A4DA2-79FE-4B31-8DB4-201AF0266C11"},
+                "interface_iid":"BA9A4DA2-79FE-4B31-8DB4-201AF0266C12",
+                "interface_kind":"iunknown", "handle_type":7, "method_slot":3,
+                "activation_operation_id":1, "method_operation_id":2, "close_operation_id":3,
+                "max_objects":8
+            },
+            "operations": (1..=3).map(|id| json!({
+                "id":id, "request_schema_id":id*2, "response_schema_id":id*2+1,
+                "native_error":{"output_validity":if id == 2 {"zero-on-failure"} else {"success-only"}}
+            })).collect::<Vec<_>>()
+        });
+        let validate = |value| {
+            serde_json::from_value::<ContractSlice>(value)
+                .unwrap()
+                .validated_object(&operations)
+        };
+        assert!(validate(contract.clone()).unwrap().is_some());
+        for bad in ["success-only", "unchanged", "unknown"] {
+            let mut changed = contract.clone();
+            changed["operations"][1]["native_error"]["output_validity"] = json!(bad);
+            assert!(validate(changed).is_err());
+        }
+        for index in [0, 2] {
+            let mut changed = contract.clone();
+            changed["operations"][index]["native_error"]["output_validity"] =
+                json!("zero-on-failure");
+            assert!(validate(changed).is_err());
+        }
+        let mut changed = contract.clone();
+        changed["operations"][1]["native_error"] = serde_json::Value::Null;
+        assert!(validate(changed).is_err());
+        let mut changed = contract.clone();
+        changed["operations"][1]["request_schema_id"] = json!(99);
+        assert!(validate(changed).is_err());
+        let mut changed = contract.clone();
+        changed["operations"][1]["response_schema_id"] = json!(99);
+        assert!(validate(changed).is_err());
+        let mut changed = contract.clone();
+        changed["operations"][1] = changed["operations"][0].clone();
+        assert!(validate(changed).is_err());
+        let mut changed = contract;
+        changed["operations"].as_array_mut().unwrap().remove(1);
+        assert!(validate(changed).is_err());
+        assert!(validate(json!({})).unwrap().is_none());
+    }
 
     #[test]
     fn bounds_keys_and_policy_fail_closed() {

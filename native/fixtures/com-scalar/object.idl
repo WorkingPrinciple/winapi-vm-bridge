@@ -1,0 +1,21 @@
+import "oaidl.idl";
+[
+    uuid(BA9A4DA2-79FE-4B31-8DB4-201AF0266C13),
+    version(1.0)
+]
+library WvbScalarObjectLib {
+    importlib("stdole2.tlb");
+    [
+        object,
+        uuid(BA9A4DA2-79FE-4B31-8DB4-201AF0266C12),
+        oleautomation,
+        pointer_default(unique)
+    ]
+    interface IWvbScalarObject : IUnknown {
+        HRESULT Transform([in] unsigned long input, [out] unsigned long *output);
+    };
+    [uuid(BA9A4DA2-79FE-4B31-8DB4-201AF0266C11)]
+    coclass WvbScalarObject {
+        [default] interface IWvbScalarObject;
+    };
+};

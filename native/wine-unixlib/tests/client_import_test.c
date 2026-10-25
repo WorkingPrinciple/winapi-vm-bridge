@@ -12,5 +12,7 @@ __declspec(dllexport) WvbStatus wvb_client_import_link_check(
   status += wvb_client_call_ex(hash, 7, request, request_len, response,
                                 response_cap, response_len, dispatch_status);
   status += wvb_client_reset();
+  int32_t native_status;
+  status += wvb_client_handle_close(hash, &native_status);
   return status;
 }

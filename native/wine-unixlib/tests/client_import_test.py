@@ -6,7 +6,7 @@ import sys
 
 CLIENTS = {
     "wvb_client_configure", "wvb_client_bind_operation", "wvb_client_call",
-    "wvb_client_call_ex", "wvb_client_reset",
+    "wvb_client_call_ex", "wvb_client_reset", "wvb_client_handle_close",
 }
 
 
@@ -84,7 +84,7 @@ def main():
     assert run("x86_64-w64-mingw32-dlltool", "-I", str(broken)).strip() == "wvb_autoconfig.dll"
     run(sys.executable, str(Path(__file__)), str(root), str(out), str(broken),
         "--expect-missing-thunks")
-    print("All five actual client thunks link and import wvb_autoconfig.dll; missing-thunk regression rejected")
+    print("All six actual client thunks link and import wvb_autoconfig.dll; missing-thunk regression rejected")
 
 
 if __name__ == "__main__":

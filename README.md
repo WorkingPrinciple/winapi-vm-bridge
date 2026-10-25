@@ -225,6 +225,25 @@ remain historical, not current acceptance.
 The demo does not connect to the VM control plane, start the guest service,
 change its firewall or grant authority. Those stay with the guest owner.
 
+### Bounded COM object slice
+
+The additive `com-u32-v1` object host keeps native COM interfaces on a dedicated
+guest MTA thread and returns only connection-bound typed leases. Activation and
+one synchronous `HRESULT M(UINT32, UINT32*)` use existing CALL/RESULT; final
+release uses existing HANDLE_CLOSE. Target HRESULTs remain typed response data,
+not transport/dispatcher errors. Disconnect drains owned references.
+See the [bounded contract/ABI](docs/com-object-slice.md) and
+[owned local-server fixture](native/fixtures/com-scalar/README.md).
+Its explicit `--demo-com` host driver reuses the PID demo's private-prefix
+lifecycle and retains one-shot caller evidence without inferring native-oracle
+parity or inventing an unavailable generated trace.
+With a hash-pinned native oracle, the driver compares all four HRESULT/output
+cells before reporting native parity. The owned SYSTEM r04 run matched the r03
+Automation baseline, including zero output on E_INVALIDARG; see the
+[bounded evidence](docs/com-object-slice.md#supporting-runtime-evidence).
+Source tests and fixture builds alone do not prove this. This is not
+general WinRT, GamingServices or unchanged-app A04 support.
+
 The admission crate's historical scalar/correlated test-authority machinery is
 behind `test-authority`; it is not compiled into this product by default. Core
 bundle, path, hash, actor and operation checks remain mandatory. The previous

@@ -9,6 +9,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Semaphore, mpsc};
 use wvb_authz::{ActorId, AuthorizationError, Registry};
 use wvb_call::{CallAssembler, CallRequest, CallResult};
+use wvb_control::{ControlMessage, HandleClose, HandleStatus};
 use wvb_protocol::{Envelope, EnvelopeFlags, MessageType};
 use wvb_transfer::{
     ActorId as TransferActorId, TransferCancelAck, TransferLimits, TransferMessage,
@@ -56,6 +57,14 @@ pub trait Handler: Send + Sync + 'static {
 #[async_trait]
 pub trait CallHandler: Send + Sync + 'static {
     async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError>;
+
+    async fn handle_close(&self, _request: HandleClose) -> Result<HandleStatus, BrokerError> {
+        Err(BrokerError::Handler("object handles unsupported".into()))
+    }
+
+    async fn disconnect(&self) -> Result<(), BrokerError> {
+        Ok(())
+    }
 }
 
 pub trait TypedDispatchModule: Send + Sync + 'static {
@@ -141,6 +150,7 @@ pub struct AuthorizedCallHandler {
     actor_id: ActorId,
     registry: Arc<RwLock<Registry>>,
     inner: Arc<dyn CallHandler>,
+    close_operation: Option<([u8; 32], u32)>,
 }
 
 impl AuthorizedCallHandler {
@@ -154,7 +164,14 @@ impl AuthorizedCallHandler {
             actor_id,
             registry,
             inner,
+            close_operation: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_close_operation(mut self, adapter: [u8; 32], operation: u32) -> Self {
+        self.close_operation = Some((adapter, operation));
+        self
     }
 }
 
@@ -173,6 +190,25 @@ impl CallHandler for AuthorizedCallHandler {
             )
             .map_err(authorization_error)?;
         self.inner.handle_call(request).await
+    }
+
+    async fn handle_close(&self, request: HandleClose) -> Result<HandleStatus, BrokerError> {
+        let (adapter, operation) = self
+            .close_operation
+            .ok_or_else(|| BrokerError::Handler("no admitted close operation".into()))?;
+        if request.owner_actor_id != self.actor_id {
+            return Err(BrokerError::Handler("handle owner mismatch".into()));
+        }
+        self.registry
+            .read()
+            .map_err(|_| BrokerError::Handler("authorization registry poisoned".into()))?
+            .authorize_invoke(self.actor_id, adapter, operation, unix_time_ms())
+            .map_err(authorization_error)?;
+        self.inner.handle_close(request).await
+    }
+
+    async fn disconnect(&self) -> Result<(), BrokerError> {
+        self.inner.disconnect().await
     }
 }
 
@@ -249,6 +285,19 @@ where
 }
 
 pub async fn serve_calls<S>(
+    connection: SecureConnection<S>,
+    handler: Arc<dyn CallHandler>,
+    max_concurrent: usize,
+) -> Result<(), BrokerError>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let result = serve_calls_inner(connection, handler.clone(), max_concurrent).await;
+    let cleanup = handler.disconnect().await;
+    result.and(cleanup)
+}
+
+async fn serve_calls_inner<S>(
     mut connection: SecureConnection<S>,
     handler: Arc<dyn CallHandler>,
     max_concurrent: usize,
@@ -269,6 +318,41 @@ where
                         if completed_call && incoming.is_empty() && pending_calls == 0 => return Ok(()),
                     other => other?,
                 };
+                if envelope.message_type == MessageType::HandleClose as u16 {
+                    if envelope.flags != (EnvelopeFlags::REQUEST | EnvelopeFlags::END_STREAM)
+                        || envelope.stream_sequence != 0
+                        || envelope.stream_id == 0 || envelope.stream_id.is_multiple_of(2)
+                        || envelope.correlation_id != [0; 16]
+                        || envelope.remaining_budget_ms == 0
+                        || incoming.contains_key(&envelope.stream_id)
+                    {
+                        return Err(BrokerError::Handler("invalid handle-close envelope".into()));
+                    }
+                    let ControlMessage::HandleClose(request) = ControlMessage::decode(
+                        MessageType::HandleClose, &payload
+                    ).map_err(|error| BrokerError::Handler(error.to_string()))? else {
+                        return Err(BrokerError::Handler("invalid handle-close message".into()));
+                    };
+                    let status = handler.handle_close(request).await?;
+                    let (message_type, payload) = ControlMessage::HandleStatus(status).encode()
+                        .map_err(|error| BrokerError::Handler(error.to_string()))?;
+                    let response = Envelope {
+                        minor: envelope.minor,
+                        message_type: message_type as u16,
+                        flags: EnvelopeFlags::RESPONSE | EnvelopeFlags::END_STREAM,
+                        connection_epoch: envelope.connection_epoch,
+                        stream_id: envelope.stream_id,
+                        stream_sequence: 0,
+                        message_id: response_message_id(envelope.message_id),
+                        correlation_id: envelope.message_id,
+                        remaining_budget_ms: envelope.remaining_budget_ms,
+                        payload_length: u32::try_from(payload.len())
+                            .map_err(|_| BrokerError::Handler("handle status too large".into()))?,
+                    };
+                    connection.send(&response, &payload).await?;
+                    completed_call = true;
+                    continue;
+                }
                 let request = receive_call_frame(&mut incoming, &envelope, &payload)?;
                 if let Some(request) = request {
                     let completed = incoming.remove(&envelope.stream_id)
@@ -1169,5 +1253,159 @@ mod tests {
             )
             .unwrap();
         assert_eq!(authorized.handle_call(request).await.unwrap().body, vec![1]);
+    }
+
+    struct CloseOnly;
+
+    #[async_trait]
+    impl CallHandler for CloseOnly {
+        async fn handle_call(&self, _request: CallRequest) -> Result<CallResult, BrokerError> {
+            Err(BrokerError::Handler("only close".into()))
+        }
+
+        async fn handle_close(&self, _request: HandleClose) -> Result<HandleStatus, BrokerError> {
+            Ok(HandleStatus {
+                disposition: 0,
+                native_status: Some(vec![0; 4]),
+                receipt: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn close_requires_its_own_exact_grant_and_authenticated_owner() {
+        let actor = [1; 16];
+        let adapter = [3; 32];
+        let mut registry = Registry::default();
+        registry.register(actor, [2; 32]).unwrap();
+        let registry = Arc::new(RwLock::new(registry));
+        let handler = AuthorizedCallHandler::new(actor, registry.clone(), Arc::new(CloseOnly))
+            .with_close_operation(adapter, 3);
+        let request = HandleClose {
+            broker_epoch: [4; 16],
+            owner_actor_id: actor,
+            slot: 0,
+            generation: 1,
+            handle_type: 7,
+        };
+        assert!(handler.handle_close(request).await.is_err());
+        for operation in [1, 2] {
+            registry
+                .write()
+                .unwrap()
+                .grant(
+                    actor,
+                    Grant {
+                        role: Role::Invoke,
+                        adapter_hash: Some(adapter),
+                        operation_id: Some(operation),
+                        expires_at_unix_ms: None,
+                    },
+                )
+                .unwrap();
+        }
+        assert!(handler.handle_close(request).await.is_err());
+        registry
+            .write()
+            .unwrap()
+            .grant(
+                actor,
+                Grant {
+                    role: Role::Invoke,
+                    adapter_hash: Some(adapter),
+                    operation_id: Some(3),
+                    expires_at_unix_ms: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(handler.handle_close(request).await.unwrap().disposition, 0);
+        let mut wrong = request;
+        wrong.owner_actor_id = [8; 16];
+        assert!(handler.handle_close(wrong).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn control_envelopes_are_validated_and_all_terminal_paths_disconnect() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        struct Probe {
+            closed: Arc<AtomicBool>,
+            disconnected: Arc<AtomicBool>,
+        }
+        #[async_trait]
+        impl CallHandler for Probe {
+            async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
+                CloseOnly.handle_call(request).await
+            }
+            async fn handle_close(
+                &self,
+                request: HandleClose,
+            ) -> Result<HandleStatus, BrokerError> {
+                self.closed.store(true, Ordering::SeqCst);
+                CloseOnly.handle_close(request).await
+            }
+            async fn disconnect(&self) -> Result<(), BrokerError> {
+                self.disconnected.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        for valid in [true, false] {
+            let closed = Arc::new(AtomicBool::new(false));
+            let disconnected = Arc::new(AtomicBool::new(false));
+            let (client_crypto, broker_crypto) = paired_transports();
+            let (client_io, broker_io) = duplex(64 * 1024);
+            let mut client = SecureConnection::new(client_io, client_crypto, 99);
+            let server = tokio::spawn(serve_calls(
+                SecureConnection::new(broker_io, broker_crypto, 99),
+                Arc::new(Probe {
+                    closed: closed.clone(),
+                    disconnected: disconnected.clone(),
+                }),
+                1,
+            ));
+            let (kind, payload) = ControlMessage::HandleClose(HandleClose {
+                broker_epoch: [4; 16],
+                owner_actor_id: [1; 16],
+                slot: 0,
+                generation: 1,
+                handle_type: 7,
+            })
+            .encode()
+            .unwrap();
+            client
+                .send(
+                    &Envelope {
+                        minor: 0,
+                        message_type: kind as u16,
+                        flags: if valid {
+                            EnvelopeFlags::REQUEST | EnvelopeFlags::END_STREAM
+                        } else {
+                            EnvelopeFlags::REQUEST
+                        },
+                        connection_epoch: 99,
+                        stream_id: 1,
+                        stream_sequence: 0,
+                        message_id: [1; 16],
+                        correlation_id: [0; 16],
+                        remaining_budget_ms: 1000,
+                        payload_length: u32::try_from(payload.len()).unwrap(),
+                    },
+                    &payload,
+                )
+                .await
+                .unwrap();
+            if valid {
+                let (envelope, payload) = client.receive().await.unwrap();
+                assert_eq!(envelope.message_type, MessageType::HandleStatus as u16);
+                assert_eq!(envelope.correlation_id, [1; 16]);
+                assert!(matches!(
+                    ControlMessage::decode(MessageType::HandleStatus, &payload).unwrap(),
+                    ControlMessage::HandleStatus(HandleStatus { disposition: 0, .. })
+                ));
+            }
+            drop(client);
+            assert_eq!(server.await.unwrap().is_ok(), valid);
+            assert_eq!(closed.load(Ordering::SeqCst), valid);
+            assert!(disconnected.load(Ordering::SeqCst));
+        }
     }
 }

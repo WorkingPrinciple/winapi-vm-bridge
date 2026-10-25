@@ -64,6 +64,7 @@ clang -std=c17 -Wall -Wextra -Werror -O2 \
   -Dwvb_client_call=wvb_test_pe_call \
   -Dwvb_client_call_ex=wvb_test_pe_call_ex \
   -Dwvb_client_reset=wvb_test_pe_reset \
+  -Dwvb_client_handle_close=wvb_test_pe_handle_close \
   -c "$root/native/wine-unixlib/src/wvb_client_builtin.c" \
   -o "$out/client_builtin_test.o"
 
@@ -206,7 +207,7 @@ out = Path(sys.argv[1]) / "lib/wine"
 pe = out / "x86_64-windows/wvb_autoconfig.dll"
 clients = {
     "wvb_client_configure", "wvb_client_bind_operation", "wvb_client_call",
-    "wvb_client_call_ex", "wvb_client_reset",
+    "wvb_client_call_ex", "wvb_client_reset", "wvb_client_handle_close",
 }
 def output(*args):
     return subprocess.check_output(args, text=True)
