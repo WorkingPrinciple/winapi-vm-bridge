@@ -14,7 +14,8 @@ An explicit AdapterAdmin grant is required to admit that contract. A Noise
 session key identifies a separately registered caller; every call needs an
 exact, unexpired Invoke grant for its adapter hash and operation.
 
-The server loads only `whiny_dispatch_v1` from the admitted native dispatcher.
+The scalar server loads only `whiny_dispatch_v1` from the admitted native dispatcher.
+The bounded COM variant instead loads the three declared object exports.
 It serves one authenticated connection with one concurrent invocation. Readiness
 prints the server PID, endpoint and lifetime, never keys. A natural successful
 exit requires a completed result and no incomplete/pending calls at EOF.
@@ -55,10 +56,12 @@ typed leases, invocation over CALL/RESULT and close over existing HANDLE_CLOSE.
 It loads generated activate/invoke/release exports instead of treating
 metadata-only COM declarations as executable dispatch. Native pointers stay in
 the owner thread; disconnect retires references before apartment/module teardown.
-Current-user LocalServer32 path/hash checks constrain the owned test fixture,
+Explicit current-user or owner-approved machine64 LocalServer32 path/hash checks constrain the owned test fixture,
 not arbitrary packaged-service activation. See [the bounded spec](com-object-slice.md).
-This source path and its negative tests do not establish generated-façade live
-acceptance, generic COM/WinRT, callbacks, async, or unchanged-app A04 support.
+The generated SYSTEM r04 supporting run matched all four native HRESULT/output
+cells, including observed Automation zero-on-failure writeback. This is bounded
+owned-fixture evidence, not generic COM/WinRT, callbacks, async, or unchanged-app
+A04 support.
 The process crate is a codec, not a process executor.
 No general Windows service installer, pairing command or automatic key
 provisioner is implied by these two commands.
@@ -66,5 +69,7 @@ provisioner is implied by these two commands.
 A real generated DLL call can support transport acceptance. It does not prove
 unchanged-app consumption, GamingServices compatibility or a behavioral
 replacement. Retained scalar/managed receipts and fixture artifacts retain
-their original qualifications. The Calimocho-source builtin/Unixlib closure is
-built but unselected; source/build success is not native runtime acceptance.
+their original qualifications. The source-matched Calimocho builtin/Unixlib
+closure was selected only in the private pinned PID/COM supporting runs;
+source/build success alone is not native runtime acceptance or engine-wide
+qualification.

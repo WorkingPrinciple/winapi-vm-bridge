@@ -70,3 +70,52 @@ Windows/Xbox service. Compare native oracle with generated façade on Calimocho,
 then test HRESULT/output rules, QI/refcounts, bad/stale/cross-session/type tokens,
 release and disconnect cleanup. Scope guest registration/staging through de639,
 restore prior state, retain receipts. This is supporting evidence, not A04.
+
+## Supporting runtime evidence
+
+The one-shot SYSTEM r04 generated run used Whiny `f02d2be`, Calimocho Wine
+11.20, the actual Bridge builtin/Unixlib pair and the retained r03 native target.
+It compared the hash-pinned native oracle stdout
+(`06079b9ec0aa4144bc3a42db333754bc973e1b694da3ccf61e26590eab682d19`)
+cell by cell:
+
+| Cell | Native oracle | Generated through Bridge |
+| --- | ---: | ---: |
+| Success HRESULT | 0 | 0 |
+| Success output | 42 | 42 |
+| Failed HRESULT | -2147024809 (E_INVALIDARG) | -2147024809 |
+| Failed output | 0 | 0 |
+
+The native oracle's exit2 was its superseded unchanged-sentinel assertion,
+not an activation failure. The generated caller exited0, checked local
+QI/refcounts/NULL-out, rejected wrong epoch/generation/type and stale close,
+verified the surviving lease, and closed it exactly once. Its complete generated
+trace contains activation, local invalid input, successful method, failed native
+method and release with outcomes `ok`, `invalid_input`, `ok`, `call_failed`, `ok`.
+The private wineserver drained without forced process termination.
+
+Retained artifacts are under `out/com-object-system-r04/runtime-once/`:
+`result.json` SHA256
+`b0364eff8f398d36d368a696fb4c191249808c8c6beae7aba8f62ccb3e99f098`,
+`response.jsonl` SHA256
+`99873f1db0008ec9373b4cd52f25e2e55ec7c3ab239224654428d7d5fab1be8e`,
+and `trace.jsonl` SHA256
+`982d852e29feb67c0e73b2098b7aac2d82783e21744b6f916d44b96776d607bf`.
+Contract SHA256:
+`f02c4067e3011e3bc5eeb9303a68da27f99fc9b5b70e0407e76eea7855a2b61c`;
+generated proxy SHA256:
+`a61c65ea9de82120837601a3c6a21e85bdc28127aa20b87c20c7254208b47968`.
+The independently collected guest monitor (`com-r04-r04-monitor.json`,
+SHA256 `c068f8b24ec9843381fefa6a5b2fc6d263e10b94cc4049416ea6a0feb84663b3`)
+observed broker PID3296 and actual OOP server PID5048 in SYSTEM/session0,
+the admitted server image path/hash, and both OS exit codes0 via retained process
+handles. The appended native log (`com-r04-generated-server-append.jsonl`,
+SHA256 `6482681572be29dd0a9c740f60f9c066fa8a46485fb228078f4478fdab4fddbb`)
+contains two activations, three invocations, two releases and completion.
+The rollback receipt (`com-r04-rollback.json`, SHA256
+`fb05d61f6fe477547b1a5feff5a3b5c9f100fcc99c2c7c462cd87af342e72e3a`)
+verifies prior subtree/value names/types/values, removes the three exact-owned
+HKLM64 GUID roots and exact scoped firewall rule, and verifies registration,
+rule and listener absence. No r04 task was created. Older r01/r02 artifacts and
+the unloaded user's hive were left untouched; this is r04 cleanup, not a claim
+that earlier user-context registration has been removed.
