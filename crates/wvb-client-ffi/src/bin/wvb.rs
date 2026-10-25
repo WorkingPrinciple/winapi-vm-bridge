@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt::Write as _;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::SocketAddr;
@@ -13,7 +14,9 @@ use clap::{Parser, Subcommand};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
 use serde_json::json;
-use wvb_admission::{AdmissionEngine, BundleFileKind, FrozenInputs, OperatorAdmission};
+use wvb_admission::{
+    AdmissionEngine, AdmittedFile, BundleFileKind, FrozenInputs, OperatorAdmission,
+};
 use wvb_authz::{Grant, Registry};
 use wvb_broker::{
     AuthorizedCallHandler, CallHandler, DispatcherCallHandler, OperationSchema,
@@ -27,7 +30,9 @@ use wvb_client_ffi::{
 use wvb_crypto::StaticPrivateKey;
 use wvb_integrity::{canonical_root, resolve_regular_file, sha256_bytes};
 use wvb_native_host::object::{ObjectSession, ObjectSlice};
-use wvb_native_host::{ComRegistrationScope, ComTargetConfig, NativeDispatcher, NativeHostConfig};
+use wvb_native_host::{
+    ComRegistrationScope, ComTargetConfig, NativeDispatcher, NativeHostConfig, WinrtTargetConfig,
+};
 use wvb_session::{HelloAck, Readiness, activate_broker};
 use wvb_transport::session_responder;
 use zeroize::{Zeroize, Zeroizing};
@@ -81,13 +86,29 @@ struct ServeConfig {
     lifetime_ms: u64,
     #[serde(default)]
     com_registration_scope: ComRegistrationScope,
+    winrt_activation_manifest: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ContractSlice {
     object_slice: Option<ObjectSlice>,
+    profile: Option<String>,
+    native_profile: Option<NativeProfile>,
     #[serde(default)]
     operations: Vec<ContractOperation>,
+}
+
+#[derive(Deserialize)]
+struct NativeProfile {
+    kind: String,
+    activation: String,
+    apartment: String,
+    runtime_class: Option<String>,
+    default_interface_iid: Option<String>,
+    #[serde(default)]
+    admitted_interface_iids: Vec<String>,
+    winmd_path: Option<String>,
+    winmd_sha256: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -105,23 +126,61 @@ struct NativeErrorRule {
 
 impl ContractSlice {
     fn validated_object(
-        self,
+        &self,
         operations: &BTreeMap<u32, OperationSchema>,
     ) -> Result<Option<ObjectSlice>> {
-        let Some(slice) = self.object_slice else {
+        let Some(slice) = &self.object_slice else {
             return Ok(None);
         };
         slice.validate(operations)?;
+        if slice.abi == "winrt-u32-v1" {
+            let profile = self
+                .native_profile
+                .as_ref()
+                .ok_or("missing WinRT native profile")?;
+            let factory = slice
+                .activation
+                .factory_iid
+                .as_deref()
+                .ok_or("missing factory IID")?;
+            if self.profile.as_deref() != Some("winrt-x64-v1")
+                || profile.kind != "winrt"
+                || profile.activation != "ro-get-activation-factory"
+                || profile.apartment != "mta"
+                || profile.runtime_class != slice.activation.runtime_class
+                || !profile
+                    .default_interface_iid
+                    .as_ref()
+                    .is_some_and(|iid| iid.eq_ignore_ascii_case(&slice.interface_iid))
+                || profile.admitted_interface_iids.len() != 2
+                || ![factory, &slice.interface_iid].iter().all(|expected| {
+                    profile
+                        .admitted_interface_iids
+                        .iter()
+                        .any(|iid| iid.eq_ignore_ascii_case(expected))
+                })
+                || profile.winmd_path.as_ref().is_none_or(String::is_empty)
+                || profile.winmd_sha256.as_ref().is_none_or(|hash| {
+                    hash.len() != 64 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+            {
+                return Err("WinRT native profile does not match the frozen object slice".into());
+            }
+        }
         let mut seen = std::collections::BTreeSet::new();
         if self.operations.len() != operations.len() {
             return Err("object contract/admission operation count mismatch".into());
         }
-        for operation in self.operations {
+        for operation in &self.operations {
             let schema = operations
                 .get(&operation.id)
                 .ok_or("unadmitted object operation")?;
             let expected = if operation.id == slice.method_operation_id {
-                "zero-on-failure"
+                if slice.abi == "com-u32-v1" {
+                    "zero-on-failure"
+                } else {
+                    "unchanged-on-failure"
+                }
             } else {
                 "success-only"
             };
@@ -137,8 +196,80 @@ impl ContractSlice {
                 return Err("object contract schema/output rule does not match admission".into());
             }
         }
-        Ok(Some(slice))
+        Ok(Some(slice.clone()))
     }
+}
+
+enum ObjectTarget {
+    Com(ComTargetConfig),
+    Winrt(WinrtTargetConfig),
+}
+
+impl ObjectTarget {
+    fn load(
+        self,
+        config: &NativeHostConfig,
+    ) -> std::result::Result<Box<dyn wvb_native_host::object::ObjectBackend>, wvb_broker::BrokerError>
+    {
+        match self {
+            Self::Com(target) => wvb_native_host::load_com_backend(config, target),
+            Self::Winrt(target) => wvb_native_host::load_winrt_backend(config, target),
+        }
+    }
+}
+
+fn object_target(
+    contract: &ContractSlice,
+    slice: &ObjectSlice,
+    files: &[AdmittedFile],
+    manifest: Option<&str>,
+    scope: ComRegistrationScope,
+) -> Result<ObjectTarget> {
+    let target = files
+        .iter()
+        .find(|file| file.kind == BundleFileKind::Target)
+        .ok_or("object contract has no admitted target")?;
+    if slice.abi == "com-u32-v1" {
+        if manifest.is_some() {
+            return Err("WinRT activation context is not allowed for COM".into());
+        }
+        return Ok(ObjectTarget::Com(ComTargetConfig {
+            clsid: slice.activation.clsid.clone(),
+            path: target.canonical_path.clone(),
+            sha256: target.sha256,
+            registration_scope: scope,
+        }));
+    }
+    let manifest = manifest.ok_or("WinRT requires an explicitly admitted activation manifest")?;
+    let dependency = |path: &str| {
+        files
+            .iter()
+            .find(|file| file.kind == BundleFileKind::Dependency && file.relative_path == path)
+            .ok_or("WinRT metadata/manifest must be an admitted dependency")
+    };
+    let manifest = dependency(manifest)?;
+    let profile = contract
+        .native_profile
+        .as_ref()
+        .ok_or("missing WinRT native profile")?;
+    let winmd = dependency(profile.winmd_path.as_deref().ok_or("missing WinMD path")?)?;
+    let mut hash = String::with_capacity(64);
+    for byte in winmd.sha256 {
+        write!(hash, "{byte:02x}")?;
+    }
+    if profile.winmd_sha256.as_deref() != Some(&hash)
+        || manifest.canonical_path == winmd.canonical_path
+    {
+        return Err("WinRT WinMD pin does not match admitted metadata".into());
+    }
+    Ok(ObjectTarget::Winrt(WinrtTargetConfig {
+        path: target.canonical_path.clone(),
+        sha256: target.sha256,
+        manifest_path: manifest.canonical_path.clone(),
+        manifest_sha256: manifest.sha256,
+        winmd_path: winmd.canonical_path.clone(),
+        winmd_sha256: winmd.sha256,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -277,8 +408,23 @@ async fn serve(config: ServeConfig) -> Result<()> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let object_slice =
-        serde_json::from_slice::<ContractSlice>(&contract)?.validated_object(&operations)?;
+    let object_contract = serde_json::from_slice::<ContractSlice>(&contract)?;
+    let object_slice = object_contract.validated_object(&operations)?;
+    let target = object_slice
+        .as_ref()
+        .map(|slice| {
+            object_target(
+                &object_contract,
+                slice,
+                admitted.files(),
+                config.winrt_activation_manifest.as_deref(),
+                config.com_registration_scope,
+            )
+        })
+        .transpose()?;
+    if object_slice.is_none() && config.winrt_activation_manifest.is_some() {
+        return Err("activation context requires a WinRT object contract".into());
+    }
     let scalar: Option<Arc<dyn CallHandler>> = if object_slice.is_none() {
         Some(Arc::new(DispatcherCallHandler::new(
             admitted.contract_sha256(),
@@ -305,33 +451,35 @@ async fn serve(config: ServeConfig) -> Result<()> {
     let mut session_handler: Option<Arc<dyn CallHandler>> = None;
     let work = async {
         let (stream, _) = listener.accept().await?;
+        let setup_started = std::time::Instant::now();
+        let report_stage = |stage: &str| -> std::io::Result<()> {
+            println!(
+                "{}",
+                json!({"event":"session-stage", "pid":std::process::id(),
+                    "stage":stage, "elapsed_ms":setup_started.elapsed().as_millis()})
+            );
+            std::io::stdout().flush()
+        };
+        report_stage("connected")?;
         stream.set_nodelay(true)?;
         let (remote, provisional) = session_responder(stream, &broker_key).await?;
         let actor = actor_for_session_key(&registry, &remote)?;
+        report_stage("authenticated")?;
         admitted.reverify_files()?;
         let typed: Arc<dyn CallHandler> = if let Some(slice) = &object_slice {
-            let target = admitted
-                .files()
-                .iter()
-                .find(|file| file.kind == BundleFileKind::Target)
-                .ok_or("object contract has no admitted target")?;
-            let target = ComTargetConfig {
-                clsid: slice.activation.clsid.clone(),
-                path: target.canonical_path.clone(),
-                sha256: target.sha256,
-                registration_scope: config.com_registration_scope,
-            };
+            let target = target.ok_or("missing admitted object target")?;
             Arc::new(ObjectSession::start(
                 actor,
                 nonce,
                 admitted.contract_sha256(),
                 slice.clone(),
                 operations.clone(),
-                move || wvb_native_host::load_com_backend(&native_config, target),
+                move || target.load(&native_config),
             )?)
         } else {
             scalar.clone().ok_or("missing scalar dispatcher")?
         };
+        report_stage("backend-ready")?;
         let mut authorized = AuthorizedCallHandler::new(actor, registry.clone(), typed);
         if let Some(slice) = &object_slice {
             authorized = authorized
@@ -356,6 +504,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
             broker_wall_unix_ms: now_ms()?,
         };
         let (_, active) = activate_broker(provisional, &ack, nonce).await?;
+        report_stage("activated")?;
         serve_calls(active, authorized, 1).await?;
         Ok::<_, Box<dyn Error>>(())
     };
@@ -490,6 +639,95 @@ mod tests {
     use wvb_broker::{DispatchOutcome, TypedDispatchModule};
 
     #[test]
+    fn winrt_profile_operations_and_output_policy_fail_closed() {
+        let operations = (1..=4)
+            .map(|id| {
+                (
+                    id,
+                    OperationSchema {
+                        request_schema_id: id * 2,
+                        response_schema_id: id * 2 + 1,
+                    },
+                )
+            })
+            .collect();
+        let contract = json!({
+            "profile":"winrt-x64-v1",
+            "object_slice":{
+                "abi":"winrt-u32-v1",
+                "activation":{"kind":"winrt-factory","runtime_class":"Wvb.Test.WvbScalarRuntimeClass",
+                    "factory_iid":"5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A51"},
+                "interface_iid":"5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A52",
+                "interface_kind":"iinspectable","handle_type":9,"method_slot":8,
+                "factory_handle_type":8,"factory_method_slot":7,
+                "activation_operation_id":1,"create_operation_id":2,
+                "method_operation_id":3,"close_operation_id":4,"max_objects":8
+            },
+            "native_profile":{
+                "kind":"winrt","activation":"ro-get-activation-factory","apartment":"mta",
+                "runtime_class":"Wvb.Test.WvbScalarRuntimeClass",
+                "default_interface_iid":"5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A52",
+                "admitted_interface_iids":["5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A51",
+                    "5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A52"],
+                "winmd_path":"metadata/Wvb.Test.winmd","winmd_sha256":"aa".repeat(32)
+            },
+            "operations":(1..=4).map(|id| json!({
+                "id":id,"request_schema_id":id*2,"response_schema_id":id*2+1,
+                "native_error":{"output_validity":if id==3 {"unchanged-on-failure"} else {"success-only"}}
+            })).collect::<Vec<_>>()
+        });
+        let validate = |value| {
+            serde_json::from_value::<ContractSlice>(value)
+                .unwrap()
+                .validated_object(&operations)
+        };
+        assert!(validate(contract.clone()).unwrap().is_some());
+        for index in 0..4 {
+            let mut bad = contract.clone();
+            bad["operations"][index]["native_error"]["output_validity"] = json!("zero-on-failure");
+            assert!(validate(bad).is_err());
+        }
+        let mut bad = contract.clone();
+        bad["operations"][2]["native_error"]["output_validity"] = json!("success-only");
+        assert!(validate(bad).is_err());
+        for index in [0, 1, 3] {
+            let mut bad = contract.clone();
+            bad["operations"][index]["native_error"]["output_validity"] =
+                json!("unchanged-on-failure");
+            assert!(validate(bad).is_err());
+        }
+        for (field, value) in [
+            ("kind", json!("com")),
+            ("activation", json!("manual-dll-factory")),
+            ("apartment", json!("sta")),
+            ("runtime_class", json!("Other.Class")),
+            (
+                "default_interface_iid",
+                json!("5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A51"),
+            ),
+            (
+                "admitted_interface_iids",
+                json!(["5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A52"]),
+            ),
+            ("winmd_path", json!("")),
+            ("winmd_sha256", json!("unbound")),
+        ] {
+            let mut bad = contract.clone();
+            bad["native_profile"][field] = value;
+            assert!(validate(bad).is_err(), "{field}");
+        }
+        let mut bad = contract.clone();
+        bad["native_profile"] = serde_json::Value::Null;
+        assert!(validate(bad).is_err());
+        let mut bad = contract.clone();
+        bad["profile"] = json!("com-x64-v1");
+        assert!(validate(bad).is_err());
+        let mut bad = contract;
+        bad["operations"][1]["request_schema_id"] = json!(999);
+        assert!(validate(bad).is_err());
+    }
+
+    #[test]
     fn object_output_rule_and_schemas_must_match_the_frozen_operation_admission() {
         let operations = (1..=3)
             .map(|id| {
@@ -522,7 +760,12 @@ mod tests {
                 .validated_object(&operations)
         };
         assert!(validate(contract.clone()).unwrap().is_some());
-        for bad in ["success-only", "unchanged", "unknown"] {
+        for bad in [
+            "success-only",
+            "unchanged",
+            "unchanged-on-failure",
+            "unknown",
+        ] {
             let mut changed = contract.clone();
             changed["operations"][1]["native_error"]["output_validity"] = json!(bad);
             assert!(validate(changed).is_err());

@@ -87,7 +87,10 @@ pub unsafe extern "C" fn wvb_client_configure(config: *const WvbClientConfig) ->
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
-                .map_err(|_| WVB_STATUS_RUNTIME_ERROR)?,
+                .map_err(|error| {
+                    eprintln!("wvb: configure runtime initialization failed: {error}");
+                    WVB_STATUS_RUNTIME_ERROR
+                })?,
         );
         let client = runtime
             .block_on(RuntimeClient::connect(ClientConfig {
@@ -121,7 +124,10 @@ pub unsafe extern "C" fn wvb_client_configure(config: *const WvbClientConfig) ->
                 queue_capacity: 256,
                 connect_timeout: Duration::from_millis(u64::from(config.connect_timeout_ms)),
             }))
-            .map_err(|_| WVB_STATUS_RUNTIME_ERROR)?;
+            .map_err(|error| {
+                eprintln!("wvb: configure connection failed: {error}");
+                WVB_STATUS_RUNTIME_ERROR
+            })?;
         *configured().write().map_err(|_| WVB_STATUS_RUNTIME_ERROR)? = Some(Configured {
             runtime,
             client,

@@ -65,6 +65,19 @@ without dropped events. R04's pairing checks alone did not catch invalid GUID
 braces in trace targets; its trace is not schema-valid recorder evidence. This is bounded
 owned-fixture evidence, not generic COM/WinRT, callbacks, async, or unchanged-app
 A04 support.
+
+The additive WinRT owner composes the product's existing admission and control
+paths with a pinned WinMD/manifest and thread-scoped RoGetActivationFactory.
+Separate factory/instance roles, independent close and same-thread cleanup are
+source-tested. Its real registration-free native SYSTEM r01 oracle observes
+S_OK/output42 and E_INVALIDARG/unchanged A5A5A5A5, with actual native module paths
+and OS exit0. The generated r03 Calimocho client matched all six native
+factory/Create/HRESULT/output cells and passed the official recorder gate:
+seven calls/sixteen events, complete and without drops. A retained guest handle
+proves broker OS exit0, and exact-owned rule/key cleanup is reconciled. External
+DLL sampling missed the run; module identity relies on the in-process backend
+gate, not an independently sampled loaded-image hash. See
+[the bounded WinRT slice](winrt-object-slice.md).
 The process crate is a codec, not a process executor.
 No general Windows service installer, pairing command or automatic key
 provisioner is implied by these two commands.
@@ -73,6 +86,6 @@ A real generated DLL call can support transport acceptance. It does not prove
 unchanged-app consumption, GamingServices compatibility or a behavioral
 replacement. Retained scalar/managed receipts and fixture artifacts retain
 their original qualifications. The source-matched Calimocho builtin/Unixlib
-closure was selected only in the private pinned PID/COM supporting runs;
+closure was selected only in the private pinned PID/COM/WinRT supporting runs;
 source/build success alone is not native runtime acceptance or engine-wide
 qualification.

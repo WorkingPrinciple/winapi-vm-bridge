@@ -1,4 +1,4 @@
-//! One authenticated connection's COM objects, confined to an owner thread.
+//! One authenticated connection's COM/WinRT leases, confined to an owner thread.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, mpsc};
@@ -25,42 +25,91 @@ pub struct ObjectSlice {
     pub method_operation_id: u32,
     pub close_operation_id: u32,
     pub max_objects: usize,
+    pub factory_handle_type: Option<u32>,
+    pub factory_method_slot: Option<u32>,
+    pub create_operation_id: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Activation {
     pub kind: String,
+    #[serde(default)]
     pub clsid: String,
+    pub runtime_class: Option<String>,
+    pub factory_iid: Option<String>,
 }
 
 impl ObjectSlice {
     pub fn validate(&self, operations: &BTreeMap<u32, OperationSchema>) -> Result<(), BrokerError> {
-        let ids = [
+        let mut ids = vec![
             self.activation_operation_id,
             self.method_operation_id,
             self.close_operation_id,
         ];
-        if self.abi != "com-u32-v1"
-            || self.activation.kind != "com-local-server"
-            || self.interface_kind != "iunknown"
-            || self.method_slot != 3
+        let supported = match self.abi.as_str() {
+            "com-u32-v1" => {
+                self.activation.kind == "com-local-server"
+                    && guid(&self.activation.clsid)
+                    && self.interface_kind == "iunknown"
+                    && self.method_slot == 3
+                    && self.factory_handle_type.is_none()
+                    && self.factory_method_slot.is_none()
+                    && self.create_operation_id.is_none()
+                    && self.activation.runtime_class.is_none()
+                    && self.activation.factory_iid.is_none()
+            }
+            "winrt-u32-v1" => {
+                if let Some(id) = self.create_operation_id {
+                    ids.push(id);
+                }
+                self.activation.kind == "winrt-factory"
+                    && self.activation.clsid.is_empty()
+                    && self.interface_kind == "iinspectable"
+                    && self.method_slot == 8
+                    && self.factory_method_slot == Some(7)
+                    && self.create_operation_id.is_some()
+                    && self
+                        .factory_handle_type
+                        .is_some_and(|kind| kind != 0 && kind != self.handle_type)
+                    && self.activation.factory_iid.as_ref().is_some_and(|iid| {
+                        guid(iid) && !iid.eq_ignore_ascii_case(&self.interface_iid)
+                    })
+                    && self
+                        .activation
+                        .runtime_class
+                        .as_ref()
+                        .is_some_and(|name| runtime_class(name))
+            }
+            _ => false,
+        };
+        if !supported
             || self.handle_type == 0
             || !(1..=64).contains(&self.max_objects)
             || !guid(&self.interface_iid)
-            || !guid(&self.activation.clsid)
-            || operations.len() != 3
+            || operations.len() != ids.len()
             || ids
                 .iter()
                 .any(|id| *id == 0 || !operations.contains_key(id))
-            || ids[0] == ids[1]
-            || ids[0] == ids[2]
-            || ids[1] == ids[2]
+            || ids.iter().enumerate().any(|(i, id)| ids[..i].contains(id))
         {
             return Err(failure("unsupported or unbound object slice"));
         }
         Ok(())
     }
+}
+
+fn runtime_class(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.contains('.')
+        && value.split('.').all(|part| {
+            let mut bytes = part.bytes();
+            bytes
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_')
+                && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
 }
 
 fn guid(value: &str) -> bool {
@@ -78,6 +127,9 @@ fn guid(value: &str) -> bool {
 /// enter commands or responses; object values stay in that thread's table.
 pub trait ObjectBackend {
     fn activate(&mut self) -> (i32, Option<usize>);
+    fn create(&mut self, _factory: usize) -> Result<(i32, Option<usize>), BrokerError> {
+        Err(failure("backend does not support WinRT instance creation"))
+    }
     fn invoke(&mut self, object: usize, input: u32) -> (i32, u32);
     fn release(&mut self, object: usize);
 }
@@ -119,7 +171,7 @@ impl ObjectSession {
         let (sender, receiver) = mpsc::channel();
         let (ready, initialized) = mpsc::sync_channel(1);
         let thread = thread::Builder::new()
-            .name("wvb-com-mta".into())
+            .name("wvb-object-mta".into())
             .spawn(move || {
                 let mut backend = match factory() {
                     Ok(backend) => backend,
@@ -273,24 +325,26 @@ fn execute(
             return Err(failure("activation request must be empty"));
         }
         let (hr, object) = backend.activate();
-        if hr < 0 {
-            if let Some(object) = object {
-                backend.release(object);
-            }
-            body.extend_from_slice(&hr.to_le_bytes());
-            body.resize(32, 0);
-        } else {
-            let object = object.ok_or_else(|| failure("successful activation returned null"))?;
-            let token = match table.insert(slice.handle_type, object) {
-                Ok(token) => token,
-                Err(error) => {
-                    backend.release(object);
-                    return Err(failure(&error.to_string()));
-                }
-            };
-            body.extend_from_slice(&hr.to_le_bytes());
-            body.extend_from_slice(&encode_token(epoch, token));
+        body = publish(
+            backend,
+            table,
+            epoch,
+            slice.factory_handle_type.unwrap_or(slice.handle_type),
+            hr,
+            object,
+        )?;
+    } else if Some(request.operation_id) == slice.create_operation_id {
+        let token = decode_token(&request.body, actor, epoch)?;
+        if Some(token.type_id) != slice.factory_handle_type {
+            return Err(failure(
+                "instance creation requires the admitted factory type",
+            ));
         }
+        let factory = *table
+            .get(token)
+            .map_err(|error| failure(&error.to_string()))?;
+        let (hr, object) = backend.create(factory)?;
+        body = publish(backend, table, epoch, slice.handle_type, hr, object)?;
     } else if request.operation_id == slice.method_operation_id {
         if request.body.len() != 32 {
             return Err(failure("method request must be 32 bytes"));
@@ -315,6 +369,34 @@ fn execute(
         native_status: 0_i32.to_le_bytes().to_vec(),
         body,
     })
+}
+
+fn publish(
+    backend: &mut dyn ObjectBackend,
+    table: &mut HandleTable<usize>,
+    epoch: [u8; 16],
+    kind: u32,
+    hr: i32,
+    object: Option<usize>,
+) -> Result<Vec<u8>, BrokerError> {
+    let mut body = hr.to_le_bytes().to_vec();
+    if hr < 0 {
+        if let Some(object) = object {
+            backend.release(object);
+        }
+        body.resize(32, 0);
+    } else {
+        let object = object.ok_or_else(|| failure("successful object creation returned null"))?;
+        let token = match table.insert(kind, object) {
+            Ok(token) => token,
+            Err(error) => {
+                backend.release(object);
+                return Err(failure(&error.to_string()));
+            }
+        };
+        body.extend_from_slice(&encode_token(epoch, token));
+    }
+    Ok(body)
 }
 
 fn close(

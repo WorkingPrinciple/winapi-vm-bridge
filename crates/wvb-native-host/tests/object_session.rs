@@ -55,6 +55,8 @@ fn definition() -> (ObjectSlice, BTreeMap<u32, OperationSchema>) {
         activation: Activation {
             kind: "com-local-server".into(),
             clsid: "BA9A4DA2-79FE-4B31-8DB4-201AF0266C11".into(),
+            runtime_class: None,
+            factory_iid: None,
         },
         interface_iid: "BA9A4DA2-79FE-4B31-8DB4-201AF0266C12".into(),
         interface_kind: "iunknown".into(),
@@ -64,6 +66,9 @@ fn definition() -> (ObjectSlice, BTreeMap<u32, OperationSchema>) {
         method_operation_id: 2,
         close_operation_id: 3,
         max_objects: 2,
+        factory_handle_type: None,
+        factory_method_slot: None,
+        create_operation_id: None,
     };
     let operations = (1..=3)
         .map(|id| {
