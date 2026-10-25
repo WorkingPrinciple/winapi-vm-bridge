@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="Wvb.Test.WinRT.Scalar" processorArchitecture="amd64" type="win32"/>
+  <file name="Wvb.Test.WvbScalarRuntimeClass.dll">
+    <activatableClass name="Wvb.Test.WvbScalarRuntimeClass" threadingModel="both"
+      xmlns="urn:schemas-microsoft-com:winrt.v1"/>
+  </file>
+</assembly>

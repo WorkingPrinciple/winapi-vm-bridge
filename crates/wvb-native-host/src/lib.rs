@@ -9,6 +9,8 @@ use wvb_broker::TypedDispatchModule;
 use wvb_call::LOGICAL_MAX;
 
 pub mod object;
+#[cfg(windows)]
+mod winrt;
 
 pub const DISPATCHER_ABI_IDENTIFIER: &str = "whiny.dispatch.v1";
 
@@ -26,6 +28,15 @@ pub struct ComTargetConfig {
     pub path: PathBuf,
     pub sha256: [u8; 32],
     pub registration_scope: ComRegistrationScope,
+}
+
+pub struct WinrtTargetConfig {
+    pub path: PathBuf,
+    pub sha256: [u8; 32],
+    pub manifest_path: PathBuf,
+    pub manifest_sha256: [u8; 32],
+    pub winmd_path: PathBuf,
+    pub winmd_sha256: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
@@ -403,7 +414,7 @@ mod windows {
         }
     }
 
-    fn wide_path(path: &std::path::Path) -> Result<Vec<u16>, NativeHostError> {
+    pub(super) fn wide_path(path: &std::path::Path) -> Result<Vec<u16>, NativeHostError> {
         let value = path
             .as_os_str()
             .encode_wide()
@@ -415,7 +426,7 @@ mod windows {
         Ok(value)
     }
 
-    unsafe fn load_symbol<Function>(module: Module, name: &[u8]) -> Option<Function>
+    pub(super) unsafe fn load_symbol<Function>(module: Module, name: &[u8]) -> Option<Function>
     where
         Function: Copy,
     {
@@ -438,6 +449,19 @@ pub use windows::PlatformDispatcher as NativeDispatcher;
 
 #[cfg(windows)]
 pub use windows::load_com_backend;
+
+#[cfg(windows)]
+pub use winrt::load_winrt_backend;
+
+#[cfg(not(windows))]
+pub fn load_winrt_backend(
+    _config: &NativeHostConfig,
+    _target: WinrtTargetConfig,
+) -> Result<Box<dyn object::ObjectBackend>, wvb_broker::BrokerError> {
+    Err(wvb_broker::BrokerError::Handler(
+        "WinRT object backend requires Windows".into(),
+    ))
+}
 
 #[cfg(not(windows))]
 pub fn load_com_backend(
