@@ -4,3 +4,4 @@
 @ cdecl wvb_client_call(ptr long ptr int64 ptr int64 ptr)
 @ cdecl wvb_client_call_ex(ptr long ptr int64 ptr int64 ptr ptr)
 @ cdecl wvb_client_reset()
+@ cdecl wvb_client_handle_close(ptr ptr)

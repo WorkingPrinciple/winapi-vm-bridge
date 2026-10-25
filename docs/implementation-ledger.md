@@ -48,9 +48,18 @@ terminal guest result, process join or proof of quiescence. Retain the observed
 process identity and reconcile through its owner; never infer guest exit from
 the host wrapper's exit or automatically repeat the operation.
 
-Only executable generated native profiles are usable. Handle, callback,
-transfer and asynchronous lifecycle primitives are not proof of generated
-COM/WinRT/object support. The process crate is a codec, not a process executor.
+Only executable generated native profiles are usable. The additive
+`object_slice` branch implements the narrow `com-u32-v1` guest host:
+one authenticated session, a dedicated MTA owner thread, actor/adapter-bound
+typed leases, invocation over CALL/RESULT and close over existing HANDLE_CLOSE.
+It loads generated activate/invoke/release exports instead of treating
+metadata-only COM declarations as executable dispatch. Native pointers stay in
+the owner thread; disconnect retires references before apartment/module teardown.
+Current-user LocalServer32 path/hash checks constrain the owned test fixture,
+not arbitrary packaged-service activation. See [the bounded spec](com-object-slice.md).
+This source path and its negative tests do not establish generated-façade live
+acceptance, generic COM/WinRT, callbacks, async, or unchanged-app A04 support.
+The process crate is a codec, not a process executor.
 No general Windows service installer, pairing command or automatic key
 provisioner is implied by these two commands.
 

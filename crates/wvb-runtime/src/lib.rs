@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use wvb_call::{CallRequest, CallResult};
 use wvb_client::{Client, ClientError};
+use wvb_control::{ControlMessage, HandleClose, HandleStatus};
 use wvb_crypto::StaticPrivateKey;
 use wvb_session::{Hello, HelloAck, SessionError, activate_client};
 use wvb_transport::{TransportError, session_initiator};
@@ -110,6 +111,30 @@ impl RuntimeClient {
         timeout: Duration,
     ) -> Result<CallResult, RuntimeError> {
         Ok(self.client.call(request, timeout).await?)
+    }
+
+    pub async fn close_handle(
+        &self,
+        request: HandleClose,
+        timeout: Duration,
+    ) -> Result<HandleStatus, RuntimeError> {
+        let (kind, payload) = ControlMessage::HandleClose(request)
+            .encode()
+            .map_err(|_| ClientError::Protocol)?;
+        let response = self.client.request(kind as u16, payload, timeout).await?;
+        if response.envelope.message_type != wvb_protocol::MessageType::HandleStatus as u16
+            || response.envelope.flags
+                != (wvb_protocol::EnvelopeFlags::RESPONSE | wvb_protocol::EnvelopeFlags::END_STREAM)
+            || response.envelope.stream_sequence != 0
+        {
+            return Err(ClientError::Protocol.into());
+        }
+        match ControlMessage::decode(wvb_protocol::MessageType::HandleStatus, &response.payload)
+            .map_err(|_| ClientError::Protocol)?
+        {
+            ControlMessage::HandleStatus(status) => Ok(status),
+            _ => Err(ClientError::Protocol.into()),
+        }
     }
 
     #[must_use]

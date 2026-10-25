@@ -11,7 +11,8 @@ enum {
   WVB_UNIX_CLIENT_CALL = 3,
   WVB_UNIX_CLIENT_CALL_EX = 4,
   WVB_UNIX_CLIENT_RESET = 5,
-  WVB_UNIX_ENTRY_COUNT = 6
+  WVB_UNIX_CLIENT_HANDLE_CLOSE = 6,
+  WVB_UNIX_ENTRY_COUNT = 7
 };
 
 typedef struct {
@@ -42,6 +43,14 @@ typedef struct {
 typedef struct {
   WvbStatus status;
 } WvbUnixClientReset;
+
+typedef struct {
+  const uint8_t *token;
+  int32_t *native_status;
+  WvbStatus status;
+} WvbUnixClientHandleClose;
+
+_Static_assert(sizeof(WvbUnixClientHandleClose) == 24, "handle close argument ABI");
 
 _Static_assert(sizeof(void *) == 8 && sizeof(size_t) == 8,
                "client forwarding requires native x64 Wine");

@@ -16,8 +16,8 @@ use serde_json::json;
 use wvb_admission::{AdmissionEngine, BundleFileKind, FrozenInputs, OperatorAdmission};
 use wvb_authz::{Grant, Registry};
 use wvb_broker::{
-    AuthorizedCallHandler, DispatcherCallHandler, OperationSchema, actor_for_session_key,
-    serve_calls,
+    AuthorizedCallHandler, CallHandler, DispatcherCallHandler, OperationSchema,
+    actor_for_session_key, serve_calls,
 };
 use wvb_call::LOGICAL_MAX;
 use wvb_client_ffi::{
@@ -26,7 +26,8 @@ use wvb_client_ffi::{
 };
 use wvb_crypto::StaticPrivateKey;
 use wvb_integrity::{canonical_root, resolve_regular_file, sha256_bytes};
-use wvb_native_host::{NativeDispatcher, NativeHostConfig};
+use wvb_native_host::object::{ObjectSession, ObjectSlice};
+use wvb_native_host::{ComTargetConfig, NativeDispatcher, NativeHostConfig};
 use wvb_session::{HelloAck, Readiness, activate_broker};
 use wvb_transport::session_responder;
 use zeroize::{Zeroize, Zeroizing};
@@ -78,6 +79,11 @@ struct ServeConfig {
     approval: OperatorAdmission,
     response_capacity: usize,
     lifetime_ms: u64,
+}
+
+#[derive(Deserialize)]
+struct ContractSlice {
+    object_slice: Option<ObjectSlice>,
 }
 
 #[derive(Deserialize)]
@@ -197,11 +203,11 @@ async fn serve(config: ServeConfig) -> Result<()> {
         .iter()
         .find(|file| file.kind == BundleFileKind::Dispatcher)
         .ok_or("admitted bundle has no dispatcher")?;
-    let module = NativeDispatcher::load(&NativeHostConfig {
+    let native_config = NativeHostConfig {
         dispatcher_path: dispatcher.canonical_path.clone(),
         dispatcher_sha256: dispatcher.sha256,
         response_capacity: config.response_capacity,
-    })?;
+    };
     let operations = config
         .approval
         .operations
@@ -216,11 +222,19 @@ async fn serve(config: ServeConfig) -> Result<()> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let typed = Arc::new(DispatcherCallHandler::new(
-        admitted.contract_sha256(),
-        operations,
-        Arc::new(module),
-    ));
+    let object_slice = serde_json::from_slice::<ContractSlice>(&contract)?.object_slice;
+    if let Some(slice) = &object_slice {
+        slice.validate(&operations)?;
+    }
+    let scalar: Option<Arc<dyn CallHandler>> = if object_slice.is_none() {
+        Some(Arc::new(DispatcherCallHandler::new(
+            admitted.contract_sha256(),
+            operations.clone(),
+            Arc::new(NativeDispatcher::load(&native_config)?),
+        )))
+    } else {
+        None
+    };
     let key = read_key(&config.private_key_path)?;
     let broker_key = StaticPrivateKey::from_bytes(*key);
     drop(key);
@@ -235,12 +249,42 @@ async fn serve(config: ServeConfig) -> Result<()> {
         "listen": listener.local_addr()?.to_string(), "lifetime_ms":config.lifetime_ms});
     println!("{ready}");
     std::io::stdout().flush()?;
+    let mut session_handler: Option<Arc<dyn CallHandler>> = None;
     let work = async {
         let (stream, _) = listener.accept().await?;
         stream.set_nodelay(true)?;
         let (remote, provisional) = session_responder(stream, &broker_key).await?;
         let actor = actor_for_session_key(&registry, &remote)?;
         admitted.reverify_files()?;
+        let typed: Arc<dyn CallHandler> = if let Some(slice) = &object_slice {
+            let target = admitted
+                .files()
+                .iter()
+                .find(|file| file.kind == BundleFileKind::Target)
+                .ok_or("object contract has no admitted target")?;
+            let target = ComTargetConfig {
+                clsid: slice.activation.clsid.clone(),
+                path: target.canonical_path.clone(),
+                sha256: target.sha256,
+            };
+            Arc::new(ObjectSession::start(
+                actor,
+                nonce,
+                admitted.contract_sha256(),
+                slice.clone(),
+                operations.clone(),
+                move || wvb_native_host::load_com_backend(&native_config, target),
+            )?)
+        } else {
+            scalar.clone().ok_or("missing scalar dispatcher")?
+        };
+        let mut authorized = AuthorizedCallHandler::new(actor, registry.clone(), typed);
+        if let Some(slice) = &object_slice {
+            authorized = authorized
+                .with_close_operation(admitted.contract_sha256(), slice.close_operation_id);
+        }
+        let authorized: Arc<dyn CallHandler> = Arc::new(authorized);
+        session_handler = Some(authorized.clone());
         let ack = HelloAck {
             selected_minor: 0,
             features: 0,
@@ -258,12 +302,14 @@ async fn serve(config: ServeConfig) -> Result<()> {
             broker_wall_unix_ms: now_ms()?,
         };
         let (_, active) = activate_broker(provisional, &ack, nonce).await?;
-        let authorized = Arc::new(AuthorizedCallHandler::new(actor, registry, typed));
         serve_calls(active, authorized, 1).await?;
         Ok::<_, Box<dyn Error>>(())
     };
-    tokio::time::timeout(Duration::from_millis(config.lifetime_ms), work)
-        .await
+    let result = tokio::time::timeout(Duration::from_millis(config.lifetime_ms), work).await;
+    if let Some(handler) = session_handler {
+        handler.disconnect().await?;
+    }
+    result
         .map_err(|_| "serve lifetime expired; native completion/quiescence unknown; no replay")??;
     println!("{}", json!({"event":"completed", "pid":std::process::id()}));
     Ok(())

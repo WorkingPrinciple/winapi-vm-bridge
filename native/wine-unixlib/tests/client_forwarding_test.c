@@ -14,6 +14,7 @@ WvbStatus wvb_test_pe_call(const uint8_t[32], uint32_t, const uint8_t *,
 WvbStatus wvb_test_pe_call_ex(const uint8_t[32], uint32_t, const uint8_t *,
                              size_t, uint8_t *, size_t, size_t *, int32_t *);
 WvbStatus wvb_test_pe_reset(void);
+WvbStatus wvb_test_pe_handle_close(const uint8_t[28], int32_t *);
 
 uint64_t __wine_unixlib_handle = 42;
 static DWORD last_error;
@@ -108,6 +109,13 @@ WvbStatus wvb_client_reset(void) {
   return host_status;
 }
 
+WvbStatus wvb_client_handle_close(const uint8_t token[28], int32_t *native_status) {
+  assert(token == expected_hash && native_status && *native_status == 0);
+  ++host_calls[WVB_UNIX_CLIENT_HANDLE_CLOSE];
+  *native_status = 17;
+  return host_status;
+}
+
 int main(void) {
   WvbClientConfig config = {.struct_size = sizeof(config)};
   uint8_t hash[32] = {1}, request[] = {2, 3}, response[16];
@@ -123,6 +131,9 @@ int main(void) {
     assert(wvb_test_pe_configure(&config) == host_status);
     assert(wvb_test_pe_bind(hash, 7, 11, 13) == host_status);
     assert(wvb_test_pe_reset() == host_status);
+    int32_t close_status = 123;
+    assert(wvb_test_pe_handle_close(hash, &close_status) == host_status);
+    assert(close_status == 17);
     for (unsigned int extended = 0; extended < 2; ++extended) {
       memset(response, 0xa5, sizeof(response));
       size_t length = 999;
@@ -209,6 +220,9 @@ int main(void) {
     assert(wvb_test_pe_configure(&config) == WVB_STATUS_RUNTIME_ERROR);
     assert(wvb_test_pe_bind(hash, 7, 11, 13) == WVB_STATUS_RUNTIME_ERROR);
     assert(wvb_test_pe_reset() == WVB_STATUS_RUNTIME_ERROR);
+    int32_t close_status = 123;
+    assert(wvb_test_pe_handle_close(hash, &close_status) == WVB_STATUS_RUNTIME_ERROR);
+    assert(close_status == 0);
     length = 999;
     assert(wvb_test_pe_call(hash, 7, request, 2, response, 16, &length) ==
            WVB_STATUS_RUNTIME_ERROR);

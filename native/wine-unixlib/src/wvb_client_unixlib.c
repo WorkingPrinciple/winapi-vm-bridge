@@ -53,6 +53,13 @@ static int32_t reset(void *value) {
   return STATUS_SUCCESS;
 }
 
+static int32_t handle_close(void *value) {
+  WvbUnixClientHandleClose *args = value;
+  if (!args) return STATUS_INVALID_PARAMETER;
+  args->status = wvb_client_handle_close(args->token, args->native_status);
+  return STATUS_SUCCESS;
+}
+
 static int32_t unsupported(void *value) {
   (void)value;
   return STATUS_NOT_SUPPORTED;
@@ -60,10 +67,10 @@ static int32_t unsupported(void *value) {
 
 __attribute__((visibility("default"))) const WvbUnixClientEntry
     __wine_unix_call_funcs[WVB_UNIX_ENTRY_COUNT] = {
-        load_config, configure, bind_operation, call, call_ex, reset};
+        load_config, configure, bind_operation, call, call_ex, reset, handle_close};
 
 /* Pointer-bearing client arguments must never be interpreted as WOW64 data. */
 __attribute__((visibility("default"))) const WvbUnixClientEntry
     __wine_unix_call_wow64_funcs[WVB_UNIX_ENTRY_COUNT] = {
         load_config, unsupported, unsupported, unsupported, unsupported,
-        unsupported};
+        unsupported, unsupported};
