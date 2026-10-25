@@ -10,7 +10,7 @@ rust-version.workspace = true
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [features]
-cli = ["dep:clap", "dep:serde", "dep:serde_json", "dep:zeroize", "dep:ring", "dep:wvb-admission", "dep:wvb-authz", "dep:wvb-broker", "dep:wvb-integrity", "dep:wvb-native-host", "dep:wvb-transport"]
+cli = ["dep:async-trait", "dep:clap", "dep:serde", "dep:serde_json", "dep:zeroize", "dep:ring", "dep:wvb-admission", "dep:wvb-authz", "dep:wvb-broker", "dep:wvb-integrity", "dep:wvb-native-host", "dep:wvb-transport"]
 
 [[bin]]
 name = "wvb"
@@ -18,6 +18,7 @@ path = "src/bin/wvb.rs"
 required-features = ["cli"]
 
 [dependencies]
+async-trait = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

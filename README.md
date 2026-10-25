@@ -92,8 +92,8 @@ they are deliberately not embedded in the unsigned archive they verify.
 
 ## Build and test
 
-The product has two commands. Build for the host, and cross-build the same
-executable for the Windows guest:
+Build the single `wvb` executable for the host, and cross-build it for the
+Windows guest:
 
 ```bash
 cargo build --release --locked -p wvb-client-ffi --features cli --bin wvb
@@ -262,6 +262,15 @@ bundle, path, hash, actor and operation checks remain mandatory. The previous
 state/doctor/receipt CLI requires `wvb-runtime/legacy-admin`. The old synthetic
 UTM/CrossOver call/benchmark launchers were replaced by the single explicit
 generated-call driver; historical artifacts remain unchanged.
+
+### Local package-context observers (WX-12)
+
+`wvb serve-observer --config FILE` adds one source-tested, explicitly granted
+WX-07 observer run through the existing authenticated call transport. It requires
+active interactive session 1 and checks native package identity before accepting
+hash-bound observations. It does not create a sign-in session or control a VM.
+See [configuration, scope and pending native acceptance](docs/package-observer.md).
+The owner's VM-control STOP remains in force; no live WX-12/r9 result is claimed.
 
 ## Source checks
 

@@ -16,6 +16,7 @@ pub enum Role {
     PairingAdmin = 4,
     Auditor = 5,
     ServiceAdmin = 6,
+    PackageObserver = 7,
 }
 
 impl TryFrom<u16> for Role {
@@ -29,6 +30,7 @@ impl TryFrom<u16> for Role {
             4 => Ok(Self::PairingAdmin),
             5 => Ok(Self::Auditor),
             6 => Ok(Self::ServiceAdmin),
+            7 => Ok(Self::PackageObserver),
             _ => Err(RestoreError::InvalidRecord),
         }
     }
@@ -317,19 +319,35 @@ mod tests {
                     label: String::from("Mac"),
                     active: true,
                 },
-                &[GrantRecord {
-                    actor_id: actor,
-                    role: Role::Invoke as u16,
-                    adapter_hash: Some(adapter),
-                    operation_id: Some(7),
-                    expires_unix_ms: None,
-                }],
+                &[
+                    GrantRecord {
+                        actor_id: actor,
+                        role: Role::Invoke as u16,
+                        adapter_hash: Some(adapter),
+                        operation_id: Some(7),
+                        expires_unix_ms: None,
+                    },
+                    GrantRecord {
+                        actor_id: actor,
+                        role: Role::PackageObserver as u16,
+                        adapter_hash: Some(adapter),
+                        operation_id: Some(7),
+                        expires_unix_ms: Some(100),
+                    },
+                ],
                 b"pair",
             )
             .unwrap();
         let registry = Registry::from_store(&store).unwrap();
         assert_eq!(registry.actor_for_key(&key).unwrap(), actor);
         registry.authorize_invoke(actor, adapter, 7, 1).unwrap();
+        registry
+            .authorize_role_exact(actor, Role::PackageObserver, adapter, Some(7), 99)
+            .unwrap();
+        assert_eq!(
+            registry.authorize_role_exact(actor, Role::PackageObserver, adapter, Some(7), 100),
+            Err(AuthorizationError::Denied)
+        );
 
         store.revoke_actor(actor, b"revoke").unwrap();
         let registry = Registry::from_store(&store).unwrap();
@@ -339,6 +357,10 @@ mod tests {
         );
         assert_eq!(
             registry.authorize_invoke(actor, adapter, 7, 1),
+            Err(AuthorizationError::Revoked)
+        );
+        assert_eq!(
+            registry.authorize_role_exact(actor, Role::PackageObserver, adapter, Some(7), 1),
             Err(AuthorizationError::Revoked)
         );
     }

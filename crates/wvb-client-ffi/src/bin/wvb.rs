@@ -40,6 +40,9 @@ use zeroize::{Zeroize, Zeroizing};
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 const CONFIG_MAX: usize = 1_048_576;
 
+#[path = "wvb/package_observer.rs"]
+mod package_observer;
+
 #[derive(Parser)]
 #[command(about = "One authenticated, generated Windows call. No automatic retry.")]
 struct Arguments {
@@ -51,6 +54,11 @@ struct Arguments {
 enum Command {
     /// Serve one authenticated connection, then exit after its completed calls drain.
     Serve {
+        #[arg(long)]
+        config: PathBuf,
+    },
+    /// Run one explicitly granted, pinned local-development package observer.
+    ServeObserver {
         #[arg(long)]
         config: PathBuf,
     },
@@ -434,11 +442,52 @@ async fn serve(config: ServeConfig) -> Result<()> {
     } else {
         None
     };
-    let key = read_key(&config.private_key_path)?;
+    let registry = Arc::new(RwLock::new(registry));
+    serve_authenticated(
+        config.listen,
+        &config.private_key_path,
+        config.lifetime_ms,
+        registry,
+        move |actor, nonce| {
+            admitted.reverify_files()?;
+            if let Some(slice) = &object_slice {
+                let target = target.ok_or("missing admitted object target")?;
+                let typed: Arc<dyn CallHandler> = Arc::new(ObjectSession::start(
+                    actor,
+                    nonce,
+                    admitted.contract_sha256(),
+                    slice.clone(),
+                    operations,
+                    move || target.load(&native_config),
+                )?);
+                Ok((
+                    typed,
+                    Some((admitted.contract_sha256(), slice.close_operation_id)),
+                ))
+            } else {
+                Ok((scalar.ok_or("missing scalar dispatcher")?, None))
+            }
+        },
+    )
+    .await
+}
+
+type Backend = (Arc<dyn CallHandler>, Option<([u8; 32], u32)>);
+
+async fn serve_authenticated(
+    listen: SocketAddr,
+    private_key_path: &Path,
+    lifetime_ms: u64,
+    registry: Arc<RwLock<Registry>>,
+    backend: impl FnOnce([u8; 16], [u8; 16]) -> Result<Backend>,
+) -> Result<()> {
+    if listen.port() == 0 || listen.ip().is_unspecified() {
+        return Err("listen must select a specific interface and nonzero port".into());
+    }
+    let key = read_key(private_key_path)?;
     let broker_key = StaticPrivateKey::from_bytes(*key);
     drop(key);
-    let listener = tokio::net::TcpListener::bind(config.listen).await?;
-    let registry = Arc::new(RwLock::new(registry));
+    let listener = tokio::net::TcpListener::bind(listen).await?;
     let mut nonce = [0_u8; 16];
     SystemRandom::new()
         .fill(&mut nonce)
@@ -446,7 +495,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
     let epoch = u64::from_le_bytes(nonce[..8].try_into()?);
     let ready = json!({"event":"ready", "pid": std::process::id(),
         "readiness":"listener-only", "backend_ready":false,
-        "listen": listener.local_addr()?.to_string(), "lifetime_ms":config.lifetime_ms});
+        "listen": listener.local_addr()?.to_string(), "lifetime_ms":lifetime_ms});
     println!("{ready}");
     std::io::stdout().flush()?;
     let mut session_handler: Option<Arc<dyn CallHandler>> = None;
@@ -466,25 +515,11 @@ async fn serve(config: ServeConfig) -> Result<()> {
         let (remote, provisional) = session_responder(stream, &broker_key).await?;
         let actor = actor_for_session_key(&registry, &remote)?;
         report_stage("authenticated")?;
-        admitted.reverify_files()?;
-        let typed: Arc<dyn CallHandler> = if let Some(slice) = &object_slice {
-            let target = target.ok_or("missing admitted object target")?;
-            Arc::new(ObjectSession::start(
-                actor,
-                nonce,
-                admitted.contract_sha256(),
-                slice.clone(),
-                operations.clone(),
-                move || target.load(&native_config),
-            )?)
-        } else {
-            scalar.clone().ok_or("missing scalar dispatcher")?
-        };
+        let (typed, close_operation) = backend(actor, nonce)?;
         report_stage("backend-ready")?;
         let mut authorized = AuthorizedCallHandler::new(actor, registry.clone(), typed);
-        if let Some(slice) = &object_slice {
-            authorized = authorized
-                .with_close_operation(admitted.contract_sha256(), slice.close_operation_id);
+        if let Some((hash, operation)) = close_operation {
+            authorized = authorized.with_close_operation(hash, operation);
         }
         let authorized: Arc<dyn CallHandler> = Arc::new(authorized);
         session_handler = Some(authorized.clone());
@@ -509,7 +544,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
         serve_calls(active, authorized, 1).await?;
         Ok::<_, Box<dyn Error>>(())
     };
-    let result = tokio::time::timeout(Duration::from_millis(config.lifetime_ms), work).await;
+    let result = tokio::time::timeout(Duration::from_millis(lifetime_ms), work).await;
     if let Some(handler) = session_handler {
         handler.disconnect().await?;
     }
@@ -614,6 +649,13 @@ fn run() -> Result<()> {
                 .enable_all()
                 .build()?
                 .block_on(serve(config))
+        }
+        Command::ServeObserver { config } => {
+            let config = serde_json::from_slice(&bounded_read(&config, CONFIG_MAX)?)?;
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(package_observer::serve(config))
         }
         Command::Call {
             config,
