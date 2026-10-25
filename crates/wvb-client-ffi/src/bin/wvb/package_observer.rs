@@ -20,6 +20,14 @@ const SCHEMA: u32 = 1;
 #[cfg(any(windows, test))]
 fn launcher_command(stage: &Path) -> Result<String> {
     let stage = stage.to_str().ok_or("run directory is not valid Unicode")?;
+    // PowerShell 5 providers do not consistently accept Rust's canonical \\?\ paths.
+    let stage = stage.strip_prefix(r"\\?\").unwrap_or(stage);
+    if stage.len() < 3
+        || !stage.as_bytes()[0].is_ascii_alphabetic()
+        || &stage.as_bytes()[1..3] != b":\\"
+    {
+        return Err("observer staging requires an absolute local Windows drive path".into());
+    }
     Ok(format!(
         "& {{ {SCRIPT} }} -Stage '{}'",
         stage.replace('\'', "''")
@@ -751,6 +759,15 @@ mod tests {
                 .unwrap()
                 .ends_with("-Stage 'C:\\operator''s runs\\run'")
         );
+        assert!(
+            launcher_command(Path::new(r"\\?\C:\runs\run"))
+                .unwrap()
+                .ends_with("-Stage 'C:\\runs\\run'")
+        );
+        assert!(launcher_command(Path::new(r"\\?\UNC\server\share")).is_err());
+        assert!(launcher_command(Path::new("relative")).is_err());
+        assert!(SCRIPT.contains("-EncodedCommand"));
+        assert!(!SCRIPT.contains("-NonInteractive -File"));
     }
 
     #[cfg(not(windows))]

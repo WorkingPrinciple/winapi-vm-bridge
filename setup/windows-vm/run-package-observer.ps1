@@ -161,8 +161,11 @@ Set-StageAccess $outputDir $sid $true
 $taskName = Split-Path -Leaf $Stage
 $runner = Join-Path $Stage 'runner.ps1'
 $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$workerSource = '& { ' + [IO.File]::ReadAllText($runner) + ' } -Stage ''' +
+    $Stage.Replace("'", "''") + ''' -Worker'
+$workerEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerSource))
 $action = New-ScheduledTaskAction -Execute $powershell `
-    -Argument ('-NoLogo -NoProfile -NonInteractive -File "' + $runner + '" -Stage "' + $Stage + '" -Worker')
+    -Argument ('-NoLogo -NoProfile -NonInteractive -EncodedCommand ' + $workerEncoded)
 $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit ([TimeSpan]::FromMilliseconds($plan.timeout_ms + 5000))

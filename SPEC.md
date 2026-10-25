@@ -15,6 +15,7 @@
 | 2026-10-25 | revise | REQ-WX12-01, REQ-WX12-02 | Local game-development use, not a public library: keep one bounded capability and reuse the existing transport; no SDK or generic command-execution framework. |
 | 2026-10-25 | revise | REQ-WX12-02 | PR #16 follow-up: diagnostics read failures/oversize must preserve the observer failure and run path; always check worker-gate structure and explicitly report session-1 runtime-check skips. Host regression checks and same-branch push only; VM/screen STOP unchanged. |
 | 2026-10-25 | revise | REQ-WX12-03 | Owner-directed 15:42 resume relayed by coordinator, bound to sidecar SHA256 0494ca577f87491f5a6df940c6aa8b95bc13d470e19c69dd71024ecf4aff8c44. Bounded WX-12 live acceptance is now authorized. Compare the three r9 cells semantically, not identical raw historical bytes; retain generated-output hashes. If session 1 lacks a signed-in human, stop and report that prerequisite. No credentials, account changes or sign-in automation. |
+| 2026-10-25 | revise | REQ-WX12-02, REQ-WX12-03 | Native r01 reached authenticated backend activation but refused before task creation: PowerShell 5 Join-Path rejects Rust verbatim canonical drive paths. Normalize only local drive paths at the PowerShell boundary. Run the staged worker source inline using EncodedCommand rather than requiring file execution; do not change machine/user execution policy. Reconcile before any fresh run. |
 
 ## Source acceptance evidence (2026-10-25)
 
