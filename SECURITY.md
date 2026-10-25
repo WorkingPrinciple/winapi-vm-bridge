@@ -71,8 +71,9 @@ compromised guest or malicious signed-in user. It is not Job Object containment:
 task completion/output publication do not prove native process quiescence.
 Tasks and evidence are retained, failures are explicit, and uncertain operations
 are never automatically replayed. See [scope and the native acceptance
-results](docs/package-observer.md). A resumed native package observation exists,
-but authenticated output delivery and r9 parity have not passed acceptance.
+results](docs/package-observer.md). Authorized r03 passed authenticated output
+delivery and the three-cell r9 comparison for its pinned activation policy;
+this does not broaden the security or containment claims above.
 
 ## Unsupported security claims
 
