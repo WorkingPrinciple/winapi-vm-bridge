@@ -213,6 +213,9 @@ engine/server pins, stages the public binaries, initializes only the new
 prefix, and derives new response, trace and diagnostic paths inside it.
 The private key is read from the existing private file, never copied, printed
 or hashed. An existing demo directory is rejected, and no retry is automatic.
+Cleanup ends and kills Windows processes only in that new private prefix, then
+waits for its owned server to drain naturally. Forced server termination is
+reported as unknown prefix quiescence, not successful cleanup; evidence remains.
 
 **CrossOver is excluded from active acceptance.** Both direct proxy mode and
 the demo reject CrossOver paths (including resolved aliases and inherited

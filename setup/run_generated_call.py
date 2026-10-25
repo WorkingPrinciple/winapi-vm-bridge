@@ -60,7 +60,11 @@ def run_proxy_call(wine: Path, caller: Path, proxy: Path, config: Path,
     if hashlib.sha256(wine.read_bytes()).hexdigest() != wine_sha256:
         raise ValueError("Wine engine hash mismatch; no call sent")
     prefix = environment.get("WINEPREFIX")
-    if (not prefix or not (Path(prefix) / "system.reg").is_file()
+    initialized_prefix = prefix and (
+        (Path(prefix) / "system.reg").is_file()
+        or ((Path(prefix) / ".update-timestamp").is_file()
+            and (Path(prefix) / "drive_c/windows/system32").is_dir()))
+    if (not initialized_prefix
             or not environment.get("WINEDLLPATH")
             or "WHINY_WINE_BOOTSTRAP" in environment):
         raise ValueError("prepare an explicit Wine prefix/builtin path; automatic bootstrap is forbidden")
@@ -181,7 +185,7 @@ def run_pid_demo(wine: Path, wine_sha256: str, server_sha256: str,
                    "environment": environment}, record, indent=2)
     with (runtime_root / "server.log").open("xb") as server_log, \
             (runtime_root / "warm.log").open("xb") as warm_log:
-        process = subprocess.Popen([str(server), "--foreground", "--persistent"],
+        process = subprocess.Popen([str(server), "--foreground", "--persistent=2"],
                                    env=environment, cwd=runtime_root, stdin=subprocess.DEVNULL,
                                    stdout=server_log, stderr=server_log, start_new_session=True)
         initialized = False
@@ -206,7 +210,8 @@ def run_pid_demo(wine: Path, wine_sha256: str, server_sha256: str,
             with (runtime_root / "shutdown.log").open("xb") as log:
                 try:
                     if initialized:
-                        shutdown = subprocess.run([str(wine), "wineboot.exe", "--shutdown"],
+                        shutdown = subprocess.run([str(wine), "wineboot.exe", "--end-session",
+                                                   "--force", "--kill", "--shutdown"],
                                                   env=environment, cwd=runtime_root,
                                                   stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                                   timeout=15, check=False)
@@ -216,12 +221,16 @@ def run_pid_demo(wine: Path, wine_sha256: str, server_sha256: str,
                     raise RuntimeError("owned prefix shutdown timed out; evidence retained; no replay") from error
                 finally:
                     if process.poll() is None:
-                        process.terminate()
                         try:
-                            process.wait(timeout=5)
+                            process.wait(timeout=10)
                         except subprocess.TimeoutExpired:
-                            process.kill()
-                            process.wait(timeout=5)
+                            process.terminate()
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=5)
+                            raise RuntimeError("owned Wine server did not drain; prefix quiescence unknown; evidence retained; no replay")
 
 
 def main() -> int:

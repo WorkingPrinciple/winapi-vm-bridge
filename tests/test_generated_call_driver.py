@@ -118,6 +118,17 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 self.assertEqual((root / "incomplete-response.bin").stat().st_size, 0)
                 self.assertEqual(run.call_count, 2)
 
+                (root / "system.reg").unlink()
+                (root / ".update-timestamp").write_text("completed Wineboot")
+                (root / "drive_c/windows/system32").mkdir(parents=True)
+                trace = root / "cold-prefix-trace.jsonl"
+                run.side_effect = invoke
+                self.assertEqual(run_proxy_call(wine, root / "caller.exe", proxy, config,
+                                  root / "cold-prefix-response.bin", trace, 5932,
+                                  wine_hash)["observed_u32"], 5932)
+                self.assertFalse((root / "system.reg").exists())
+                self.assertEqual(run.call_count, 3)
+
     def test_proxy_mode_never_bootstraps_or_launches_an_unprepared_prefix(self):
         with tempfile.TemporaryDirectory() as directory:
             wine = Path(directory) / "wine"
@@ -190,11 +201,16 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 self.assertEqual((runtime / "proxy.dll").read_bytes(), proxy.read_bytes())
                 self.assertEqual(json.loads((runtime / "result.json").read_text()), result)
                 launch.assert_called_once()
+                self.assertEqual(launch.call_args.args[0],
+                                 [str(server), "--foreground", "--persistent=2"])
                 call.assert_called_once()
-                process.terminate.assert_called_once()
+                process.wait.assert_called_once_with(timeout=10)
+                process.terminate.assert_not_called()
                 process.kill.assert_not_called()
                 self.assertEqual([args.args[0][-1] for args in run.call_args_list],
                                  ["--init", "--shutdown"])
+                self.assertEqual(run.call_args_list[-1].args[0][2:],
+                                 ["--end-session", "--force", "--kill", "--shutdown"])
                 environment = call.call_args.args[8]
                 self.assertEqual(environment["WINEPREFIX"], str(runtime / "bottle"))
                 self.assertNotIn("WHINY_WINE_BOOTSTRAP", environment)
@@ -215,7 +231,23 @@ class GeneratedCallDriverTests(unittest.TestCase):
                     run_pid_demo(wine, *hashes, caller, proxy, pair,
                                  root / "call.json", root / "failed-runtime", 3276)
                 call.assert_called_once()
+                process.wait.assert_called_once_with(timeout=10)
+                process.terminate.assert_not_called()
+
+            process.reset_mock()
+            process.wait.side_effect = [subprocess.TimeoutExpired("wineserver", 10), 0]
+            with patch("setup.run_generated_call.subprocess.Popen", return_value=process), \
+                    patch("setup.run_generated_call.subprocess.run",
+                          return_value=subprocess.CompletedProcess([], 0)), \
+                    patch("setup.run_generated_call.run_proxy_call", return_value=result) as call:
+                with self.assertRaisesRegex(RuntimeError, "prefix quiescence unknown"):
+                    run_pid_demo(wine, *hashes, caller, proxy, pair,
+                                 root / "call.json", root / "undrained-runtime", 3276)
+                call.assert_called_once()
                 process.terminate.assert_called_once()
+                process.kill.assert_not_called()
+                self.assertEqual([entry.kwargs["timeout"]
+                                  for entry in process.wait.call_args_list], [10, 5])
 
 
 if __name__ == "__main__":
