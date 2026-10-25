@@ -13,7 +13,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
     def com_inputs(self, root):
         (root / "system.reg").write_text("owned prefix")
         contract = root / "contract.json"
-        contract.write_text(json.dumps({"object_slice": {
+        contract.write_text(json.dumps({"target": {"relative_path": "com_scalar.exe"}, "object_slice": {
             "abi": "com-u32-v1",
             "activation": {"kind": "com-local-server", "clsid": "BA9A4DA2-79FE-4B31-8DB4-201AF0266C11"},
             "interface_iid": "BA9A4DA2-79FE-4B31-8DB4-201AF0266C12",
@@ -39,6 +39,8 @@ class GeneratedCallDriverTests(unittest.TestCase):
              "output": 42, "caller_pid": 32},
             {"event": "native-error", "hresult": -2147024809, "output": 0xa5a5a5a5},
             {"event": "release", "references": 0, "can_unload_hresult": 0, "recording": False},
+            {"event": "control-negatives", "wrong_epoch": True, "wrong_generation": True,
+             "wrong_type": True, "lease_survived": True, "closed": True, "stale": True},
         ]
         arguments = [wine, root / "caller.exe", proxy, config, root / "response.jsonl",
                      root / "trace.jsonl", hashlib.sha256(wine.read_bytes()).hexdigest(),
@@ -52,7 +54,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
             arguments, rows, _ = self.com_inputs(root)
             output = "\n".join(json.dumps(row) for row in rows) + "\n"
             def invoke(command, **kwargs):
-                self.assertEqual(len(command), 11)
+                self.assertEqual(len(command), 12)
                 self.assertEqual(command[0:2], [str(root / "wine"), str(root / "caller.exe")])
                 self.assertIn("Z:" + str(root / "client.key").replace("/", "\\"), command)
                 self.assertNotIn("07" * 32, command)
@@ -75,7 +77,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 ("output", 43, 0), ("activation_hresult", 1, 0),
                 ("hresult", 0, 1), ("output", 0, 1),
                 ("references", 1, 2), ("recording", "true", 2),
-                ("hresult", False, 0)):
+                ("hresult", False, 0), ("stale", False, 3)):
             with self.subTest(field=field, value=value, index=index), \
                     tempfile.TemporaryDirectory() as directory:
                 arguments, rows, _ = self.com_inputs(Path(directory).resolve())
@@ -114,23 +116,33 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 self.assertFalse(arguments[4].exists())
 
     def test_com_recording_must_be_complete_paired_and_bound(self):
-        for mode in ("good", "unmatched", "wrong-hash", "empty"):
+        for mode in ("good", "unmatched", "wrong-hash", "empty", "release-failed"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 arguments, rows, value = self.com_inputs(Path(directory).resolve())
-                rows[-1]["recording"] = True
+                rows[2]["recording"] = True
                 def invoke(command, **kwargs):
                     records = []
-                    kinds = ["run_start", "entry", "return", "run_end"]
-                    if mode == "empty":
-                        kinds = ["run_start", "run_end"]
-                    for index, kind in enumerate(kinds):
+                    method = "com_scalar.exe!{BA9A4DA2-79FE-4B31-8DB4-201AF0266C12}#3"
+                    calls = [
+                        ("com_scalar.exe!{BA9A4DA2-79FE-4B31-8DB4-201AF0266C11}::activate", "ok"),
+                        (method, "invalid_input"), (method, "ok"), (method, "call_failed"),
+                        ("com_scalar.exe!{BA9A4DA2-79FE-4B31-8DB4-201AF0266C12}::release",
+                         "call_failed" if mode == "release-failed" else "ok"),
+                    ]
+                    events = [("run_start", "", "", "")]
+                    if mode != "empty":
+                        for number, (target, status) in enumerate(calls):
+                            events += [("entry", str(number), target, ""),
+                                       ("return", str(number), target, status)]
+                    events += [("run_end", "", "", "")]
+                    for index, (kind, call_id, target, status) in enumerate(events):
                         records.append({
                             "kind": kind, "sequence": index, "route": "remote",
-                            "proxy_artifact_sha256": command[-1] if mode != "wrong-hash" else "0" * 64,
+                            "proxy_artifact_sha256": command[-2] if mode != "wrong-hash" else "0" * 64,
                             "contract_sha256": bytes(value["contract_sha256"]).hex(),
                             "process_id": 32, "complete": True,
-                            "call_id": "2" if mode == "unmatched" and kind == "return" else "1",
-                            "target": "owned-com.Transform",
+                            "call_id": "99" if mode == "unmatched" and kind == "return" else call_id,
+                            "target": target, "status": status,
                         })
                     arguments[5].write_text("\n".join(json.dumps(row) for row in records))
                     return subprocess.CompletedProcess(command, 0,

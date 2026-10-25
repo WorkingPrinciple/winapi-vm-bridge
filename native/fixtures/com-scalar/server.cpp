@@ -110,19 +110,32 @@ static int oracle() {
 }
 
 int main(int argc, char **argv) {
-  if (argc < 2 || (strcmp(argv[1], "--oracle") && strcmp(argv[1], "--server"))) {
-    fputs("usage: com_scalar.exe --oracle | --server LOG_FILE\n", stderr);
+  bool oracle_mode = argc == 2 && !strcmp(argv[1], "--oracle");
+  bool server_mode = (argc == 3 || (argc == 4 &&
+      (!_stricmp(argv[3], "-Embedding") || !_stricmp(argv[3], "/Embedding")))) &&
+      !strcmp(argv[1], "--server") && argv[2][0];
+  if (!oracle_mode && !server_mode) {
+    fputs("usage: com_scalar.exe --oracle | --server LOG_FILE [-Embedding]\n", stderr);
     return 2;
   }
-  HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  if (FAILED(hr)) return 2;
-  int result = 2;
-  if (!strcmp(argv[1], "--oracle")) {
-    result = oracle();
-  } else if (argc == 3) {
+  if (server_mode) {
     logfile = fopen(argv[2], "a");
+    if (!logfile) { perror("server: startup log"); return 2; }
+    record("starting");
+  }
+  HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (FAILED(hr)) {
+    fprintf(stderr, "COM initialization HRESULT=0x%08lx\n", static_cast<unsigned long>(hr));
+    record("initialization-failed");
+    if (logfile) fclose(logfile);
+    return 2;
+  }
+  int result = 2;
+  if (oracle_mode) {
+    result = oracle();
+  } else {
     finished = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (logfile && finished) {
+    if (finished) {
       Factory *factory = new Factory();
       DWORD cookie = 0;
       hr = CoRegisterClassObject(CLSID_WvbScalarObject, factory, CLSCTX_LOCAL_SERVER,
@@ -135,12 +148,16 @@ int main(int argc, char **argv) {
         result = wait == WAIT_OBJECT_0 ? 0 : 2;
         record(result ? "expired" : "completed");
       } else {
+        record("registration-failed");
         fprintf(stderr, "server: registration HRESULT=0x%08lx\n", static_cast<unsigned long>(hr));
       }
+    } else {
+      record("event-failed");
+      fprintf(stderr, "server: event creation error=%lu\n", GetLastError());
     }
-    if (finished) CloseHandle(finished);
-    if (logfile) fclose(logfile);
   }
   CoUninitialize();
+  if (finished) CloseHandle(finished);
+  if (logfile) fclose(logfile);
   return result;
 }

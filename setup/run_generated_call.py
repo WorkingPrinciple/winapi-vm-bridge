@@ -158,9 +158,12 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
     activation = object_slice.get("activation") if isinstance(object_slice, dict) else None
     iid = object_slice.get("interface_iid") if isinstance(object_slice, dict) else None
     clsid = activation.get("clsid") if isinstance(activation, dict) else None
+    target = contract.get("target")
+    target_path = target.get("relative_path") if isinstance(target, dict) else None
     if (not isinstance(object_slice, dict) or object_slice.get("abi") != "com-u32-v1"
             or object_slice.get("method_slot") != 3
             or not isinstance(activation, dict) or activation.get("kind") != "com-local-server"
+            or not isinstance(target_path, str) or not target_path
             or not isinstance(iid, str) or iid.casefold() != "ba9a4da2-79fe-4b31-8db4-201af0266c12"
             or not isinstance(clsid, str) or clsid.casefold() != "ba9a4da2-79fe-4b31-8db4-201af0266c11"):
         raise ValueError("COM caller requires the owned fixture's exact class/interface contract")
@@ -169,7 +172,8 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
     command = [str(wine), str(caller.resolve()), windows(proxy), windows(key),
                value["address"], bytes(value["broker_public_key"]).hex(),
                bytes(value["actor_id"]).hex(), bytes(value["client_instance"]).hex(),
-               bytes(value["build_fingerprint"]).hex(), windows(trace), proxy_hash]
+               bytes(value["build_fingerprint"]).hex(), windows(trace), proxy_hash,
+               bytes(value["contract_sha256"]).hex()]
     descriptor = os.open(response, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "wb") as output, diagnostics.open("x", encoding="utf-8") as log:
         try:
@@ -191,8 +195,9 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
             raise RuntimeError(f"COM caller failed host_exit={completed.returncode}: "
                                f"{completed.stderr.strip()}; no retry")
         rows = [json.loads(line) for line in completed.stdout.splitlines()]
-        if (len(rows) != 3 or any(not isinstance(row, dict) for row in rows)
-                or [row.get("event") for row in rows] != ["result", "native-error", "release"]
+        if (len(rows) != 4 or any(not isinstance(row, dict) for row in rows)
+                or [row.get("event") for row in rows]
+                != ["result", "native-error", "release", "control-negatives"]
                 or any(type(row.get(field)) is not int for row, fields in zip(rows, (
                     ("activation_hresult", "hresult", "output", "caller_pid"),
                     ("hresult", "output"), ("references", "can_unload_hresult")))
@@ -202,7 +207,9 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
                 or type(rows[0].get("caller_pid")) is not int or rows[0]["caller_pid"] <= 0
                 or rows[1].get("hresult") != -2147024809 or rows[1].get("output") != 0xa5a5a5a5
                 or rows[2].get("references") != 0 or rows[2].get("can_unload_hresult") != 0
-                or type(rows[2].get("recording")) is not bool):
+                or type(rows[2].get("recording")) is not bool
+                or any(rows[3].get(field) is not True for field in (
+                    "wrong_epoch", "wrong_generation", "wrong_type", "lease_survived", "closed", "stale"))):
             raise ValueError("COM caller did not prove activation, typed HRESULT/writeback and final release")
         recording = rows[2]["recording"]
         if recording:
@@ -221,6 +228,7 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
                 raise ValueError("COM trace is incomplete or not bound to this generated caller")
             pending = {}
             seen = set()
+            returns = []
             for record in records[1:-1]:
                 call_id = record.get("call_id")
                 target = record.get("target")
@@ -230,11 +238,19 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
                     pending[call_id] = target
                     seen.add(call_id)
                 elif record.get("kind") == "return" and pending.pop(call_id, None) == target:
+                    returns.append((target, record.get("status")))
                     continue
                 else:
                     raise ValueError("COM trace has an unmatched or duplicate call")
             if pending:
                 raise ValueError("COM trace has calls without returns")
+            server_name = target_path.replace("\\", "/").rsplit("/", 1)[-1]
+            method = f"{server_name}!{{{iid}}}#3"
+            if returns != [
+                    (f"{server_name}!{{{clsid}}}::activate", "ok"),
+                    (method, "invalid_input"), (method, "ok"), (method, "call_failed"),
+                    (f"{server_name}!{{{iid}}}::release", "ok")]:
+                raise ValueError("COM trace does not prove the exact activation/method/release outcomes")
         elif trace.exists():
             raise ValueError("COM caller reported no recording but created a trace")
     return {"event": "result", "route": "generated-com-proxy", "supporting_only": True,

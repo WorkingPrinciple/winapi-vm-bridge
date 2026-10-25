@@ -38,6 +38,12 @@ records both method results, releases, and returns nonzero on a mismatch.
 The COM server writes PID/thread-bound events and ends on last object release
 or a 120-second idle limit. Its actual PID/path/hash must be independently
 observed; caller output alone does not prove target identity or quiescence.
+The quoted LocalServer32 command includes `--server LOG_FILE`; COM
+[appends `-Embedding`](https://learn.microsoft.com/en-us/windows/win32/com/localserver32).
+The fixture accepts that optional trailing flag (or `/Embedding`), writes a
+`starting` event before COM initialization, and reports initialization,
+class-registration and event-creation errors explicitly. Rejecting the extra
+argument used to exit before registration and caused `CO_E_SERVER_EXEC_FAILURE`.
 
 `proxy_call.exe` loads the Whiny-generated DLL and its actual
 `whiny_object_create_v1`, exercises local QI identity, E_POINTER, successful and
@@ -45,6 +51,12 @@ failing method calls, and final release over the real builtin/FFI.
 Its explicit arguments are proxy path, private key path, broker address,
 broker-public-key hex, actor hex, client-instance hex, build-fingerprint hex,
 trace path, proxy hash. Keys are never command-line values or logs.
+The final argument is the canonical contract hash. A second, explicitly bound
+FFI lease holds the owned server alive while the genuine generated façade runs.
+After its final Release, control probes reject altered epoch, generation and
+IID/type tokens, verify that the valid lease still works, close it once, and
+confirm stale-close rejection. These are real FFI/control probes, not generated
+method trace entries; their separate `control-negatives` row must pass.
 Only Calimocho is an active runtime. Use a fresh isolated prefix and the
 source-matched builtin pair, reconcile unknown operations without replay, and
 confirm native oracle, generated results, lease cleanup and guest rollback
