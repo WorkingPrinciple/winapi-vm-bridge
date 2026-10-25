@@ -119,3 +119,26 @@ bound to this process/contract/proxy. Official validation must report complete,
 seven calls, sixteen events and zero drops. Only then are all six native
 factory/Create/HRESULT/output cells compared. Post-call failures retain evidence
 and never retry the native operation.
+
+## Generated r02 setup failure
+
+R02 stopped at `wvb_client_configure=-3`, before proxy loading, recording or any
+target CALL. Configure includes TCP, Noise authentication and HELLO/HELLO_ACK;
+it is not a local-only initializer. The guest broker PID2740 exited2 with
+Windows transport error10053. Its monitor saw no target module, and no native
+fixture log was created. This does not establish a WinRT method failure or
+parity. Monitor SHA256
+`8292c67d4c4533e71625dcb2f600e96d09cf18bfb09d6230803b26fdc821eb80`;
+broker stderr `8430a03a89fae8865668282508af912d8b7663b7892ce9c3b7f12079f25680da`.
+
+The original cleanup operation reconciled exit0: exact program/Public/TCP47965/
+local192.168.64.4/remote192.168.64.1 rule removed after prior-filter verification,
+listener and disposable key absent, no task or registration created. Receipt
+SHA256 `d761542420cbff51ef81aa3d5fbdfde0b8c35fb0aa6622eee1d404b212c7fb85`.
+Native r01 and r02 public evidence remain untouched; local disposable r02 keys
+were removed. Two private Calimocho loopback-only controls subsequently proved
+the same WinRT caller can complete configuration with both the original builtin
+pair and the diagnostic pair. These synthetic controls are not native parity.
+Setup diagnostics now preserve the original connection error and emit flushed
+connected/authenticated/backend-ready/activated phase timings, without keys or
+call payloads. R02 is terminal and must not be replayed.

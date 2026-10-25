@@ -451,9 +451,20 @@ async fn serve(config: ServeConfig) -> Result<()> {
     let mut session_handler: Option<Arc<dyn CallHandler>> = None;
     let work = async {
         let (stream, _) = listener.accept().await?;
+        let setup_started = std::time::Instant::now();
+        let report_stage = |stage: &str| -> std::io::Result<()> {
+            println!(
+                "{}",
+                json!({"event":"session-stage", "pid":std::process::id(),
+                    "stage":stage, "elapsed_ms":setup_started.elapsed().as_millis()})
+            );
+            std::io::stdout().flush()
+        };
+        report_stage("connected")?;
         stream.set_nodelay(true)?;
         let (remote, provisional) = session_responder(stream, &broker_key).await?;
         let actor = actor_for_session_key(&registry, &remote)?;
+        report_stage("authenticated")?;
         admitted.reverify_files()?;
         let typed: Arc<dyn CallHandler> = if let Some(slice) = &object_slice {
             let target = target.ok_or("missing admitted object target")?;
@@ -468,6 +479,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
         } else {
             scalar.clone().ok_or("missing scalar dispatcher")?
         };
+        report_stage("backend-ready")?;
         let mut authorized = AuthorizedCallHandler::new(actor, registry.clone(), typed);
         if let Some(slice) = &object_slice {
             authorized = authorized
@@ -492,6 +504,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
             broker_wall_unix_ms: now_ms()?,
         };
         let (_, active) = activate_broker(provisional, &ack, nonce).await?;
+        report_stage("activated")?;
         serve_calls(active, authorized, 1).await?;
         Ok::<_, Box<dyn Error>>(())
     };
