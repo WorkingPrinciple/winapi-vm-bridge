@@ -509,6 +509,26 @@ mod tests {
     fn connect_fixture_with_gate(
         gate: Option<Arc<CallGate>>,
     ) -> (Runtime, tokio::task::JoinHandle<Result<(), BrokerError>>) {
+        let (runtime, server, status) = connect_fixture_with_readiness(
+            gate,
+            wvb_session::READINESS_READY,
+            Duration::ZERO,
+            2000,
+        );
+        assert_eq!(status, WVB_STATUS_OK);
+        (runtime, server)
+    }
+
+    fn connect_fixture_with_readiness(
+        gate: Option<Arc<CallGate>>,
+        readiness: u16,
+        readiness_delay: Duration,
+        setup_budget_ms: u32,
+    ) -> (
+        Runtime,
+        tokio::task::JoinHandle<Result<(), BrokerError>>,
+        i32,
+    ) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let listener = runtime.block_on(TcpListener::bind("127.0.0.1:0")).unwrap();
         let address = listener.local_addr().unwrap().to_string();
@@ -516,6 +536,7 @@ mod tests {
         let server = runtime.spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let (_, provisional) = session_responder(stream, &broker_key).await.unwrap();
+            tokio::time::sleep(readiness_delay).await;
             let ack = HelloAck {
                 selected_minor: 0,
                 features: 0,
@@ -526,13 +547,15 @@ mod tests {
                 broker_epoch: [7; 16],
                 actor_id: [8; 16],
                 readiness: Readiness {
-                    overall_status: 1,
+                    overall_status: readiness,
                     generated_at_unix_ms: 2,
                     source_version: String::from("ffi-test"),
                 },
                 broker_wall_unix_ms: 2,
             };
-            let (_, active) = activate_broker(provisional, &ack, [6; 16]).await.unwrap();
+            let (_, active) = activate_broker(provisional, &ack, [6; 16])
+                .await
+                .map_err(|error| BrokerError::Handler(error.to_string()))?;
             let handler = TestHandler {
                 inner: DispatcherCallHandler::new(
                     [1; 32],
@@ -563,14 +586,56 @@ mod tests {
             actor_id: [8; 16],
             client_instance: [4; 16],
             build_fingerprint: [5; 32],
-            connect_timeout_ms: 2000,
+            connect_timeout_ms: setup_budget_ms,
             call_timeout_ms: 2000,
         };
+        let status = unsafe { wvb_client_configure(&raw const config) };
+        (runtime, server, status)
+    }
+
+    #[test]
+    fn exported_configure_rejects_unready_peer_without_changing_legacy_abi() {
+        let _serial = FFI_TEST_LOCK.lock().unwrap();
+        assert_eq!(wvb_client_reset(), WVB_STATUS_OK);
+        let (runtime, server, status) =
+            connect_fixture_with_readiness(None, 0, Duration::ZERO, 2000);
+        assert_eq!(status, WVB_STATUS_RUNTIME_ERROR);
+        assert!(configured().read().unwrap().is_none());
         assert_eq!(
-            unsafe { wvb_client_configure(&raw const config) },
-            WVB_STATUS_OK
+            unsafe { wvb_client_bind_operation([1; 32].as_ptr(), 1, 2, 3) },
+            WVB_STATUS_NOT_CONFIGURED
         );
-        (runtime, server)
+        let result = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), server)
+                .await
+                .expect("unready peer must be disconnected within the fixture budget")
+                .unwrap()
+        });
+        assert!(
+            matches!(result, Err(BrokerError::Transport(_))),
+            "unready configuration closes the connection without a completed call: {result:?}"
+        );
+    }
+
+    #[test]
+    fn exported_configure_reports_runtime_error_when_backend_readiness_exceeds_budget() {
+        let _serial = FFI_TEST_LOCK.lock().unwrap();
+        assert_eq!(wvb_client_reset(), WVB_STATUS_OK);
+        let (runtime, server, status) = connect_fixture_with_readiness(
+            None,
+            wvb_session::READINESS_READY,
+            Duration::from_millis(150),
+            50,
+        );
+        assert_eq!(status, WVB_STATUS_RUNTIME_ERROR);
+        assert!(configured().read().unwrap().is_none());
+        let result = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(2), server)
+                .await
+                .expect("timed-out setup must release its connection")
+                .unwrap()
+        });
+        assert!(result.is_err());
     }
 
     #[test]

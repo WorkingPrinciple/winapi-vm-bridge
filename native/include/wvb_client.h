@@ -26,6 +26,8 @@ typedef struct WvbClientConfig {
   uint8_t actor_id[16];
   uint8_t client_instance[16];
   uint8_t build_fingerprint[32];
+  /* One setup deadline for TCP, Noise and authenticated ready HELLO_ACK.
+   * A listening socket alone does not mean the native backend is ready. */
   uint32_t connect_timeout_ms;
   uint32_t call_timeout_ms;
 } WvbClientConfig;

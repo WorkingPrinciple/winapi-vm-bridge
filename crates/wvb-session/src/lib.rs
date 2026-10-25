@@ -9,6 +9,7 @@ use wvb_transport::{SecureConnection, TransportError};
 const REQUIRED: u8 = 0x01;
 const PLATFORM_SCHEMA: u32 = 0x1002;
 const READINESS_SCHEMA: u32 = 0x1004;
+pub const READINESS_READY: u16 = 1;
 
 #[derive(Debug)]
 pub enum SessionError {

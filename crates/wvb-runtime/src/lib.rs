@@ -8,7 +8,7 @@ use wvb_call::{CallRequest, CallResult};
 use wvb_client::{Client, ClientError};
 use wvb_control::{ControlMessage, HandleClose, HandleStatus};
 use wvb_crypto::StaticPrivateKey;
-use wvb_session::{Hello, HelloAck, SessionError, activate_client};
+use wvb_session::{Hello, HelloAck, READINESS_READY, SessionError, activate_client};
 use wvb_transport::{TransportError, session_initiator};
 
 #[derive(Debug)]
@@ -18,6 +18,7 @@ pub enum RuntimeError {
     Session(SessionError),
     Client(ClientError),
     ActorMismatch,
+    NotReady(u16),
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -61,6 +62,7 @@ pub struct ClientConfig {
     pub hello_message_id: [u8; 16],
     pub message_nonce: [u8; 8],
     pub queue_capacity: usize,
+    /// One budget for TCP, Noise and authenticated backend readiness; never reset per stage.
     pub connect_timeout: Duration,
 }
 
@@ -73,36 +75,48 @@ pub struct RuntimeClient {
 
 impl RuntimeClient {
     pub async fn connect(config: ClientConfig) -> Result<Self, RuntimeError> {
-        tokio::time::timeout(config.connect_timeout, async {
-            let stream = TcpStream::connect(config.address).await?;
-            stream.set_nodelay(true)?;
-            let provisional =
-                session_initiator(stream, &config.local_private_key, &config.broker_public_key)
-                    .await?;
-            let (ack, connection) =
-                activate_client(provisional, &config.hello, config.hello_message_id).await?;
-            if ack.actor_id != config.expected_actor {
-                return Err(RuntimeError::ActorMismatch);
-            }
-            let client = Client::spawn(
-                connection,
-                ack.connection_epoch,
-                config.message_nonce,
-                config.queue_capacity,
-            );
-            Ok(Self {
-                client,
-                actor_id: ack.actor_id,
-                negotiated: ack,
-            })
-        })
+        // Backend initialization and HELLO_ACK consume the same setup budget as TCP/Noise.
+        let deadline = tokio::time::Instant::now() + config.connect_timeout;
+        let stream = tokio::time::timeout_at(deadline, TcpStream::connect(config.address))
+            .await
+            .map_err(|_| Self::setup_timeout("TCP connection"))??;
+        stream.set_nodelay(true)?;
+        let provisional = tokio::time::timeout_at(
+            deadline,
+            session_initiator(stream, &config.local_private_key, &config.broker_public_key),
+        )
         .await
-        .map_err(|_| {
-            RuntimeError::Io(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "broker connection timed out",
-            ))
-        })?
+        .map_err(|_| Self::setup_timeout("Noise authentication"))??;
+        let (ack, connection) = tokio::time::timeout_at(
+            deadline,
+            activate_client(provisional, &config.hello, config.hello_message_id),
+        )
+        .await
+        .map_err(|_| Self::setup_timeout("HELLO_ACK readiness"))??;
+        if ack.actor_id != config.expected_actor {
+            return Err(RuntimeError::ActorMismatch);
+        }
+        if ack.readiness.overall_status != READINESS_READY {
+            return Err(RuntimeError::NotReady(ack.readiness.overall_status));
+        }
+        let client = Client::spawn(
+            connection,
+            ack.connection_epoch,
+            config.message_nonce,
+            config.queue_capacity,
+        );
+        Ok(Self {
+            client,
+            actor_id: ack.actor_id,
+            negotiated: ack,
+        })
+    }
+
+    fn setup_timeout(stage: &str) -> RuntimeError {
+        RuntimeError::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("broker setup timed out during {stage}"),
+        ))
     }
 
     pub async fn call(
@@ -235,6 +249,15 @@ mod tests {
                     if error.kind() == std::io::ErrorKind::TimedOut),
             "whole connect must time out while activation={stall_activation} is stalled"
         );
+        let error = result.unwrap().err().unwrap().to_string();
+        assert!(
+            error.contains(if stall_activation {
+                "HELLO_ACK readiness"
+            } else {
+                "Noise authentication"
+            }),
+            "setup timeout must identify the pending stage: {error}"
+        );
     }
 
     #[tokio::test]
@@ -245,6 +268,114 @@ mod tests {
     #[tokio::test]
     async fn connect_deadline_includes_stalled_activation() {
         assert_connect_deadline(true).await;
+    }
+
+    async fn connect_with_readiness(
+        status: u16,
+        noise_delay: Duration,
+        readiness_delay: Duration,
+        budget: Duration,
+    ) -> Result<RuntimeClient, RuntimeError> {
+        let (client_key, _) = StaticPrivateKey::generate().unwrap();
+        let (broker_key, broker_public) = StaticPrivateKey::generate().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let broker = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(noise_delay).await;
+            let (_, provisional) = session_responder(stream, &broker_key).await.unwrap();
+            tokio::time::sleep(readiness_delay).await;
+            let ack = HelloAck {
+                selected_minor: 0,
+                features: 0,
+                max_logical_payload: 1_048_576,
+                max_streams: 16,
+                initial_connection_credit: 2_097_152,
+                connection_epoch: 42,
+                broker_epoch: [7; 16],
+                actor_id: [8; 16],
+                readiness: Readiness {
+                    overall_status: status,
+                    generated_at_unix_ms: 2,
+                    source_version: String::from("delayed-backend-fixture"),
+                },
+                broker_wall_unix_ms: 2,
+            };
+            if let Ok((_, active)) = activate_broker(provisional, &ack, [6; 16]).await {
+                let _ = serve_calls(active, Arc::new(Echo), 4).await;
+            }
+        });
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            RuntimeClient::connect(ClientConfig {
+                address,
+                local_private_key: client_key,
+                broker_public_key: broker_public,
+                expected_actor: [8; 16],
+                hello: hello(),
+                hello_message_id: [5; 16],
+                message_nonce: [9; 8],
+                queue_capacity: 16,
+                connect_timeout: budget,
+            }),
+        )
+        .await
+        .expect("bounded readiness fixture must not hang");
+        broker.abort();
+        result
+    }
+
+    #[tokio::test]
+    async fn authenticated_ack_must_report_ready_before_configuration_succeeds() {
+        for status in [0, 2, 3, u16::MAX] {
+            let result = connect_with_readiness(
+                status,
+                Duration::ZERO,
+                Duration::ZERO,
+                Duration::from_secs(1),
+            )
+            .await;
+            assert!(matches!(result, Err(RuntimeError::NotReady(actual)) if actual == status));
+        }
+    }
+
+    #[tokio::test]
+    async fn listening_and_noise_completion_do_not_bypass_backend_readiness_deadline() {
+        let result = connect_with_readiness(
+            READINESS_READY,
+            Duration::ZERO,
+            Duration::from_millis(150),
+            Duration::from_millis(50),
+        )
+        .await;
+        assert!(matches!(result, Err(RuntimeError::Io(ref error))
+            if error.kind() == std::io::ErrorKind::TimedOut
+                && error.to_string().contains("HELLO_ACK readiness")));
+        assert!(
+            connect_with_readiness(
+                READINESS_READY,
+                Duration::ZERO,
+                Duration::from_millis(150),
+                Duration::from_secs(1)
+            )
+            .await
+            .is_ok(),
+            "an explicitly sufficient setup budget must admit a delayed ready backend"
+        );
+    }
+
+    #[tokio::test]
+    async fn readiness_does_not_restart_the_shared_setup_budget_after_noise() {
+        let result = connect_with_readiness(
+            READINESS_READY,
+            Duration::from_millis(300),
+            Duration::from_millis(300),
+            Duration::from_millis(500),
+        )
+        .await;
+        assert!(matches!(result, Err(RuntimeError::Io(ref error))
+            if error.kind() == std::io::ErrorKind::TimedOut
+                && error.to_string().contains("HELLO_ACK readiness")));
     }
 
     #[tokio::test]

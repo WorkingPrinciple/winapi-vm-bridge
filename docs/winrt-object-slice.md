@@ -214,3 +214,44 @@ keys were also removed. Public r01/r02/r03 evidence is retained, with the origin
 host recording and terminal guest receipts copied into persistent session
 artifacts. This qualifies the owned supporting fixture only, not generic WinRT,
 GamingServices, behavioral replacement parity or unchanged-app A04.
+
+## R02 investigation and readiness hardening
+
+R02's host caller began at03:23:33.38Z and returned its configure failure
+at03:23:39.04Z, approximately5.66s later, with a configured whole-setup budget of
+5000ms. Listening had already been observed by03:22:40Z. A subsequent read-only
+metadata query found the guest monitor wrote its terminal outputs around
+03:23:43Z; those are collection times, not native start/exit timestamps, and the
+guest/host clock offset was not measured. Receipt SHA256
+`eafee6e4d99f590fb781c621f258650afae6eafb0a86713f8b3136fc8581932c`.
+The retained receipts do not support claiming a listener-bind race or a
+180-second broker lifetime expiry. The host's prefix warm log overlapped the
+attempt, unlike prewarmed r03; that does not prove prefix initialization caused
+the failure.
+
+The strongest supported hypothesis is expiration of the client's five-second
+setup budget. The old runtime collapsed TCP, Noise authentication and
+HELLO_ACK/backend-readiness timeouts into the same error and C status-3. R02
+captured neither that error detail nor per-stage timings, and guest key transfer
+verified length/ACL rather than byte or derived-public-key equality. Its exact
+historical failing stage and underlying delay therefore remain unproven.
+R03's190ms setup is not retroactive evidence of a specific r02 cause.
+
+Local loopback regressions reproduce configure-3 after an authenticated peer
+delays readiness beyond the configured budget, before any target CALL. A
+sufficient explicitly configured setup budget succeeds. Tests also exposed a
+separate real bug: configuration previously accepted an authenticated
+HELLO_ACK whose readiness status was not ready.
+
+The client now admits only the product's ready status1 and rejects other
+statuses before publishing a configured client. TCP, Noise and HELLO_ACK retain
+the same single absolute deadline, but timeout diagnostics name the pending
+stage. The broker's pre-connection `ready` event preserves its existing name
+for consumers while explicitly reporting `readiness: listener-only` and
+`backend_ready: false`; only the authenticated HELLO_ACK sent after backend
+initialization establishes backend readiness. This setup covers pin checking,
+owner/context initialization and dispatcher loading, not a target activation
+CALL. C ABI layouts, exports, wire format and configured timeout values are
+unchanged. No speculative global timeout increase, sleep, readiness TCP probe
+or automatic retry was added. The regression tests use local synthetic peers;
+no further native VM comparison was needed or performed.
