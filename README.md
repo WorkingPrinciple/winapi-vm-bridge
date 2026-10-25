@@ -252,7 +252,8 @@ thread-scoped registration-free context and real RoGetActivationFactory.
 The native SYSTEM r01 oracle observes unchanged caller output on E_INVALIDARG,
 distinct from COM Automation's zero writeback. The `--demo-winrt` driver requires
 that hash-pinned native baseline and official trace validation before reporting
-six-cell parity. Generated live acceptance is pending; see
+six-cell parity. The generated r03 client matched all six native cells and
+passed the actual official recorder gate with seven calls/sixteen events; see
 [the scope, metadata and evidence](docs/winrt-object-slice.md).
 
 The admission crate's historical scalar/correlated test-authority machinery is
