@@ -4,7 +4,7 @@
 | --- | --- | --- | --- | --- |
 | REQ-WX12-01 | Execute only an operator-pinned WX-07 observer in a named package through the existing authenticated CALL transport, with an independent exact capability grant. No caller-selected commands or paths. | Host tests reject missing, wildcard, expired and wrong-scope grants, changed artifacts, invalid requests and oversized output; existing call behavior is preserved. | Bridge | accepted |
 | REQ-WX12-02 | Require a human-signed-in, active interactive session 1; execute through an interactive scheduled task and Invoke-CommandInDesktopPackage. Return exact output, SHA256, session ID and in-process GetCurrentPackageFamilyName proof. Fail closed on wrong/missing identity and uncertain execution; never retry automatically. | Host tests exercise fail-closed proof/result validation and the generated task boundary. Windows compilation succeeds. Native behavior remains unclaimed until resumed live acceptance. | Bridge | accepted |
-| REQ-WX12-03 | Reproduce historical r9 only after the owner's explicit resume of VM/screen control. | On the authorized guest, pin the generated observer and package, run once in session 1, verify native identity proof and compare the retained exact output to the full historical SHA256 beginning 0a5fee77. Reconcile task/process cleanup. | Owner + Bridge | blocked |
+| REQ-WX12-03 | Reproduce historical r9 after the owner's explicit resume, retaining hash-bound generated output. | On the authorized guest, pin the generated observer and package, run once in session 1, verify native identity proof and semantically compare the three r9 cells: Site B status 0/Flags 5/Origin 3/Attributes 3; claim-only status 0/Flags 5/Origin 3; all-NULL status 0. Reconcile exact task/process cleanup; no credentials or automated sign-in. | Owner + Bridge | in-progress |
 
 ## Corrections
 
@@ -14,6 +14,7 @@
 | 2026-10-25 | add | REQ-WX12-01, REQ-WX12-02 | Commit after each implementation step. |
 | 2026-10-25 | revise | REQ-WX12-01, REQ-WX12-02 | Local game-development use, not a public library: keep one bounded capability and reuse the existing transport; no SDK or generic command-execution framework. |
 | 2026-10-25 | revise | REQ-WX12-02 | PR #16 follow-up: diagnostics read failures/oversize must preserve the observer failure and run path; always check worker-gate structure and explicitly report session-1 runtime-check skips. Host regression checks and same-branch push only; VM/screen STOP unchanged. |
+| 2026-10-25 | revise | REQ-WX12-03 | Owner-directed 15:42 resume relayed by coordinator, bound to sidecar SHA256 0494ca577f87491f5a6df940c6aa8b95bc13d470e19c69dd71024ecf4aff8c44. Bounded WX-12 live acceptance is now authorized. Compare the three r9 cells semantically, not identical raw historical bytes; retain generated-output hashes. If session 1 lacks a signed-in human, stop and report that prerequisite. No credentials, account changes or sign-in automation. |
 
 ## Source acceptance evidence (2026-10-25)
 
