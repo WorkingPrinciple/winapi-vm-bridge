@@ -270,7 +270,9 @@ WX-07 observer run through the existing authenticated call transport. It require
 active interactive session 1 and checks native package identity before accepting
 hash-bound observations. It does not create a sign-in session or control a VM.
 See [configuration, scope and pending native acceptance](docs/package-observer.md).
-The owner's VM-control STOP remains in force; no live WX-12/r9 result is claimed.
+After the owner's explicit resume, a native session-1 package observation was
+retained, but Flags differed from r9 (`0x25` vs `0x5`) and authenticated result
+delivery timed out. WX-12 native acceptance remains incomplete; no parity claim.
 
 ## Source checks
 

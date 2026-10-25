@@ -5,7 +5,9 @@ This is a narrow local game-development capability, not a public execution SDK.
 one named compiled context, once, over the existing authenticated Noise,
 HELLO and CALL/RESULT path. It does not deploy/start/control a VM, create a
 login session, obtain credentials or change accounts. Console sign-in is human.
-**Live acceptance is on hold until the owner explicitly resumes VM control.**
+The owner explicitly resumed bounded live acceptance at 15:42 on 2026-10-25.
+The resumed run observed real package-context output but failed the exact r9
+Flags comparison and authenticated result-return criterion; see below.
 
 ## Operator configuration
 
@@ -89,6 +91,10 @@ Invoke-CommandInDesktopPackage -PackageFamilyName PFN -AppId APP
 Those are WX-07's exact arguments. The interactive user receives read/execute
 access to the staged inputs and modify access to the separate output directory.
 No password, logon automation, session-0 fallback or headless package claim exists.
+At the PowerShell boundary, Rust's canonical `\\?\C:\...` form is converted
+to a local drive path; UNC/non-drive staging is rejected. The scheduled worker
+uses the pinned staged script source as an encoded inline command, not `-File`;
+no user/machine execution-policy setting is changed.
 The script waits for the atomically published output and task completion.
 It retains its exact task and run directory on success as well as failure.
 In particular, a task exit 0 does not delete the task before the broker has
@@ -145,7 +151,7 @@ cargo build -p wvb-client-ffi --features cli --bin wvb --target x86_64-pc-window
 pwsh -NoLogo -NoProfile -File tests/test_package_observer.ps1
 ```
 
-**REQ-WX12-03 remains blocked.** After explicit owner resume, and not before:
+The original acceptance procedure (now authorized, but not fully passed):
 
 1. Have the owner sign into guest session 1. Verify the exact guest/OS build,
    native DLL hash, package version/PFN/AppId and WX-07 source/build identity.
@@ -175,3 +181,91 @@ pwsh -NoLogo -NoProfile -File tests/test_package_observer.ps1
 
 Windows compilation and host mocks do not qualify scheduled-task execution,
 desktop-package activation, session identity, r9 parity or native cleanup.
+
+## Resumed native r02 result
+
+**Not accepted as r9 parity or successful authenticated output delivery.**
+The explicit owner resume sidecar SHA256 was
+`0494ca577f87491f5a6df940c6aa8b95bc13d470e19c69dd71024ecf4aff8c44`.
+The pinned UTM wrapper and step runner were verified before use:
+`f3c11beec8737b8b2e2c0df705a83ddccedbc901f5d36faa6ae85ccf0a934559`
+and `dd181f65fec68384242380a6fa123a1cb07a354adf4056c82748780d01bbc9fe`.
+The guest was `Whiny-Windows11-x64`,
+UUID `F659FCF2-AC83-4072-86A6-F7538781A1FC`, computer `WHINY`, x64,
+OS `10.0.26300.0`; a session-1 Explorer process was already signed in.
+GamingApp was `2610.1001.20.0`, PFN/AppId as above. No credentials,
+account changes, sign-in automation, snapshots or VM lifecycle changes occurred.
+
+The installed Whiny was `0.4.0+dev.663438d`, reported by its owner as the
+content squashed into main `b13d02a`. Its unedited generated EXE observed the
+three explicit TokenHandle -6 shapes in one named package context. Pins:
+
+| Input/evidence | SHA256 |
+| --- | --- |
+| Replace contract | `cb1f4e1363e017aaae3dec48367f1b837af2ce7133cb9f652135498e9b8b375b` |
+| Shapes | `a775d955687f4af0d49dae5a49cc217f1124ed79425339018811f4936d566c1a` |
+| Generated C source | `e85a6f0bcf8d0f8fd16cbe2aa4a6ec91b559d87721872d247efa8422c63b8d5f` |
+| Generated observer EXE | `111591c19b6069dc2ca3243a8fb28adab7f99d249a08503ac51de2f2dc30624d` |
+| Native ntdll.dll | `651ac9041af8e6b5ebd331d53163244c0a27d36d1433f0f15cac1f28c5f2e82c` |
+| Execution plan | `e5dc5bef360289d385c38efe050ff019a04b1b4f1214241ff344e951772b3bfb` |
+| r02 guest broker EXE | `73501cd662d9b675df73e820427e502500384a2479e14857db3d9518c911aa7d` |
+| Recovered observations.json (2800 bytes) | `5d194d8f568db5539d90e81ba5619513de87d9b8b1f18973790df56c6fcb7e15` |
+
+The first connected r01 reached authenticated HELLO/backend activation but
+failed before task creation: PowerShell 5 `Join-Path` rejected Rust's verbatim
+canonical path. After reconciling no observer launch, `a512b95` fixed the local
+drive-path boundary and switched the worker to inline source without changing
+the guest's restricted file-execution policy. No raw-output success was
+fabricated for r01.
+
+Fresh r02 used separate ephemeral Noise identities and both exact, ten-minute
+Invoke/PackageObserver grants. Guest broker PID1176 reached authenticated,
+backend-ready and activated stages. Its single operation created task
+`wvb-observer-3599e101917115acddd72b1428cfee72` under
+`C:\WhinyLane\wvb-wx12-r02`. The task's observed LastRunTime was
+`2026-10-25T13:57:08Z`; LastResult was 0, terminal state Ready and instances 0.
+Its output records `observer_mode=native`, session `"1"`,
+`GetCurrentPackageFamilyName=0` and the exact expected PFN and input/module pins.
+
+| Shape | Native result | Native effects | r9 comparison |
+| --- | --- | --- | --- |
+| Site B: claim + attributes | `0` | Flags `0x25`, Origin `3`, AttributesPresent `3` | **FAIL**: Flags expected `0x5` |
+| Claim only | `0` | Flags `0x25`, Origin `3` | **FAIL**: Flags expected `0x5` |
+| All NULL | `0` | Supplied-pointer effects unchanged | Match |
+
+Do not mask off `0x20`, reinterpret Flags `0x25` as `0x5`, modify frozen
+replacement cells, or attribute the difference to a cause not yet demonstrated.
+The generated EXE and historical DLL harness are distinct; the output is
+evidence of this run, not parity with the historical observer.
+
+The task output was published, but the broker's 68000ms launcher deadline
+expired; its retained process handle observed broker exit2. The authenticated
+client received failure and no result body. The exact output was subsequently
+recovered read-only through UTM file pull, with matching guest/host SHA256.
+This is **not** a successful CALL result, and recovery is not an automatic
+retry. Native task setup/polling timing remains unresolved; no new unobserved
+deadline workaround is represented as a fix.
+
+Cleanup exported the exact terminal task XML, checked zero task instances and
+no exact-path broker/observer processes, deleted that task only, deleted both
+exact r01/r02 program/IP/port-bound firewall rules, and removed guest
+`server.key`/`serve.json` plus ephemeral host keys. A separate read-only check
+verified task/rule/key/config absence, no exact-path owned processes and
+unchanged output hash. Evidence directories remain. The observer had no
+retained OS process handle; process absence is a snapshot, not an exit-code
+attestation.
+
+Full raw output, source inputs and source-pinned wrapper receipts are retained
+in session artifacts:
+`/Users/dragoshont/.copilot/session-state/df48ff55-d4bc-4780-9ba0-1212a667e723/files/`
+(`wx12-r02/observations.json`, `wx12-*-observed.jsonl`).
+REQ-WX12-03 remains blocked by the observed Flags mismatch and missing
+authenticated result delivery, not by a missing human sign-in.
+
+Final source checks on the path/worker fix passed: 163 workspace tests,
+workspace formatting and all-targets/all-features clippy, Windows x64 GNU
+release executable build/target clippy, and PowerShell host refusal/ACL/
+diagnostic tests. Official installed `whiny replace --observations` accepted
+the recovered file as three cells in the selected context and bound the same
+output hash. That roundtrip generated scratch files only; no frozen fixture,
+replacement cell or deployed application was changed.

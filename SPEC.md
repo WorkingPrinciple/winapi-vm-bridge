@@ -4,7 +4,7 @@
 | --- | --- | --- | --- | --- |
 | REQ-WX12-01 | Execute only an operator-pinned WX-07 observer in a named package through the existing authenticated CALL transport, with an independent exact capability grant. No caller-selected commands or paths. | Host tests reject missing, wildcard, expired and wrong-scope grants, changed artifacts, invalid requests and oversized output; existing call behavior is preserved. | Bridge | accepted |
 | REQ-WX12-02 | Require a human-signed-in, active interactive session 1; execute through an interactive scheduled task and Invoke-CommandInDesktopPackage. Return exact output, SHA256, session ID and in-process GetCurrentPackageFamilyName proof. Fail closed on wrong/missing identity and uncertain execution; never retry automatically. | Host tests exercise fail-closed proof/result validation and the generated task boundary. Windows compilation succeeds. Native behavior remains unclaimed until resumed live acceptance. | Bridge | accepted |
-| REQ-WX12-03 | Reproduce historical r9 after the owner's explicit resume, retaining hash-bound generated output. | On the authorized guest, pin the generated observer and package, run once in session 1, verify native identity proof and semantically compare the three r9 cells: Site B status 0/Flags 5/Origin 3/Attributes 3; claim-only status 0/Flags 5/Origin 3; all-NULL status 0. Reconcile exact task/process cleanup; no credentials or automated sign-in. | Owner + Bridge | in-progress |
+| REQ-WX12-03 | Reproduce historical r9 after the owner's explicit resume, retaining hash-bound generated output. | On the authorized guest, pin the generated observer and package, run once in session 1, verify native identity proof and semantically compare the three r9 cells: Site B status 0/Flags 5/Origin 3/Attributes 3; claim-only status 0/Flags 5/Origin 3; all-NULL status 0. Reconcile exact task/process cleanup; no credentials or automated sign-in. | Owner + Bridge | blocked |
 
 ## Corrections
 
@@ -65,3 +65,22 @@ Final checks: 163 workspace tests passed (12 CLI binary tests), workspace fmt
 and all-targets/all-features clippy passed, Windows x64 GNU CLI build and
 target clippy passed, PowerShell host regressions passed. Native acceptance
 and the owner STOP remain unchanged.
+
+## Resumed native observation (2026-10-25, after 15:42)
+
+The owner resume above supersedes the earlier STOP/blocked-by-consent text.
+REQ-WX12-03 is now blocked by **observed acceptance failures**, not sign-in:
+the task produced native session-1 package proof, but claim Flags were `0x25`,
+not historical `0x5`, and the broker launcher deadline expired instead of
+returning the generated output through CALL. No automatic observer replay
+followed the timed-out call. Details and full pins are in
+[docs/package-observer.md](docs/package-observer.md#resumed-native-r02-result).
+
+The raw 2800-byte output was recovered by a read-only exact-path pull:
+SHA256 `5d194d8f568db5539d90e81ba5619513de87d9b8b1f18973790df56c6fcb7e15`.
+Task LastResult was 0, task instances 0 and broker retained-handle exit was 2.
+Exact task, both scoped firewall rules, guest keys/grant configs and ephemeral
+host keys were removed. Independent follow-up verified absence of the task,
+rules, sensitive guest files and exact-path owned processes, with unchanged
+output hash. No retained observer process handle was collected; do not upgrade
+the process snapshot to an OS-exit attestation.
