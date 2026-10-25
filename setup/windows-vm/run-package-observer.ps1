@@ -128,6 +128,17 @@ if ($Worker) {
         # Names are restricted by the Rust plan parser; paths use Windows argv quoting.
         $arguments = '--context ' + $plan.context + ' --out "' + $output + '"'
         $step = 'desktop-package-launch'
+        $activation = @{
+            chain = 'interactive-session-1-task -> Invoke-CommandInDesktopPackage -> observer'
+            worker_session_id = [Diagnostics.Process]::GetCurrentProcess().SessionId
+            worker_pid = $PID
+            package_family_name = $plan.package_family_name
+            app_id = $plan.app_id
+            prevent_breakaway = $true
+            source = 'wrapper-declared launch parameters, not native claim-bit attestation'
+        }
+        [IO.File]::WriteAllText((Join-Path $Stage 'output\activation-control.json'),
+            ($activation | ConvertTo-Json -Compress))
         Invoke-CommandInDesktopPackage -PackageFamilyName $plan.package_family_name `
             -AppId $plan.app_id -Command $observer -Args $arguments -PreventBreakaway | Out-Null
         $step = 'observer-output-wait'
@@ -177,14 +188,16 @@ Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal
 $started = [DateTime]::Now
 Start-ScheduledTask -TaskName $taskName
 $deadline = [DateTime]::UtcNow.AddMilliseconds($plan.timeout_ms + 5000)
+$scheduler = New-Object -ComObject Schedule.Service
+$scheduler.Connect()
+$taskFolder = $scheduler.GetFolder('\')
 while ($true) {
-    $task = Get-ScheduledTask -TaskName $taskName
-    $info = Get-ScheduledTaskInfo -TaskName $taskName
-    if ($info.LastRunTime -ge $started.AddSeconds(-1) -and $task.State -ne 'Running' -and
-        $info.LastTaskResult -ne 267009) {
-        if ($info.LastTaskResult -ne 0) {
+    $task = $taskFolder.GetTask($taskName)
+    if ($task.LastRunTime -ge $started.AddSeconds(-1) -and $task.State -ne 4 -and
+        $task.GetInstances(0).Count -eq 0 -and $task.LastTaskResult -ne 267009) {
+        if ($task.LastTaskResult -ne 0) {
             $detail = Get-WorkerFailure $outputDir
-            throw "Owned task failed ($($info.LastTaskResult)): $detail; retain task and run directory; no replay."
+            throw "Owned task failed ($($task.LastTaskResult)): $detail; retain task and run directory; no replay."
         }
         if (-not (Test-Path -LiteralPath $output)) { throw 'Task exited without observer output.' }
         # Retain even terminal tasks: proof validation happens in the broker afterward.
