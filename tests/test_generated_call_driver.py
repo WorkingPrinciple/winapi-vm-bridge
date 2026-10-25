@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -7,7 +8,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from setup.run_generated_call import (
-    compare_com_oracle, read_com_oracle, run_call, run_com_demo, run_com_proxy, run_pid_demo, run_proxy_call,
+    compare_com_oracle, main, read_com_oracle, run_call, run_com_demo, run_com_proxy, run_pid_demo,
+    run_proxy_call,
 )
 
 
@@ -144,6 +146,51 @@ class GeneratedCallDriverTests(unittest.TestCase):
                                  root / "must-not-create", native, "0" * 64)
                 launch.assert_not_called()
                 self.assertFalse((root / "must-not-create").exists())
+
+    def test_com_oracle_rejects_malformed_native_evidence_before_runtime(self):
+        baseline = [
+            {"event": "oracle", "input": 41, "hresult": 0, "output": 42, "caller_pid": 6084},
+            {"event": "oracle-error", "hresult": -2147024809, "output": 0},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, field, value in (
+                    (0, "caller_pid", 0), (0, "input", 42), (0, "hresult", False),
+                    (1, "output", 0xa5a5a5a5), (1, "output", False),
+                    (1, "hresult", 0), (1, "event", "transport-error")):
+                with self.subTest(field=field, value=value):
+                    rows = [dict(row) for row in baseline]
+                    rows[index][field] = value
+                    native = root / "native.stdout"
+                    native.write_text("\n".join(json.dumps(row) for row in rows))
+                    pin = hashlib.sha256(native.read_bytes()).hexdigest()
+                    with patch("setup.run_generated_call.run_isolated_demo") as launch:
+                        with self.assertRaisesRegex(ValueError, "observed OOP fixture baseline"):
+                            run_com_demo(root / "wine", "0" * 64, "0" * 64, root / "caller",
+                                         root / "proxy", root / "pair", root / "config",
+                                         root / "runtime", native, pin)
+                        launch.assert_not_called()
+            generated = root / "generated.stdout"
+            for rows in ([], [baseline[0]], [[], {}], [{}, {}]):
+                generated.write_text("\n".join(json.dumps(row) for row in rows))
+                with self.assertRaisesRegex(ValueError, "comparison rows are malformed"):
+                    compare_com_oracle(baseline, generated)
+
+    def test_com_oracle_cli_options_are_paired_and_com_only(self):
+        for options in (
+                ["--demo-com", "--oracle-stdout", "native"],
+                ["--demo-com", "--oracle-sha256", "0" * 64],
+                ["--demo-pid", "--oracle-stdout", "native", "--oracle-sha256", "0" * 64],
+                ["--oracle-stdout", "native", "--oracle-sha256", "0" * 64]):
+            with self.subTest(options=options), \
+                    patch("sys.argv", ["driver", "--proxy-caller", "caller", "--config", "config", *options]), \
+                    patch("sys.stderr", new_callable=io.StringIO) as error, \
+                    patch("setup.run_generated_call.run_com_demo") as launch:
+                with self.assertRaises(SystemExit) as failure:
+                    main()
+                self.assertEqual(failure.exception.code, 2)
+                self.assertIn("paired option for --demo-com only", error.getvalue())
+                launch.assert_not_called()
 
     def test_com_recording_must_be_complete_paired_and_bound(self):
         for mode in ("good", "unmatched", "wrong-hash", "empty", "release-failed"):
