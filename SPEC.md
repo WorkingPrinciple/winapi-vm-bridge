@@ -13,6 +13,7 @@
 | 2026-10-25 | add | REQ-WX12-01, REQ-WX12-02, REQ-WX12-03 | Source-only: no VM start/control/snapshot/exec or screen/input actions. Host build/tests only. Console sign-in is a human prerequisite; no credentials, account changes or sign-in automation. |
 | 2026-10-25 | add | REQ-WX12-01, REQ-WX12-02 | Commit after each implementation step. |
 | 2026-10-25 | revise | REQ-WX12-01, REQ-WX12-02 | Local game-development use, not a public library: keep one bounded capability and reuse the existing transport; no SDK or generic command-execution framework. |
+| 2026-10-25 | revise | REQ-WX12-02 | PR #16 follow-up: diagnostics read failures/oversize must preserve the observer failure and run path; always check worker-gate structure and explicitly report session-1 runtime-check skips. Host regression checks and same-branch push only; VM/screen STOP unchanged. |
 
 ## Source acceptance evidence (2026-10-25)
 
@@ -43,3 +44,22 @@ The full historical SHA256/output must be recovered; a prefix is not a pin.
 Generated provenance changes output bytes, so literal historical hash equality
 must not be inferred from matching r9 cells or silently replaced by that weaker
 criterion. This oracle discrepancy remains explicit for resumed acceptance.
+
+## PR #16 follow-up (2026-10-25)
+
+Both minor review findings reproduced against the current source. Launcher
+diagnostics now read at most 16 KiB without displacing the observer-failure
+message, retained run path or no-replay warning when the file is oversized,
+missing or unreadable. Read errors are included as diagnostic detail.
+Host regressions cover those cases and normal stderr.
+
+The PowerShell test always extracts/checks the worker gate before the
+session-specific runtime branch; session 1 explicitly warns about skipped
+runtime refusal checks. A source regression guards that ordering/warning.
+An isolated host-only session-1 simulation also verified the warning and
+rejected a missing-worker-gate mutant without native WTS/task/VM execution.
+
+Final checks: 163 workspace tests passed (12 CLI binary tests), workspace fmt
+and all-targets/all-features clippy passed, Windows x64 GNU CLI build and
+target clippy passed, PowerShell host regressions passed. Native acceptance
+and the owner STOP remain unchanged.

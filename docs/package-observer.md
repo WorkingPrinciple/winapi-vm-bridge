@@ -95,6 +95,9 @@ In particular, a task exit 0 does not delete the task before the broker has
 validated the observation proof. Worker failures retain bounded step/reason
 diagnostics in `output/worker-error.json`, surfaced by the launcher as errors,
 never as accepted observations.
+Launcher stderr is capped at 16 KiB when returned in an error; oversized or
+unavailable diagnostics never replace the observer-failure message and retained
+run-directory path.
 The host launcher is separately deadline-bounded; terminating it does not
 terminate or prove quiescence of the task/observer. Nothing retries automatically.
 

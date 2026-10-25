@@ -307,17 +307,31 @@ fn execute(plan: &Plan, observer: &[u8], root: &Path) -> Result<Vec<u8>> {
         std::thread::sleep(Duration::from_millis(100));
     };
     if !status.success() {
-        let stderr = bounded_read(&diagnostics, 16_384)?;
-        return Err(format!(
-            "observer task failed; run {}; completion/quiescence may be unknown; no replay: {}",
-            stage.display(),
-            String::from_utf8_lossy(&stderr)
-        )
-        .into());
+        return Err(task_failure(&stage, &diagnostics).into());
     }
     let path = resolve_regular_file(&canonical_root(&stage.join("output"))?, "observations.json")?;
     let bytes = bounded_read(&path, plan.max_output_bytes)?;
     encode_result(plan, &bytes, &stage)
+}
+
+#[cfg(any(windows, test))]
+fn task_failure(stage: &Path, diagnostics: &Path) -> String {
+    use std::io::Read;
+
+    let mut bytes = Vec::new();
+    let read =
+        std::fs::File::open(diagnostics).and_then(|file| file.take(16_384).read_to_end(&mut bytes));
+    let detail = match read {
+        Ok(_) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(error) => format!(
+            "{} [launcher diagnostics unavailable or incomplete: {error}]",
+            String::from_utf8_lossy(&bytes)
+        ),
+    };
+    format!(
+        "observer task failed; run {}; completion/quiescence may be unknown; no replay: {detail}",
+        stage.display()
+    )
 }
 
 #[cfg(any(windows, test))]
@@ -386,6 +400,58 @@ pub(super) async fn serve(config: Config) -> Result<()> {
 mod tests {
     use super::*;
     use wvb_authz::Grant;
+
+    #[test]
+    fn task_failure_preserves_run_identity_when_diagnostics_are_oversized_or_unavailable() {
+        let directory = tempfile::tempdir().unwrap();
+        let stage = directory.path().join("retained-run");
+        let diagnostics = directory.path().join("launcher.stderr");
+        let assert_failure = |message: &str| {
+            assert!(message.contains("observer task failed"), "{message}");
+            assert!(message.contains(&stage.display().to_string()), "{message}");
+            assert!(
+                message.contains("completion/quiescence may be unknown; no replay"),
+                "{message}"
+            );
+        };
+        let message = task_failure(&stage, &diagnostics);
+        assert_failure(&message);
+        assert!(message.contains("diagnostics unavailable or incomplete"));
+
+        std::fs::write(
+            &diagnostics,
+            [vec![b'x'; 16_384], b"DO_NOT_READ".to_vec()].concat(),
+        )
+        .unwrap();
+        let message = task_failure(&stage, &diagnostics);
+        assert_failure(&message);
+        assert!(message.ends_with(&"x".repeat(16_384)));
+        assert!(!message.contains("DO_NOT_READ"));
+
+        let message = task_failure(&stage, directory.path());
+        assert_failure(&message);
+        assert!(message.contains("diagnostics unavailable or incomplete"));
+
+        std::fs::write(&diagnostics, b"specific worker failure").unwrap();
+        let message = task_failure(&stage, &diagnostics);
+        assert_failure(&message);
+        assert!(message.ends_with("specific worker failure"));
+    }
+
+    #[test]
+    fn host_worker_gate_check_precedes_session_specific_runtime_checks() {
+        let test = include_str!("../../../../../tests/test_package_observer.ps1");
+        let lookup = test.find("$worker = $ast.Find(").unwrap();
+        let gate = test.find("if ($null -eq $worker)").unwrap();
+        let conditional = test
+            .find("if ([System.Diagnostics.Process]::GetCurrentProcess().SessionId -ne 1)")
+            .unwrap();
+        let runtime = test.find("$workerBody = [scriptblock]::Create(").unwrap();
+        assert!(lookup < gate && gate < conditional && conditional < runtime);
+        assert!(test.contains(
+            "Write-Warning 'Session 1: worker-gate structure checked; runtime worker-refusal checks skipped.'"
+        ));
+    }
 
     fn plan() -> Plan {
         Plan {

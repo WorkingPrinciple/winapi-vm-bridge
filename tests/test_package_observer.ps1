@@ -82,19 +82,21 @@ try {
     if (-not (& $diagnosticCheck $outputDir).Contains('oversized')) {
         throw 'Oversized worker diagnostics accepted.'
     }
-    if ([System.Diagnostics.Process]::GetCurrentProcess().SessionId -ne 1) {
     $worker = $ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.IfStatementAst] -and
             $node.Extent.Text.StartsWith('if ($Worker)')
     }, $true)
     if ($null -eq $worker) { throw 'Missing worker gate.' }
-    $workerBody = [scriptblock]::Create('& ' + $worker.Clauses[0].Item2.Extent.Text)
+    if ([System.Diagnostics.Process]::GetCurrentProcess().SessionId -ne 1) {
+        $workerBody = [scriptblock]::Create('& ' + $worker.Clauses[0].Item2.Extent.Text)
         Assert-Refusal $workerBody 'not in session 1'
         $detail = & $diagnosticCheck $outputDir
         if (-not $detail.Contains('session-check') -or -not $detail.Contains('not in session 1')) {
             throw 'Real worker refusal did not retain its specific reason.'
         }
+    } else {
+        Write-Warning 'Session 1: worker-gate structure checked; runtime worker-refusal checks skipped.'
     }
 } finally {
     Remove-Item -LiteralPath (Join-Path $outputDir 'worker-error.json') -ErrorAction SilentlyContinue
