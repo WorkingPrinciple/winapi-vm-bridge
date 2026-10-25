@@ -33,7 +33,7 @@ use wvb_native_host::object::{ObjectSession, ObjectSlice};
 use wvb_native_host::{
     ComRegistrationScope, ComTargetConfig, NativeDispatcher, NativeHostConfig, WinrtTargetConfig,
 };
-use wvb_session::{HelloAck, Readiness, activate_broker};
+use wvb_session::{HelloAck, READINESS_READY, Readiness, activate_broker};
 use wvb_transport::session_responder;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -445,6 +445,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
         .map_err(|_| "session nonce generation failed")?;
     let epoch = u64::from_le_bytes(nonce[..8].try_into()?);
     let ready = json!({"event":"ready", "pid": std::process::id(),
+        "readiness":"listener-only", "backend_ready":false,
         "listen": listener.local_addr()?.to_string(), "lifetime_ms":config.lifetime_ms});
     println!("{ready}");
     std::io::stdout().flush()?;
@@ -497,7 +498,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
             broker_epoch: nonce,
             actor_id: actor,
             readiness: Readiness {
-                overall_status: 1,
+                overall_status: READINESS_READY,
                 generated_at_unix_ms: now_ms()?,
                 source_version: env!("CARGO_PKG_VERSION").into(),
             },

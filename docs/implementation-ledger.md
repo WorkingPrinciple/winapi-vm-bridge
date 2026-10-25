@@ -78,6 +78,12 @@ proves broker OS exit0, and exact-owned rule/key cleanup is reconciled. External
 DLL sampling missed the run; module identity relies on the in-process backend
 gate, not an independently sampled loaded-image hash. See
 [the bounded WinRT slice](winrt-object-slice.md).
+Connection setup now requires an authenticated ready HELLO_ACK, not just a
+listening socket or successful Noise exchange. All setup phases share one
+absolute configured deadline, with phase-specific timeout diagnostics. R02's
+historical failing stage remains unproven; local regressions reproduce the
+readiness-timeout/-3 path and reject unready acknowledgments without a target
+call or automatic retry.
 The process crate is a codec, not a process executor.
 No general Windows service installer, pairing command or automatic key
 provisioner is implied by these two commands.
