@@ -175,9 +175,12 @@ impl ContractSlice {
             let schema = operations
                 .get(&operation.id)
                 .ok_or("unadmitted object operation")?;
-            let expected = if slice.abi == "com-u32-v1" && operation.id == slice.method_operation_id
-            {
-                "zero-on-failure"
+            let expected = if operation.id == slice.method_operation_id {
+                if slice.abi == "com-u32-v1" {
+                    "zero-on-failure"
+                } else {
+                    "unchanged-on-failure"
+                }
             } else {
                 "success-only"
             };
@@ -657,7 +660,7 @@ mod tests {
             },
             "operations":(1..=4).map(|id| json!({
                 "id":id,"request_schema_id":id*2,"response_schema_id":id*2+1,
-                "native_error":{"output_validity":"success-only"}
+                "native_error":{"output_validity":if id==3 {"unchanged-on-failure"} else {"success-only"}}
             })).collect::<Vec<_>>()
         });
         let validate = |value| {
@@ -669,6 +672,15 @@ mod tests {
         for index in 0..4 {
             let mut bad = contract.clone();
             bad["operations"][index]["native_error"]["output_validity"] = json!("zero-on-failure");
+            assert!(validate(bad).is_err());
+        }
+        let mut bad = contract.clone();
+        bad["operations"][2]["native_error"]["output_validity"] = json!("success-only");
+        assert!(validate(bad).is_err());
+        for index in [0, 1, 3] {
+            let mut bad = contract.clone();
+            bad["operations"][index]["native_error"]["output_validity"] =
+                json!("unchanged-on-failure");
             assert!(validate(bad).is_err());
         }
         for (field, value) in [
@@ -735,7 +747,12 @@ mod tests {
                 .validated_object(&operations)
         };
         assert!(validate(contract.clone()).unwrap().is_some());
-        for bad in ["success-only", "unchanged", "unknown"] {
+        for bad in [
+            "success-only",
+            "unchanged",
+            "unchanged-on-failure",
+            "unknown",
+        ] {
             let mut changed = contract.clone();
             changed["operations"][1]["native_error"]["output_validity"] = json!(bad);
             assert!(validate(changed).is_err());

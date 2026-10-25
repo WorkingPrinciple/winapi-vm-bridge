@@ -20,11 +20,11 @@ not invalidate an instance. Failed creation publishes a zero token; capacity
 failures release unpublished native references. Disconnect releases all live
 references on the owner thread before apartment/context destruction.
 
-All WinRT operations require `output_validity: success-only`. Failed typed
-responses normalize their wire output to zero, but the generated facade must
-leave its caller's UINT32 untouched. COM's observed OOP zero-on-failure policy
-does not apply to WinRT. Transport/dispatch/protocol failures are separate from
-native HRESULTs.
+The WinRT method requires `output_validity: unchanged-on-failure`; activation,
+creation and close require `success-only`. Failed typed responses normalize
+their wire output to zero, but the generated facade leaves its caller's UINT32
+untouched. COM's observed OOP zero-on-failure policy does not apply to WinRT.
+Transport/dispatch/protocol failures are separate from native HRESULTs.
 
 ## Registration-free native composition
 
@@ -62,6 +62,7 @@ Build in a new output directory:
 
 ```sh
 WVB_WINRT_OUT="$PWD/out/winrt-scalar-new" \
+WVB_WINRT_IMPORT_LIBRARY="/absolute/path/to/matched/libwvb_autoconfig.dll.a" \
   sh native/fixtures/winrt-scalar/build.sh
 ```
 
@@ -74,3 +75,47 @@ contains actual process/thread identities and reference lifecycle events.
 Native Windows observation, generated Calimocho comparison, official
 `whiny trace` validation and exact-owned cleanup remain acceptance gates.
 Compilation and mock-owner tests are source evidence only, not runtime parity.
+
+## Native r01 observation
+
+The real Windows oracle ran once in SYSTEM/session0 (PID2088/thread2928), with
+retained-handle OS exit0. Factory and instance vtable module paths were both
+`C:\WhinyLane\wvb-winrt-r01\Wvb.Test.WvbScalarRuntimeClass.dll`, SHA256
+`06352f3363f16415589815641b3866b10bfcfb09f69298d0aeb613175881bc03`.
+Factory activation and Create returned S_OK; Transform41 returned S_OK/output42;
+TransformMAX returned E_INVALIDARG with caller output2779096485 (`A5A5A5A5`)
+unchanged. The factory was released before the instance's three native calls.
+No registry, task, firewall, broker, protocol key, display or input changes.
+
+Oracle stdout SHA256
+`726aa5b6cbae70684f8b54889a3256b5af231dfc78ccd7690d6e698e60ca7e40`;
+native log `122a7a3472c8f09607a45de798c4a044bd2a36d7c34fa544904015f89dfcb7fe`;
+guest collection `4b3ca4adfacb2a96a53c64c2541857b98b0e213bd6cec8df8faf4eacaa7a4d42`.
+This observed result is the WinRT `unchanged-on-failure` baseline adopted by
+Whiny `dfea21e`, not an inference from COM's different Automation behavior.
+Generated end-to-end parity and recorder acceptance are still pending.
+
+## Generated comparison gate
+
+Whiny `dfea21e` emits the unchanged-on-failure method policy and brace-free
+recorder targets. Object slices emit sources only: do not select the generator's
+`--input-root` adapter-bundle packaging mode, which does not describe these object
+exports. The operator-reviewed descriptor/admission remains the existing bounded
+composition, not generalized Whiny object-bundle packaging.
+
+The owned caller checks IUnknown/IInspectable/custom-IID identity, exactly the
+admitted GetIids result, unsupported class-name/trust queries, reserved slots,
+NULL-out rejection, factory close before instance use and independent final
+release. Raw lease probes test epoch/generation/type and swapped-role close
+rejection plus surviving instance use and stale-close rejection. Method/create
+wrong-role CALLs are source-tested; the broker terminates such invalid CALLs,
+so they must not be presented as live nonterminal dispatch-error responses.
+
+`--demo-winrt` reuses the private-prefix/wineserver lifecycle. It requires the
+pinned native stdout and actual pinned `whiny trace` executable. The original
+proxy-written recording must contain seven paired outcomes (factory, Create,
+factory close, local NULL-out, success method, failed method, instance close),
+bound to this process/contract/proxy. Official validation must report complete,
+seven calls, sixteen events and zero drops. Only then are all six native
+factory/Create/HRESULT/output cells compared. Post-call failures retain evidence
+and never retry the native operation.

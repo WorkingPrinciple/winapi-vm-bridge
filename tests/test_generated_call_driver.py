@@ -9,11 +9,149 @@ from unittest.mock import Mock, patch
 
 from setup.run_generated_call import (
     compare_com_oracle, main, read_com_oracle, run_call, run_com_demo, run_com_proxy, run_pid_demo,
-    run_proxy_call,
+    run_proxy_call, run_object_proxy, run_winrt_demo, read_winrt_oracle,
 )
 
 
 class GeneratedCallDriverTests(unittest.TestCase):
+    def winrt_inputs(self, root):
+        arguments, rows, value = self.com_inputs(root)
+        contract = {
+            "target":{"relative_path":"Wvb.Test.WvbScalarRuntimeClass.dll"},
+            "object_slice":{
+                "abi":"winrt-u32-v1","method_slot":8,"factory_method_slot":7,
+                "interface_iid":"5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A52",
+                "activation":{"kind":"winrt-factory","runtime_class":"Wvb.Test.WvbScalarRuntimeClass",
+                    "factory_iid":"5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A51"},
+            },
+        }
+        Path(value["contract_path"]).write_text(json.dumps(contract))
+        value["contract_sha256"] = list(hashlib.sha256(Path(value["contract_path"]).read_bytes()).digest())
+        arguments[3].write_text(json.dumps(value))
+        rows[0].update(create_hresult=0, factory_references=0, instance_alive_unload_hresult=1)
+        rows[1]["output"] = 0xa5a5a5a5
+        rows[2]["recording"] = True
+        rows[3].update(role_swapped_close=True, factory_closed=True, instance_survived=True)
+        return arguments, rows, value
+
+    def native_winrt_rows(self):
+        path = r"C:\WhinyLane\wvb-winrt-r01\Wvb.Test.WvbScalarRuntimeClass.dll"
+        return [
+            {"event":"factory","hresult":0,"caller_pid":2088,"thread":2928},
+            {"event":"module","role":"factory","path":path},
+            {"event":"create","hresult":0},
+            {"event":"module","role":"instance","path":path},
+            {"event":"oracle","hresult":0,"output":42},
+            {"event":"oracle-error","hresult":-2147024809,"output":0xa5a5a5a5},
+        ]
+
+    def test_winrt_seven_call_recording_has_distinct_factory_and_instance_lifetimes(self):
+        for mode in ("good", "COM-writeback", "factory-live", "validator-rejects", "validator-count",
+                     "role-swap-accepted", "failed-factory-close"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                arguments, rows, value = self.winrt_inputs(root)
+                validator = root / "whiny"
+                validator.write_bytes(b"official validator")
+                pin = hashlib.sha256(validator.read_bytes()).hexdigest()
+                if mode == "COM-writeback":
+                    rows[1]["output"] = 0
+                if mode == "factory-live":
+                    rows[0]["factory_references"] = 1
+                if mode == "role-swap-accepted":
+                    rows[3]["role_swapped_close"] = False
+                def invoke(command, **kwargs):
+                    proxy_hash = hashlib.sha256(arguments[2].read_bytes()).hexdigest()
+                    if command[0] == str(validator):
+                        summary = {
+                            "complete":True,"calls":5 if mode=="validator-count" else 7,
+                            "events":16,"dropped_events":0,"route":"remote",
+                            "contract_sha256":bytes(value["contract_sha256"]).hex(),
+                            "proxy_artifact_sha256":proxy_hash,
+                        }
+                        self.assertEqual(command[1:], ["trace", str(arguments[5])])
+                        return subprocess.CompletedProcess(command, 2 if mode=="validator-rejects" else 0,
+                            json.dumps(summary), "INVALID_CALL_TRACE" if mode=="validator-rejects" else "")
+                    component = "Wvb.Test.WvbScalarRuntimeClass.dll!"
+                    factory = component + "5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A51"
+                    instance = component + "5F1C7A3E-2B4D-4E6F-8A9B-0C1D2E3F4A52"
+                    calls = [(component+"Wvb.Test.WvbScalarRuntimeClass::factory","ok"),
+                        (factory+"#7","ok"),(factory+"::release","call_failed" if mode=="failed-factory-close" else "ok"),
+                        (instance+"#8","invalid_input"),(instance+"#8","ok"),
+                        (instance+"#8","call_failed"),(instance+"::release","ok")]
+                    events = [("run_start","","","")]
+                    for index, (target,status) in enumerate(calls):
+                        events.extend([("entry",str(index),target,""),("return",str(index),target,status)])
+                    events.append(("run_end","","",""))
+                    arguments[5].write_text("\n".join(json.dumps({
+                        "kind":kind,"sequence":index,"route":"remote","complete":True,
+                        "proxy_artifact_sha256":proxy_hash,"contract_sha256":bytes(value["contract_sha256"]).hex(),
+                        "process_id":32,"call_id":call_id,"target":target,"status":status,
+                    }) for index,(kind,call_id,target,status) in enumerate(events)))
+                    return subprocess.CompletedProcess(command,0,"\n".join(json.dumps(row) for row in rows),"")
+                with patch("setup.run_generated_call.subprocess.run", side_effect=invoke) as run:
+                    if mode=="good":
+                        result = run_object_proxy(*arguments, whiny=validator, whiny_sha256=pin, winrt=True)
+                        self.assertTrue(result["trace_validated"])
+                        self.assertEqual(result["route"], "generated-winrt-proxy")
+                    else:
+                        with self.assertRaisesRegex(ValueError, "WinRT"):
+                            run_object_proxy(*arguments, whiny=validator, whiny_sha256=pin, winrt=True)
+                    self.assertEqual(run.call_count, 2 if mode in (
+                        "good","validator-rejects","validator-count") else 1)
+
+    def test_winrt_native_baseline_is_pinned_and_never_uses_COM_output_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            native = root / "oracle"
+            baseline = self.native_winrt_rows()
+            native.write_text("\n".join(json.dumps(row) for row in baseline))
+            pin = hashlib.sha256(native.read_bytes()).hexdigest()
+            self.assertEqual(read_winrt_oracle(native, pin), baseline)
+            for index, field, value in (
+                    (0,"caller_pid",0),(0,"hresult",False),(2,"hresult",1),
+                    (3,"path","other.dll"),(4,"output",43),(5,"output",0),(5,"output",True)):
+                changed = json.loads(json.dumps(baseline))
+                changed[index][field] = value
+                native.write_text("\n".join(json.dumps(row) for row in changed))
+                with patch("setup.run_generated_call.run_isolated_demo") as launch:
+                    with self.assertRaisesRegex(ValueError, "WinRT oracle"):
+                        run_winrt_demo(root/"wine","0"*64,"0"*64,root/"caller",root/"proxy",
+                            root/"pair",root/"config",root/"runtime",native,
+                            hashlib.sha256(native.read_bytes()).hexdigest(),root/"whiny","0"*64)
+                    launch.assert_not_called()
+            native.write_text("\n".join(json.dumps(row) for row in baseline))
+            with self.assertRaisesRegex(ValueError, "hash/bound mismatch"):
+                read_winrt_oracle(native, "0"*64)
+            with patch("setup.run_generated_call.run_isolated_demo") as launch:
+                with self.assertRaisesRegex(ValueError, "WinRT trace"):
+                    run_winrt_demo(root/"wine","0"*64,"0"*64,root/"caller",root/"proxy",
+                        root/"pair",root/"config",root/"runtime",native,pin,None,None)
+                launch.assert_not_called()
+
+    def test_winrt_compares_all_six_native_cells_after_official_trace_acceptance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            arguments, rows, _ = self.winrt_inputs(root)
+            native, validator = root/"oracle", root/"whiny"
+            native.write_text("\n".join(json.dumps(row) for row in self.native_winrt_rows()))
+            validator.write_bytes(b"official validator")
+            def isolated(*args):
+                return args[-1](root, {})
+            def invoke(*args, **kwargs):
+                arguments[4].write_text("\n".join(json.dumps(row) for row in rows))
+                return {"trace_validated":True}
+            with patch("setup.run_generated_call.run_isolated_demo", side_effect=isolated), \
+                    patch("setup.run_generated_call.run_object_proxy", side_effect=invoke) as call:
+                result = run_winrt_demo(arguments[0],arguments[6],"0"*64,arguments[1],arguments[2],
+                    root/"pair",arguments[3],root/"runtime",native,
+                    hashlib.sha256(native.read_bytes()).hexdigest(),validator,
+                    hashlib.sha256(validator.read_bytes()).hexdigest())
+                self.assertEqual(len(result["native_oracle_cells"]),6)
+                self.assertTrue(result["native_oracle_compared"])
+                self.assertEqual(result["native_oracle_cells"]["native-error.output"]["native"],0xa5a5a5a5)
+                call.assert_called_once()
+
     def com_inputs(self, root):
         (root / "system.reg").write_text("owned prefix")
         contract = root / "contract.json"
@@ -189,7 +327,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as failure:
                     main()
                 self.assertEqual(failure.exception.code, 2)
-                self.assertIn("paired option for --demo-com only", error.getvalue())
+                self.assertIn("paired option for --demo-com or --demo-winrt only", error.getvalue())
                 launch.assert_not_called()
 
     def test_com_demo_rejects_missing_or_wrong_validator_pin_before_launch(self):

@@ -65,6 +65,14 @@ without dropped events. R04's pairing checks alone did not catch invalid GUID
 braces in trace targets; its trace is not schema-valid recorder evidence. This is bounded
 owned-fixture evidence, not generic COM/WinRT, callbacks, async, or unchanged-app
 A04 support.
+
+The additive WinRT owner composes the product's existing admission and control
+paths with a pinned WinMD/manifest and thread-scoped RoGetActivationFactory.
+Separate factory/instance roles, independent close and same-thread cleanup are
+source-tested. Its real registration-free native SYSTEM r01 oracle observes
+S_OK/output42 and E_INVALIDARG/unchanged A5A5A5A5, with actual native module paths
+and OS exit0. Generated live parity remains pending; see
+[the bounded WinRT slice](winrt-object-slice.md).
 The process crate is a codec, not a process executor.
 No general Windows service installer, pairing command or automatic key
 provisioner is implied by these two commands.

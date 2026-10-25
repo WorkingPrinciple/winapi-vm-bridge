@@ -245,6 +245,16 @@ actual official `whiny trace` schema/completeness gate; see the
 Source tests and fixture builds alone do not prove this. This is not
 general WinRT, GamingServices or unchanged-app A04 support.
 
+### Bounded WinRT factory and instance slice
+
+`winrt-u32-v1` adds separate factory/instance leases through a pinned,
+thread-scoped registration-free context and real RoGetActivationFactory.
+The native SYSTEM r01 oracle observes unchanged caller output on E_INVALIDARG,
+distinct from COM Automation's zero writeback. The `--demo-winrt` driver requires
+that hash-pinned native baseline and official trace validation before reporting
+six-cell parity. Generated live acceptance is pending; see
+[the scope, metadata and evidence](docs/winrt-object-slice.md).
+
 The admission crate's historical scalar/correlated test-authority machinery is
 behind `test-authority`; it is not compiled into this product by default. Core
 bundle, path, hash, actor and operation checks remain mandatory. The previous
