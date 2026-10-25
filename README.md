@@ -168,7 +168,8 @@ prepared, private Wine prefix and the existing builtin/native FFI pair:
 ```bash
 python3 setup/run_generated_call.py \
   --proxy-caller /absolute/path/proxy_call.exe \
-  --wine /absolute/path/wine --proxy /absolute/path/proxy.dll \
+  --wine /absolute/path/wine --wine-sha256 EXACT_ENGINE_SHA256 \
+  --proxy /absolute/path/proxy.dll \
   --config /absolute/path/call.json --response /absolute/path/new-result.bin \
   --trace /absolute/path/new-trace.jsonl --expected-u32 GUEST_READY_PID
 ```
@@ -184,6 +185,45 @@ records exactly one call, compares its returned PID, resets and unloads.
 The driver requires a complete, paired remote call trace bound to the proxy
 and contract hashes. Neither this owner probe nor the raw call is unchanged-app
 or GamingServices acceptance.
+
+### One-command real PID demo
+
+After the guest owner starts `wvb serve` and supplies its ready PID, the same
+driver can prepare a **new private host prefix**, call the generated export once,
+record its result/trace, and shut down its owned host runtime:
+
+```bash
+python3 setup/run_generated_call.py --demo-pid \
+  --proxy-caller /absolute/path/pid_proxy_call.exe \
+  --proxy /absolute/path/generated-proxy.dll \
+  --wine /absolute/path/calimocho/install/bin/wine \
+  --wine-sha256 EXACT_ENGINE_SHA256 \
+  --wineserver-sha256 EXACT_SERVER_SHA256 \
+  --builtin-root /absolute/path/source-matched-pair/lib/wine \
+  --config /absolute/path/call.json \
+  --runtime-root /absolute/path/new-demo-directory \
+  --expected-u32 GUEST_READY_PID
+```
+
+The Wine install must include `bin/wineserver` and its matching `lib/wine`;
+the builtin root contains `x86_64-windows/wvb_autoconfig.dll` and
+`x86_64-unix/wvb_autoconfig.so`. Build the proxy with the current Whiny generator
+and link it against that pair's import library. The command verifies the
+engine/server pins, stages the public binaries, initializes only the new
+prefix, and derives new response, trace and diagnostic paths inside it.
+The private key is read from the existing private file, never copied, printed
+or hashed. An existing demo directory is rejected, and no retry is automatic.
+Cleanup ends and kills Windows processes only in that new private prefix, then
+waits for its owned server to drain naturally. Forced server termination is
+reported as unknown prefix quiescence, not successful cleanup; evidence remains.
+
+**CrossOver is excluded from active acceptance.** Both direct proxy mode and
+the demo reject CrossOver paths (including resolved aliases and inherited
+environment paths). Use an explicitly selected, hash-pinned Calimocho/Xodus
+engine and its source-matched builtin pair. Historical CrossOver observations
+remain historical, not current acceptance.
+The demo does not connect to the VM control plane, start the guest service,
+change its firewall or grant authority. Those stay with the guest owner.
 
 The admission crate's historical scalar/correlated test-authority machinery is
 behind `test-authority`; it is not compiled into this product by default. Core
