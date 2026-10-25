@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 Push-Location $repo
 try {
+    & (Join-Path $PSScriptRoot 'test_package_observer.ps1')
     cargo test --workspace --all-features --locked
     if ($LASTEXITCODE -ne 0) {
         throw 'Windows runtime workspace tests failed.'

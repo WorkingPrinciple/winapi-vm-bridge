@@ -90,8 +90,11 @@ Those are WX-07's exact arguments. The interactive user receives read/execute
 access to the staged inputs and modify access to the separate output directory.
 No password, logon automation, session-0 fallback or headless package claim exists.
 The script waits for the atomically published output and task completion.
-It unregisters only its exact task after task exit 0 and an output file.
-On errors/timeouts the task and run directory are retained for reconciliation.
+It retains its exact task and run directory on success as well as failure.
+In particular, a task exit 0 does not delete the task before the broker has
+validated the observation proof. Worker failures retain bounded step/reason
+diagnostics in `output/worker-error.json`, surfaced by the launcher as errors,
+never as accepted observations.
 The host launcher is separately deadline-bounded; terminating it does not
 terminate or prove quiescence of the task/observer. Nothing retries automatically.
 
@@ -113,7 +116,7 @@ and the complete replace-observations schema validation.
 
 The response is JSON with `observations_utf8` (the unchanged output file as a
 UTF-8 string), `output_sha256`, `output_bytes`, context/AppId, observer hash,
-`proof`, `run_directory`, `task_completed=true` and
+`proof`, `run_directory`, `task_completed=true`, `task_retained=true` and
 `observer_process_quiescence="not-attested"`. Re-encode the string as UTF-8
 without newline translation/BOM and verify the hash before saving it for
 `whiny replace --observations`. Task completion plus published output is **not**
@@ -128,7 +131,10 @@ Host tests cover independent/exact/expired/revoked grants, request rejection,
 artifact mutations, one-shot consumption, raw-output hash round trips, wrong
 session/package/refusal/missing proof and output bounds. The PowerShell host
 check parses the real runner and tests session prerequisite refusals with only
-the native WTS query replaced; it does not touch a VM or create a real task:
+the native WTS query replaced, ACL mutation-right classification, bounded
+worker diagnostics and task retention. It does not touch a VM or create a real
+task. The existing Windows CI entry point also runs it under PowerShell 5.1;
+that hosted run has not been observed here:
 
 ```sh
 cargo test -p wvb-client-ffi --features cli --bin wvb --locked
@@ -160,7 +166,9 @@ pwsh -NoLogo -NoProfile -File tests/test_package_observer.ps1
    package, wrong pins and deadline failure; confirm no session-0 output is
    accepted. Reconcile each retained exact task and native process before any
    retry; check exact-owned task removal and evidence retention, not a blanket
-   process kill or presumed VM quiescence.
+   process kill or presumed VM quiescence. Only after proof validation and native
+   process reconciliation, manually unregister the exact `wvb-observer-<nonce>`
+   task (no wildcard/Force), retaining its evidence directory.
 
 Windows compilation and host mocks do not qualify scheduled-task execution,
 desktop-package activation, session identity, r9 parity or native cleanup.

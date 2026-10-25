@@ -92,8 +92,8 @@ they are deliberately not embedded in the unsigned archive they verify.
 
 ## Build and test
 
-The product has two commands. Build for the host, and cross-build the same
-executable for the Windows guest:
+Build the single `wvb` executable for the host, and cross-build it for the
+Windows guest:
 
 ```bash
 cargo build --release --locked -p wvb-client-ffi --features cli --bin wvb

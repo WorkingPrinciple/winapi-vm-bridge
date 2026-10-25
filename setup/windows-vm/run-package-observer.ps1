@@ -45,23 +45,43 @@ function Get-SessionOneSid {
     return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
 }
 
+function Test-MutationRights {
+    param([System.Security.AccessControl.FileSystemRights]$Rights)
+    $write = [System.Security.AccessControl.FileSystemRights]::Write -bor
+        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [System.Security.AccessControl.FileSystemRights]::TakeOwnership -bor
+        [System.Security.AccessControl.FileSystemRights]::Delete
+    return ($Rights -band $write) -ne 0
+}
+
 function Assert-PrivateRoot([string]$Path) {
     $allowed = @(
         [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
         'S-1-5-18', 'S-1-5-32-544'
     )
-    $write = [System.Security.AccessControl.FileSystemRights]::Write -bor
-        [System.Security.AccessControl.FileSystemRights]::Modify -bor
-        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
-        [System.Security.AccessControl.FileSystemRights]::TakeOwnership -bor
-        [System.Security.AccessControl.FileSystemRights]::Delete
     foreach ($rule in (Get-Acl -LiteralPath $Path).Access) {
         $sid = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
         if ($rule.AccessControlType -eq 'Allow' -and
-            ($rule.FileSystemRights -band $write) -ne 0 -and $sid -notin $allowed) {
+            (Test-MutationRights $rule.FileSystemRights) -and $sid -notin $allowed) {
             throw 'run_root must be writable only by the operator, SYSTEM and Administrators.'
         }
     }
+}
+
+function Get-WorkerFailure {
+    param([string]$OutputDir)
+    $path = Join-Path $OutputDir 'worker-error.json'
+    if (-not (Test-Path -LiteralPath $path)) {
+        return 'Worker did not publish diagnostics; reconcile the retained task.'
+    }
+    $file = Get-Item -LiteralPath $path
+    if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        $file.Length -gt 32768) {
+        return 'Worker diagnostics are oversized or a reparse point; reconcile the retained task.'
+    }
+    $diagnostic = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    return ('worker step=' + $diagnostic.step + ': ' + $diagnostic.reason)
 }
 
 function Set-StageAccess([string]$Path, [string]$Sid, [bool]$Writable) {
@@ -91,32 +111,45 @@ $output = Join-Path $Stage 'output\observations.json'
 $observer = Join-Path $Stage 'observer.exe'
 
 if ($Worker) {
-    if ([System.Diagnostics.Process]::GetCurrentProcess().SessionId -ne 1) {
-        throw 'Scheduled task is not in session 1; refusing package execution.'
-    }
-    $sid = Get-SessionOneSid
-    if ($sid -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
-        throw 'Interactive task identity no longer matches session 1.'
-    }
-    if ((Get-FileHash -LiteralPath $observer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $plan.observer_sha256) {
-        throw 'Staged observer SHA256 mismatch.'
-    }
-    if (Test-Path -LiteralPath $output) { throw 'Observer output already exists; no replay.' }
-    # Names are restricted by the Rust plan parser; paths use Windows argv quoting.
-    $arguments = '--context ' + $plan.context + ' --out "' + $output + '"'
-    Invoke-CommandInDesktopPackage -PackageFamilyName $plan.package_family_name `
-        -AppId $plan.app_id -Command $observer -Args $arguments -PreventBreakaway | Out-Null
-    $deadline = [DateTime]::UtcNow.AddMilliseconds($plan.timeout_ms)
-    while (-not (Test-Path -LiteralPath $output)) {
-        if ([DateTime]::UtcNow -ge $deadline) {
-            throw 'Observer deadline expired; native completion/quiescence unknown. No replay.'
+    $step = 'session-check'
+    try {
+        if ([System.Diagnostics.Process]::GetCurrentProcess().SessionId -ne 1) {
+            throw 'Scheduled task is not in session 1; refusing package execution.'
         }
-        Start-Sleep -Milliseconds 100
+        $sid = Get-SessionOneSid
+        if ($sid -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
+            throw 'Interactive task identity no longer matches session 1.'
+        }
+        $step = 'observer-hash-check'
+        if ((Get-FileHash -LiteralPath $observer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $plan.observer_sha256) {
+            throw 'Staged observer SHA256 mismatch.'
+        }
+        if (Test-Path -LiteralPath $output) { throw 'Observer output already exists; no replay.' }
+        # Names are restricted by the Rust plan parser; paths use Windows argv quoting.
+        $arguments = '--context ' + $plan.context + ' --out "' + $output + '"'
+        $step = 'desktop-package-launch'
+        Invoke-CommandInDesktopPackage -PackageFamilyName $plan.package_family_name `
+            -AppId $plan.app_id -Command $observer -Args $arguments -PreventBreakaway | Out-Null
+        $step = 'observer-output-wait'
+        $deadline = [DateTime]::UtcNow.AddMilliseconds($plan.timeout_ms)
+        while (-not (Test-Path -LiteralPath $output)) {
+            if ([DateTime]::UtcNow -ge $deadline) {
+                throw 'Observer deadline expired; native completion/quiescence unknown. No replay.'
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        $step = 'observer-output-size'
+        if ((Get-Item -LiteralPath $output).Length -gt $plan.max_output_bytes) {
+            throw 'Observer output exceeds configured bound.'
+        }
+        exit 0
+    } catch {
+        $reason = $_.Exception.Message
+        $reason = $reason.Substring(0, [Math]::Min(4096, $reason.Length))
+        $diagnostic = @{ step = $step; reason = $reason } | ConvertTo-Json -Compress
+        [IO.File]::WriteAllText((Join-Path $Stage 'output\worker-error.json'), $diagnostic)
+        throw
     }
-    if ((Get-Item -LiteralPath $output).Length -gt $plan.max_output_bytes) {
-        throw 'Observer output exceeds configured bound.'
-    }
-    exit 0
 }
 
 Assert-PrivateRoot (Split-Path -Parent $Stage)
@@ -147,10 +180,11 @@ while ($true) {
     if ($info.LastRunTime -ge $started.AddSeconds(-1) -and $task.State -ne 'Running' -and
         $info.LastTaskResult -ne 267009) {
         if ($info.LastTaskResult -ne 0) {
-            throw "Owned task failed ($($info.LastTaskResult)); retain task and run directory; no replay."
+            $detail = Get-WorkerFailure $outputDir
+            throw "Owned task failed ($($info.LastTaskResult)): $detail; retain task and run directory; no replay."
         }
         if (-not (Test-Path -LiteralPath $output)) { throw 'Task exited without observer output.' }
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        # Retain even terminal tasks: proof validation happens in the broker afterward.
         exit 0
     }
     if ([DateTime]::UtcNow -ge $deadline) {

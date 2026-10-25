@@ -333,6 +333,7 @@ fn encode_result(plan: &Plan, bytes: &[u8], stage: &Path) -> Result<Vec<u8>> {
         "proof": proof,
         "run_directory": stage,
         "task_completed": true,
+        "task_retained": true,
         "observer_process_quiescence": "not-attested",
     }))?)
 }
@@ -474,7 +475,8 @@ mod tests {
     fn proof_rejects_session_zero_wrong_package_missing_identity_and_changed_pins() {
         let plan = plan();
         let valid = output(&plan);
-        let bytes = serde_json::to_vec(&valid).unwrap();
+        let mut bytes = serde_json::to_vec_pretty(&valid).unwrap();
+        bytes.extend_from_slice(b"\r\n");
         assert!(validate_output(&plan, &bytes).is_ok());
         let result: Value =
             serde_json::from_slice(&encode_result(&plan, &bytes, Path::new("run")).unwrap())
@@ -676,6 +678,7 @@ mod tests {
         assert!(SCRIPT.contains(" --out "));
         assert!(!SCRIPT.contains("-Password"));
         assert!(!SCRIPT.contains("Stop-ScheduledTask"));
+        assert!(!SCRIPT.contains("Unregister-ScheduledTask"));
         assert!(!SCRIPT.contains("Register-ScheduledTask -Force"));
         assert!(
             launcher_command(Path::new("C:\\operator's runs\\run"))
