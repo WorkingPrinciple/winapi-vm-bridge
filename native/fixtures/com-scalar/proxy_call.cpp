@@ -178,7 +178,7 @@ int wmain(int argc, wchar_t **argv) {
           hr = object->Transform(UINT32_MAX, &output);
           printf("{\"event\":\"native-error\",\"hresult\":%ld,\"output\":%u}\n",
                  static_cast<long>(hr), output);
-          correct = correct && hr == E_INVALIDARG && output == 0xa5a5a5a5;
+          correct = correct && hr == E_INVALIDARG && output == 0;
           ULONG references = object->Release();
           HRESULT unload = can_unload();
           printf("{\"event\":\"release\",\"references\":%lu,\"can_unload_hresult\":%ld,\"recording\":%s}\n",

@@ -27,7 +27,7 @@ use wvb_client_ffi::{
 use wvb_crypto::StaticPrivateKey;
 use wvb_integrity::{canonical_root, resolve_regular_file, sha256_bytes};
 use wvb_native_host::object::{ObjectSession, ObjectSlice};
-use wvb_native_host::{ComTargetConfig, NativeDispatcher, NativeHostConfig};
+use wvb_native_host::{ComRegistrationScope, ComTargetConfig, NativeDispatcher, NativeHostConfig};
 use wvb_session::{HelloAck, Readiness, activate_broker};
 use wvb_transport::session_responder;
 use zeroize::{Zeroize, Zeroizing};
@@ -79,11 +79,66 @@ struct ServeConfig {
     approval: OperatorAdmission,
     response_capacity: usize,
     lifetime_ms: u64,
+    #[serde(default)]
+    com_registration_scope: ComRegistrationScope,
 }
 
 #[derive(Deserialize)]
 struct ContractSlice {
     object_slice: Option<ObjectSlice>,
+    #[serde(default)]
+    operations: Vec<ContractOperation>,
+}
+
+#[derive(Deserialize)]
+struct ContractOperation {
+    id: u32,
+    request_schema_id: u32,
+    response_schema_id: u32,
+    native_error: Option<NativeErrorRule>,
+}
+
+#[derive(Deserialize)]
+struct NativeErrorRule {
+    output_validity: String,
+}
+
+impl ContractSlice {
+    fn validated_object(
+        self,
+        operations: &BTreeMap<u32, OperationSchema>,
+    ) -> Result<Option<ObjectSlice>> {
+        let Some(slice) = self.object_slice else {
+            return Ok(None);
+        };
+        slice.validate(operations)?;
+        let mut seen = std::collections::BTreeSet::new();
+        if self.operations.len() != operations.len() {
+            return Err("object contract/admission operation count mismatch".into());
+        }
+        for operation in self.operations {
+            let schema = operations
+                .get(&operation.id)
+                .ok_or("unadmitted object operation")?;
+            let expected = if operation.id == slice.method_operation_id {
+                "zero-on-failure"
+            } else {
+                "success-only"
+            };
+            if !seen.insert(operation.id)
+                || operation.request_schema_id != schema.request_schema_id
+                || operation.response_schema_id != schema.response_schema_id
+                || operation
+                    .native_error
+                    .as_ref()
+                    .map(|rule| rule.output_validity.as_str())
+                    != Some(expected)
+            {
+                return Err("object contract schema/output rule does not match admission".into());
+            }
+        }
+        Ok(Some(slice))
+    }
 }
 
 #[derive(Deserialize)]
@@ -222,10 +277,8 @@ async fn serve(config: ServeConfig) -> Result<()> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let object_slice = serde_json::from_slice::<ContractSlice>(&contract)?.object_slice;
-    if let Some(slice) = &object_slice {
-        slice.validate(&operations)?;
-    }
+    let object_slice =
+        serde_json::from_slice::<ContractSlice>(&contract)?.validated_object(&operations)?;
     let scalar: Option<Arc<dyn CallHandler>> = if object_slice.is_none() {
         Some(Arc::new(DispatcherCallHandler::new(
             admitted.contract_sha256(),
@@ -266,6 +319,7 @@ async fn serve(config: ServeConfig) -> Result<()> {
                 clsid: slice.activation.clsid.clone(),
                 path: target.canonical_path.clone(),
                 sha256: target.sha256,
+                registration_scope: config.com_registration_scope,
             };
             Arc::new(ObjectSession::start(
                 actor,
@@ -434,6 +488,68 @@ mod tests {
     use super::*;
     use wvb_authz::Role;
     use wvb_broker::{DispatchOutcome, TypedDispatchModule};
+
+    #[test]
+    fn object_output_rule_and_schemas_must_match_the_frozen_operation_admission() {
+        let operations = (1..=3)
+            .map(|id| {
+                (
+                    id,
+                    OperationSchema {
+                        request_schema_id: id * 2,
+                        response_schema_id: id * 2 + 1,
+                    },
+                )
+            })
+            .collect();
+        let contract = json!({
+            "object_slice": {
+                "abi":"com-u32-v1",
+                "activation":{"kind":"com-local-server","clsid":"BA9A4DA2-79FE-4B31-8DB4-201AF0266C11"},
+                "interface_iid":"BA9A4DA2-79FE-4B31-8DB4-201AF0266C12",
+                "interface_kind":"iunknown", "handle_type":7, "method_slot":3,
+                "activation_operation_id":1, "method_operation_id":2, "close_operation_id":3,
+                "max_objects":8
+            },
+            "operations": (1..=3).map(|id| json!({
+                "id":id, "request_schema_id":id*2, "response_schema_id":id*2+1,
+                "native_error":{"output_validity":if id == 2 {"zero-on-failure"} else {"success-only"}}
+            })).collect::<Vec<_>>()
+        });
+        let validate = |value| {
+            serde_json::from_value::<ContractSlice>(value)
+                .unwrap()
+                .validated_object(&operations)
+        };
+        assert!(validate(contract.clone()).unwrap().is_some());
+        for bad in ["success-only", "unchanged", "unknown"] {
+            let mut changed = contract.clone();
+            changed["operations"][1]["native_error"]["output_validity"] = json!(bad);
+            assert!(validate(changed).is_err());
+        }
+        for index in [0, 2] {
+            let mut changed = contract.clone();
+            changed["operations"][index]["native_error"]["output_validity"] =
+                json!("zero-on-failure");
+            assert!(validate(changed).is_err());
+        }
+        let mut changed = contract.clone();
+        changed["operations"][1]["native_error"] = serde_json::Value::Null;
+        assert!(validate(changed).is_err());
+        let mut changed = contract.clone();
+        changed["operations"][1]["request_schema_id"] = json!(99);
+        assert!(validate(changed).is_err());
+        let mut changed = contract.clone();
+        changed["operations"][1]["response_schema_id"] = json!(99);
+        assert!(validate(changed).is_err());
+        let mut changed = contract.clone();
+        changed["operations"][1] = changed["operations"][0].clone();
+        assert!(validate(changed).is_err());
+        let mut changed = contract;
+        changed["operations"].as_array_mut().unwrap().remove(1);
+        assert!(validate(changed).is_err());
+        assert!(validate(json!({})).unwrap().is_none());
+    }
 
     #[test]
     fn bounds_keys_and_policy_fail_closed() {

@@ -205,7 +205,7 @@ def run_com_proxy(wine: Path, caller: Path, proxy: Path, config: Path,
                 or rows[0].get("activation_hresult") != 0
                 or rows[0].get("hresult") != 0 or rows[0].get("output") != 42
                 or type(rows[0].get("caller_pid")) is not int or rows[0]["caller_pid"] <= 0
-                or rows[1].get("hresult") != -2147024809 or rows[1].get("output") != 0xa5a5a5a5
+                or rows[1].get("hresult") != -2147024809 or rows[1].get("output") != 0
                 or rows[2].get("references") != 0 or rows[2].get("can_unload_hresult") != 0
                 or type(rows[2].get("recording")) is not bool
                 or any(rows[3].get(field) is not True for field in (
@@ -271,14 +271,61 @@ def run_pid_demo(wine: Path, wine_sha256: str, server_sha256: str,
             environment, root / "caller.stderr"))
 
 
+def read_com_oracle(path: Path, expected_sha256: str) -> list[dict]:
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != expected_sha256:
+        raise ValueError("native COM oracle hash mismatch; no generated call sent")
+    rows = [json.loads(line) for line in data.decode("utf-8-sig").splitlines()]
+    if (len(rows) != 2 or any(not isinstance(row, dict) for row in rows)
+            or [row.get("event") for row in rows] != ["oracle", "oracle-error"]
+            or any(type(row.get(field)) is not int for row, fields in zip(rows, (
+                ("input", "hresult", "output", "caller_pid"), ("hresult", "output")))
+                   for field in fields)
+            or rows[0].get("input") != 41 or rows[0].get("hresult") != 0
+            or rows[0].get("output") != 42 or rows[0].get("caller_pid", 0) <= 0
+            or rows[1].get("hresult") != -2147024809 or rows[1].get("output") != 0):
+        raise ValueError("native COM oracle does not match the observed OOP fixture baseline")
+    return rows
+
+
+def compare_com_oracle(native: list[dict], generated: Path) -> dict:
+    rows = [json.loads(line) for line in generated.read_text(encoding="utf-8").splitlines()]
+    if (len(rows) < 2 or any(not isinstance(row, dict) for row in rows)
+            or rows[0].get("event") != "result" or rows[1].get("event") != "native-error"):
+        raise ValueError("generated COM oracle comparison rows are malformed")
+    cells = {}
+    for index, label in enumerate(("success", "native-error")):
+        for field in ("hresult", "output"):
+            original, actual = native[index][field], rows[index].get(field)
+            if type(actual) is not int or actual != original:
+                raise ValueError(f"COM native parity mismatch: {label}.{field}")
+            cells[f"{label}.{field}"] = {"native": original, "generated": actual, "equal": True}
+    return cells
+
+
 def run_com_demo(wine: Path, wine_sha256: str, server_sha256: str,
                  caller: Path, proxy: Path, builtin_root: Path, config: Path,
-                 runtime_root: Path) -> dict:
+                 runtime_root: Path, oracle_stdout: Path | None = None,
+                 oracle_sha256: str | None = None) -> dict:
+    if (oracle_stdout is None) != (oracle_sha256 is None):
+        raise ValueError("native COM oracle path and hash must be supplied together")
+    native = read_com_oracle(oracle_stdout, oracle_sha256) if (
+        oracle_stdout is not None and oracle_sha256 is not None) else None
+
+    def invoke(root, environment):
+        response = root / "response.jsonl"
+        result = run_com_proxy(wine.absolute(), root / "proxy_call.exe", root / "proxy.dll", config,
+                               response, root / "trace.jsonl", wine_sha256, environment,
+                               root / "caller.stderr")
+        if native is not None:
+            result["native_oracle_cells"] = compare_com_oracle(native, response)
+            result["native_oracle_compared"] = True
+            result["native_oracle_stdout_sha256"] = oracle_sha256
+            result["native_caller_windows_pid"] = native[0]["caller_pid"]
+        return result
+
     return run_isolated_demo(wine, wine_sha256, server_sha256, caller, proxy, builtin_root,
-        runtime_root, lambda root, environment: run_com_proxy(
-            wine.absolute(), root / "proxy_call.exe", root / "proxy.dll", config,
-            root / "response.jsonl", root / "trace.jsonl", wine_sha256, environment,
-            root / "caller.stderr"))
+                             runtime_root, invoke)
 
 
 def run_isolated_demo(wine: Path, wine_sha256: str, server_sha256: str,
@@ -393,7 +440,12 @@ def main() -> int:
     parser.add_argument("--request", type=Path)
     parser.add_argument("--response", type=Path)
     parser.add_argument("--expected-u32", type=int)
+    parser.add_argument("--oracle-stdout", type=Path)
+    parser.add_argument("--oracle-sha256")
     args = parser.parse_args()
+    if ((args.oracle_stdout is None) != (args.oracle_sha256 is None)
+            or (not args.demo_com and (args.oracle_stdout is not None or args.oracle_sha256 is not None))):
+        parser.error("oracle stdout/hash are a paired option for --demo-com only")
     if args.demo_pid or args.demo_com:
         if (not all((args.proxy_caller, args.wine, args.wine_sha256, args.wineserver_sha256,
                      args.proxy, args.builtin_root, args.runtime_root))
@@ -403,7 +455,8 @@ def main() -> int:
             parser.error("demo requires proxy-caller/wine/runtime hashes/proxy/builtin-root/runtime-root; PID also requires expected-u32; output paths are derived")
         arguments = (args.wine, args.wine_sha256, args.wineserver_sha256,
                      args.proxy_caller, args.proxy, args.builtin_root, args.config, args.runtime_root)
-        result = run_pid_demo(*arguments, args.expected_u32) if args.demo_pid else run_com_demo(*arguments)
+        result = run_pid_demo(*arguments, args.expected_u32) if args.demo_pid else run_com_demo(
+            *arguments, args.oracle_stdout, args.oracle_sha256)
     elif args.proxy_caller:
         if not all((args.wine, args.wine_sha256, args.proxy, args.trace, args.response, args.expected_u32)):
             parser.error("proxy mode requires --wine, --wine-sha256, --proxy, --trace, --response and --expected-u32")

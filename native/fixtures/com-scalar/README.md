@@ -3,7 +3,11 @@
 `WvbScalarObject` is a test class, not a Windows/Xbox service or A04 acceptance.
 Its one `IUnknown`-derived interface has slot 3:
 `HRESULT Transform(UINT32 input, UINT32 *output)`.
-Input 41 returns S_OK/42; UINT32_MAX returns E_INVALIDARG without writing output.
+Input 41 returns S_OK/42; UINT32_MAX returns E_INVALIDARG.
+The implementation leaves its server-side output untouched on failure, but
+the observed native OOP Automation marshaler writes zero to the caller's
+`[out]` UINT32 (r03 receipt `12b87b94...`). The oracle and generated façade
+therefore require zero, not an unchanged sentinel.
 The IDL's Automation-compatible interface uses the Windows universal marshaler.
 
 | Identity | GUID |
@@ -30,7 +34,11 @@ only the corresponding session user's HKCU `Software\Classes` entries.
 as default value and `Version=1.0`.
 `TypeLib\{library}\1.0\0\win64` contains the absolute owned TLB path.
 Do not register these under SYSTEM's HKCU, overwrite existing keys, or install a
-system service. Final rollback removes just those three new GUID roots and the
+system service. An explicit owner-approved alternative uses the exact same
+three previously absent HKLM roots in the 64-bit view and SYSTEM context.
+Bridge then requires `com_registration_scope: "local-machine"` and refuses
+per-user CLSID shadows; default `current-user` does not silently fall back.
+Final rollback removes just those three new GUID roots in the used hive and the
 temporary task/firewall rule, verifies their absence, and retains receipts.
 
 Native oracle: `com_scalar.exe --oracle`. It activates the registered OOP class,
@@ -73,17 +81,24 @@ python3 setup/run_generated_call.py --demo-com \
   --proxy /absolute/generated/proxy.dll \
   --builtin-root /absolute/matched/lib/wine \
   --config /absolute/private/call.json \
-  --runtime-root /absolute/new-private-runtime
+  --runtime-root /absolute/new-private-runtime \
+  --oracle-stdout /absolute/pinned/native-oracle.stdout.txt \
+  --oracle-sha256 "$ORACLE_STDOUT_SHA256"
 ```
 
 The config uses the existing product call fields with 5000ms connect and
 10000ms call budgets. The driver validates the pinned fixture class/IID and
 contract hash, retains raw caller stdout/stderr even on failure, and checks
-the successful output, failed HRESULT with unchanged output, and final release.
+the successful output, failed HRESULT with zero output, and final release.
 It reuses the PID demo's private-prefix initialization and bounded owned-server
 drain. Never reuse a runtime root or retry after an unknown completion.
 `generated_recording=false` explicitly means the generated recorder was absent;
 no trace is fabricated. When present, a complete artifact/contract/process-bound
-paired trace is required. The result always says `supporting_only=true` and
-`native_oracle_compared=false`: independently compare native receipts and
-verify guest cleanup before claiming the supporting acceptance, never A04.
+paired trace is required. The paired oracle path/hash options validate the
+native baseline before launching Wine, then compare successful HRESULT/output
+and failed HRESULT/output in four explicit cells. Only equal cells set
+`native_oracle_compared=true`; without these options it remains false.
+The result always says `supporting_only=true`: independently verify the native
+context/target identity and guest cleanup before claiming supporting
+acceptance, never A04. The original r03 oracle's exit2 was a stale sentinel
+assertion; its recorded HRESULT/zero-output cells remain the accepted baseline.

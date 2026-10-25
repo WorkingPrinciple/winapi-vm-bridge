@@ -25,6 +25,15 @@ pub struct ComTargetConfig {
     pub clsid: String,
     pub path: PathBuf,
     pub sha256: [u8; 32],
+    pub registration_scope: ComRegistrationScope,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComRegistrationScope {
+    #[default]
+    CurrentUser,
+    LocalMachine,
 }
 
 #[derive(Debug)]
@@ -144,6 +153,14 @@ mod windows {
 
     #[link(name = "advapi32")]
     unsafe extern "system" {
+        fn RegOpenKeyExW(
+            key: *mut c_void,
+            subkey: *const u16,
+            options: u32,
+            access: u32,
+            opened: *mut *mut c_void,
+        ) -> i32;
+        fn RegCloseKey(key: *mut c_void) -> i32;
         fn RegGetValueW(
             key: *mut c_void,
             subkey: *const u16,
@@ -156,6 +173,35 @@ mod windows {
     }
 
     fn verify_com_registration(target: &super::ComTargetConfig) -> Result<(), String> {
+        if matches!(
+            target.registration_scope,
+            super::ComRegistrationScope::LocalMachine
+        ) {
+            // HKCR can prefer per-user registrations; never silently activate a shadow.
+            let key = format!("Software\\Classes\\CLSID\\{{{}}}", target.clsid)
+                .encode_utf16()
+                .chain(Some(0))
+                .collect::<Vec<_>>();
+            let mut opened = ptr::null_mut();
+            let status = unsafe {
+                RegOpenKeyExW(
+                    (-2_147_483_647_isize) as *mut c_void,
+                    key.as_ptr(),
+                    0,
+                    0x0000_0101,
+                    &raw mut opened,
+                )
+            };
+            if status == 0 {
+                let closed = unsafe { RegCloseKey(opened) };
+                return Err(format!(
+                    "machine activation has a current-user CLSID shadow; close={closed}"
+                ));
+            }
+            if status != 2 && status != 3 {
+                return Err(format!("current-user CLSID shadow check status={status}"));
+            }
+        }
         let key = format!(
             "Software\\Classes\\CLSID\\{{{}}}\\LocalServer32",
             target.clsid
@@ -165,21 +211,27 @@ mod windows {
         .collect::<Vec<_>>();
         let mut buffer = vec![0_u16; 16_384];
         let mut size = u32::try_from(buffer.len() * 2).map_err(|error| error.to_string())?;
-        // Windows predefined HKEY_CURRENT_USER is a sign-extended LONG.
-        let current_user = (-2_147_483_647_isize) as *mut c_void;
+        // Windows predefined HKEY values are sign-extended LONGs.
+        let hive = match target.registration_scope {
+            super::ComRegistrationScope::CurrentUser => -2_147_483_647_isize,
+            super::ComRegistrationScope::LocalMachine => -2_147_483_646_isize,
+        } as *mut c_void;
         let status = unsafe {
             RegGetValueW(
-                current_user,
+                hive,
                 key.as_ptr(),
                 ptr::null(),
-                2,
+                0x0001_0002, // REG_SZ, explicit 64-bit registry view.
                 ptr::null_mut(),
                 buffer.as_mut_ptr().cast(),
                 &raw mut size,
             )
         };
         if status != 0 {
-            return Err(format!("current-user LocalServer32 read status={status}"));
+            return Err(format!(
+                "{:?} LocalServer32 read status={status}",
+                target.registration_scope
+            ));
         }
         let length = usize::try_from(size).map_err(|error| error.to_string())? / 2;
         if length == 0 || length > buffer.len() || buffer[length - 1] != 0 {
@@ -421,6 +473,21 @@ impl TypedDispatchModule for NativeDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn com_registry_scope_is_explicit_and_does_not_accept_fallback_modes() {
+        assert!(matches!(
+            ComRegistrationScope::default(),
+            ComRegistrationScope::CurrentUser
+        ));
+        assert!(matches!(
+            serde_json::from_str::<ComRegistrationScope>("\"local-machine\"").unwrap(),
+            ComRegistrationScope::LocalMachine
+        ));
+        for invalid in ["\"auto\"", "\"merged\"", "\"local-machine-32\""] {
+            assert!(serde_json::from_str::<ComRegistrationScope>(invalid).is_err());
+        }
+    }
 
     #[test]
     #[cfg(not(windows))]

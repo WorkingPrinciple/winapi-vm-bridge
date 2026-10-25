@@ -104,7 +104,7 @@ static int oracle() {
   hr = object->Transform(UINT32_MAX, &output);
   printf("{\"event\":\"oracle-error\",\"hresult\":%ld,\"output\":%u}\n",
          static_cast<long>(hr), output);
-  success = success && hr == E_INVALIDARG && output == 0xa5a5a5a5;
+  success = success && hr == E_INVALIDARG && output == 0;
   object->Release();
   return success ? 0 : 2;
 }

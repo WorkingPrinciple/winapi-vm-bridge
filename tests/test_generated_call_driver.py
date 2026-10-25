@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from setup.run_generated_call import run_call, run_com_demo, run_com_proxy, run_pid_demo, run_proxy_call
+from setup.run_generated_call import (
+    compare_com_oracle, read_com_oracle, run_call, run_com_demo, run_com_proxy, run_pid_demo, run_proxy_call,
+)
 
 
 class GeneratedCallDriverTests(unittest.TestCase):
@@ -37,7 +39,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
         rows = [
             {"event": "result", "activation_hresult": 0, "hresult": 0,
              "output": 42, "caller_pid": 32},
-            {"event": "native-error", "hresult": -2147024809, "output": 0xa5a5a5a5},
+            {"event": "native-error", "hresult": -2147024809, "output": 0},
             {"event": "release", "references": 0, "can_unload_hresult": 0, "recording": False},
             {"event": "control-negatives", "wrong_epoch": True, "wrong_generation": True,
              "wrong_type": True, "lease_survived": True, "closed": True, "stale": True},
@@ -75,7 +77,7 @@ class GeneratedCallDriverTests(unittest.TestCase):
     def test_com_caller_rejects_wrong_writeback_release_and_malformed_output(self):
         for field, value, index in (
                 ("output", 43, 0), ("activation_hresult", 1, 0),
-                ("hresult", 0, 1), ("output", 0, 1),
+                ("hresult", 0, 1), ("output", 0xa5a5a5a5, 1),
                 ("references", 1, 2), ("recording", "true", 2),
                 ("hresult", False, 0), ("stale", False, 3)):
             with self.subTest(field=field, value=value, index=index), \
@@ -114,6 +116,34 @@ class GeneratedCallDriverTests(unittest.TestCase):
                     run_com_proxy(*arguments)
                 run.assert_not_called()
                 self.assertFalse(arguments[4].exists())
+
+    def test_com_oracle_is_hash_pinned_and_compared_cell_by_cell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            arguments, rows, _ = self.com_inputs(root)
+            native = root / "native.stdout"
+            native.write_text(json.dumps({
+                "event": "oracle", "input": 41, "hresult": 0, "output": 42, "caller_pid": 6084,
+            }) + "\n" + json.dumps({
+                "event": "oracle-error", "hresult": -2147024809, "output": 0,
+            }) + "\n")
+            pin = hashlib.sha256(native.read_bytes()).hexdigest()
+            baseline = read_com_oracle(native, pin)
+            arguments[4].write_text("\n".join(json.dumps(row) for row in rows))
+            cells = compare_com_oracle(baseline, arguments[4])
+            self.assertEqual(len(cells), 4)
+            self.assertEqual(cells["native-error.output"], {"native": 0, "generated": 0, "equal": True})
+            rows[1]["output"] = 0xa5a5a5a5
+            arguments[4].write_text("\n".join(json.dumps(row) for row in rows))
+            with self.assertRaisesRegex(ValueError, "native-error.output"):
+                compare_com_oracle(baseline, arguments[4])
+            with patch("setup.run_generated_call.subprocess.Popen") as launch:
+                with self.assertRaisesRegex(ValueError, "oracle hash mismatch"):
+                    run_com_demo(root / "wine", "0" * 64, "0" * 64, root / "caller.exe",
+                                 root / "proxy.dll", root / "pair", arguments[3],
+                                 root / "must-not-create", native, "0" * 64)
+                launch.assert_not_called()
+                self.assertFalse((root / "must-not-create").exists())
 
     def test_com_recording_must_be_complete_paired_and_bound(self):
         for mode in ("good", "unmatched", "wrong-hash", "empty", "release-failed"):

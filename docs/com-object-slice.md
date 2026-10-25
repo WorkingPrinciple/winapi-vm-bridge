@@ -16,16 +16,26 @@ callbacks, async, arbitrary QI or custom marshaling. WinRT is not silently
 covered: runtime class, factory IID versus instance IID, HSTRING/IInspectable
 and an optional ActivateInstance operation require a separately agreed additive
 variant once cell007 identifies the target.
-This first harness additionally requires the current user's quoted
-LocalServer32 executable to resolve to the admitted target path and hash.
+The quoted LocalServer32 executable must resolve to the admitted target path/hash.
+Runtime config `com_registration_scope` defaults to `current-user`; the explicitly
+owner-approved SYSTEM harness uses `local-machine` (64-bit), rejecting any HKCU
+CLSID shadow rather than falling back between hives.
 That check is not atomic activation attestation or packaged-service support.
 
 **Typed bodies.** All integers little-endian; GUID contract strings use canonical
 text. Activation: empty request; response `HRESULT:i32` + token (32 bytes total).
 Token: broker epoch[16], slot:u32, generation:u32, handle_type:u32 (28 bytes).
 Method: token + input:u32 (32 bytes); response HRESULT:i32 + output:u32 (8 bytes).
-Failed HRESULT: zero token/output on wire; never publish a local interface and
-never write the caller's scalar output on failure. Preserve every HRESULT bit,
+Failed target HRESULT: zero token/output on wire; never publish a local interface.
+The COM method declares `native_error.output_validity: "zero-on-failure"` and
+writes caller output zero after validating a failed typed response, matching
+native OOP Automation marshaling observed in r03
+(`com-r03-s7-system-collect-observed.jsonl`,
+SHA256 `12b87b94fab9c126e696c293257b2cd37bd76de4fa44b1b7dcac8bad6b8e0a8f`).
+Serve rejects missing/old output policies and mismatched or duplicate
+operation/schema bindings before starting the native host.
+Transport/protocol failures remain distinct; E_POINTER is local/no CALL.
+Preserve every HRESULT bit,
 including successful S_FALSE. Dispatcher success is zero even on target failure;
 target HRESULT lives in the body. Malformed input is rejected before native
 execution. Transport failure is reported distinctly, with no retry.
