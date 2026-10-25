@@ -49,3 +49,29 @@ Only Calimocho is an active runtime. Use a fresh isolated prefix and the
 source-matched builtin pair, reconcile unknown operations without replay, and
 confirm native oracle, generated results, lease cleanup and guest rollback
 before describing this slice as runtime evidence.
+
+After the sole guest operator has prepared a fresh scoped `wvb serve` session,
+the host driver runs this caller exactly once:
+
+```sh
+python3 setup/run_generated_call.py --demo-com \
+  --wine /absolute/calimocho/install/bin/wine \
+  --wine-sha256 "$WINE_SHA256" --wineserver-sha256 "$WINESERVER_SHA256" \
+  --proxy-caller out/com-scalar/proxy_call.exe \
+  --proxy /absolute/generated/proxy.dll \
+  --builtin-root /absolute/matched/lib/wine \
+  --config /absolute/private/call.json \
+  --runtime-root /absolute/new-private-runtime
+```
+
+The config uses the existing product call fields with 5000ms connect and
+10000ms call budgets. The driver validates the pinned fixture class/IID and
+contract hash, retains raw caller stdout/stderr even on failure, and checks
+the successful output, failed HRESULT with unchanged output, and final release.
+It reuses the PID demo's private-prefix initialization and bounded owned-server
+drain. Never reuse a runtime root or retry after an unknown completion.
+`generated_recording=false` explicitly means the generated recorder was absent;
+no trace is fabricated. When present, a complete artifact/contract/process-bound
+paired trace is required. The result always says `supporting_only=true` and
+`native_oracle_compared=false`: independently compare native receipts and
+verify guest cleanup before claiming the supporting acceptance, never A04.
