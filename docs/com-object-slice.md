@@ -110,6 +110,12 @@ retained actual process handles and observed broker PID3656 and admitted OOP
 server PID2448 in SYSTEM/session0 with both OS exit codes0 and the exact server
 path/hash. Its new server-log append has SHA256
 `b635b7ad09555a2b9d36294e53cd9a624770f0ca13251d5a33bc8cde0df3a4cb`.
+Final r05 rollback (`com-r05-rollback.json`, SHA256
+`93ae6e0de2faa4a4feeeef87b133ced24545bd848b83e396888cb9f2fa2ad2bb`)
+verified exact prior HKLM64 subtree/value/type state before removing the three
+owned roots and exact scoped firewall rule. Registration, rule, listener and
+disposable guest key are absent; no r05 task was created. The user hive and
+public/r04/r05 evidence were left untouched.
 
 ### Original r04 numeric and lifecycle evidence
 
