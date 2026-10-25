@@ -1,0 +1,6 @@
+@ cdecl wvb_builtin_load_config(str ptr)
+@ cdecl wvb_client_configure(ptr)
+@ cdecl wvb_client_bind_operation(ptr long long long)
+@ cdecl wvb_client_call(ptr long ptr int64 ptr int64 ptr)
+@ cdecl wvb_client_call_ex(ptr long ptr int64 ptr int64 ptr ptr)
+@ cdecl wvb_client_reset()

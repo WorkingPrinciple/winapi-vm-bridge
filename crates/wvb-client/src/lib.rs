@@ -180,22 +180,23 @@ impl Client {
             })
             .collect::<Result<Vec<_>, ClientError>>()?;
         let (sender, receiver) = oneshot::channel();
-        self.commands
-            .send(Command {
-                frames,
-                completion: CompletionKind::Call(stream_id),
-                response: sender,
-            })
-            .await
-            .map_err(|_| ClientError::DriverClosed)?;
-        tokio::time::timeout(timeout, receiver)
-            .await
-            .map_err(|_| ClientError::Timeout)?
-            .map_err(|_| ClientError::DriverClosed)?
-            .and_then(|completion| match completion {
-                Completion::Call(result) => Ok(result),
-                Completion::Single(_) => Err(ClientError::Protocol),
-            })
+        tokio::time::timeout(timeout, async {
+            self.commands
+                .send(Command {
+                    frames,
+                    completion: CompletionKind::Call(stream_id),
+                    response: sender,
+                })
+                .await
+                .map_err(|_| ClientError::DriverClosed)?;
+            receiver.await.map_err(|_| ClientError::DriverClosed)?
+        })
+        .await
+        .map_err(|_| ClientError::Timeout)?
+        .and_then(|completion| match completion {
+            Completion::Call(result) => Ok(result),
+            Completion::Single(_) => Err(ClientError::Protocol),
+        })
     }
 
     fn next_message_id(&self) -> [u8; 16] {
@@ -281,5 +282,48 @@ where
     }
     for (_, pending) in pending_calls {
         let _ = pending.response.send(Err(ClientError::DriverClosed));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn call_deadline_includes_wait_for_full_command_queue() {
+        let (commands, _receiver) = mpsc::channel(1);
+        let (response, _response_receiver) = oneshot::channel();
+        commands
+            .send(Command {
+                frames: Vec::new(),
+                completion: CompletionKind::Call(1),
+                response,
+            })
+            .await
+            .unwrap();
+        let client = Client {
+            commands,
+            connection_epoch: 42,
+            nonce: [1; 8],
+            message_counter: Arc::new(AtomicU64::new(1)),
+            stream_counter: Arc::new(AtomicU32::new(1)),
+        };
+        let request = CallRequest {
+            adapter_hash: [2; 32],
+            operation_id: 1,
+            request_schema_id: 1,
+            deduplication_mode: 0,
+            idempotency_key: None,
+            disconnect_policy: 0,
+            sensitivity: 0,
+            body: vec![42],
+        };
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            client.call(&request, Duration::from_millis(20)),
+        )
+        .await
+        .expect("configured call deadline must expire while the queue stays full");
+        assert!(matches!(result, Err(ClientError::Timeout)), "{result:?}");
     }
 }

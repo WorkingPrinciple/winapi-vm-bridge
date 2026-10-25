@@ -213,6 +213,10 @@ pub struct SecureConnection<S> {
     next_physical_sequence: u64,
     next_logical_frame_id: u64,
     reassembler: Reassembler,
+    length_bytes: [u8; 2],
+    length_read: usize,
+    ciphertext: Vec<u8>,
+    ciphertext_read: usize,
 }
 
 impl<S> SecureConnection<S>
@@ -228,6 +232,10 @@ where
             next_physical_sequence: 0,
             next_logical_frame_id: 1,
             reassembler: Reassembler::new(0),
+            length_bytes: [0; 2],
+            length_read: 0,
+            ciphertext: Vec::new(),
+            ciphertext_read: 0,
         }
     }
 
@@ -272,18 +280,50 @@ where
 
     pub async fn receive(&mut self) -> Result<(Envelope, Vec<u8>), TransportError> {
         loop {
-            let mut length_bytes = [0_u8; 2];
-            self.io.read_exact(&mut length_bytes).await?;
-            let length = usize::from(u16::from_be_bytes(length_bytes));
+            // Persist progress across select! cancellation by the broker's result branch.
+            while self.length_read < 2 {
+                let read = self
+                    .io
+                    .read(&mut self.length_bytes[self.length_read..])
+                    .await?;
+                if read == 0 {
+                    if self.length_read == 0 && self.reassembler.is_idle() {
+                        return Err(TransportError::Closed);
+                    }
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "incomplete encrypted frame",
+                    )
+                    .into());
+                }
+                self.length_read += read;
+            }
+            let length = usize::from(u16::from_be_bytes(self.length_bytes));
             if length == 0 || length > NOISE_MESSAGE_MAX {
                 return Err(TransportError::Protocol(
                     ProtocolError::PhysicalLengthInvalid,
                 ));
             }
-            let mut ciphertext = vec![0_u8; length];
-            self.io.read_exact(&mut ciphertext).await?;
+            self.ciphertext.resize(length, 0);
+            while self.ciphertext_read < length {
+                let read = self
+                    .io
+                    .read(&mut self.ciphertext[self.ciphertext_read..])
+                    .await?;
+                if read == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "incomplete encrypted frame",
+                    )
+                    .into());
+                }
+                self.ciphertext_read += read;
+            }
             let mut plaintext = vec![0_u8; length];
-            let plaintext_length = self.crypto.decrypt(&ciphertext, &mut plaintext)?;
+            let plaintext_length = self.crypto.decrypt(&self.ciphertext, &mut plaintext)?;
+            self.length_read = 0;
+            self.ciphertext_read = 0;
+            self.ciphertext.clear();
             if let Some(logical) = self
                 .reassembler
                 .push(&plaintext[..plaintext_length], self.connection_epoch)?
@@ -349,6 +389,117 @@ mod tests {
             client.into_transport().unwrap(),
             broker.into_transport().unwrap(),
         )
+    }
+
+    #[tokio::test]
+    async fn idle_eof_is_distinct_from_truncated_physical_or_logical_frames() {
+        for case in 0..4 {
+            let (mut client_crypto, broker_crypto) = paired_transports();
+            let (mut client_io, broker_io) = duplex(200_000);
+            let mut broker = SecureConnection::new(broker_io, broker_crypto, 77);
+            match case {
+                0 => {}
+                1 => client_io.write_all(&[0]).await.unwrap(),
+                2 => client_io.write_all(&[0, 4, 1, 2]).await.unwrap(),
+                _ => {
+                    let fragments = fragment_logical_frame(&vec![0; 100_000], 77, 0, 1).unwrap();
+                    let mut encrypted = vec![0; fragments[0].len() + 16];
+                    let length = client_crypto
+                        .encrypt(&fragments[0], &mut encrypted)
+                        .unwrap();
+                    client_io
+                        .write_all(&u16::try_from(length).unwrap().to_be_bytes())
+                        .await
+                        .unwrap();
+                    client_io.write_all(&encrypted).await.unwrap();
+                }
+            }
+            if case == 3 {
+                let mut receive = std::pin::pin!(broker.receive());
+                std::future::poll_fn(|cx| {
+                    assert!(std::future::Future::poll(receive.as_mut(), cx).is_pending());
+                    std::task::Poll::Ready(())
+                })
+                .await;
+            }
+            drop(client_io);
+            let result = broker.receive().await;
+            if case == 0 {
+                assert!(matches!(result, Err(TransportError::Closed)), "{result:?}");
+            } else {
+                assert!(
+                    matches!(result, Err(TransportError::Io(ref error))
+                    if error.kind() == std::io::ErrorKind::UnexpectedEof),
+                    "{result:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_receive_preserves_partial_header_and_body() {
+        for split in [1, 5] {
+            let (mut client_crypto, broker_crypto) = paired_transports();
+            let (mut client_io, broker_io) = duplex(4096);
+            let mut broker = SecureConnection::new(broker_io, broker_crypto, 77);
+            let envelope = Envelope {
+                minor: 0,
+                message_type: 0x0101,
+                flags: EnvelopeFlags::REQUEST,
+                connection_epoch: 77,
+                stream_id: 1,
+                stream_sequence: 0,
+                message_id: [1; 16],
+                correlation_id: [0; 16],
+                remaining_budget_ms: 1000,
+                payload_length: 0,
+            };
+            let fragments = fragment_logical_frame(&envelope.encode().unwrap(), 77, 0, 1).unwrap();
+            let mut ciphertext = vec![0; fragments[0].len() + 16];
+            let length = client_crypto
+                .encrypt(&fragments[0], &mut ciphertext)
+                .unwrap();
+            let mut wire = u16::try_from(length).unwrap().to_be_bytes().to_vec();
+            wire.extend_from_slice(&ciphertext);
+            client_io.write_all(&wire[..split]).await.unwrap();
+            {
+                let mut receive = std::pin::pin!(broker.receive());
+                std::future::poll_fn(|cx| {
+                    assert!(std::future::Future::poll(receive.as_mut(), cx).is_pending());
+                    std::task::Poll::Ready(())
+                })
+                .await;
+            }
+            client_io.write_all(&wire[split..]).await.unwrap();
+            assert_eq!(broker.receive().await.unwrap().0, envelope);
+            drop(client_io);
+            assert!(matches!(
+                broker.receive().await,
+                Err(TransportError::Closed)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_ciphertext_and_lengths_are_not_clean_disconnects() {
+        for invalid_length in [false, true] {
+            let (_, broker_crypto) = paired_transports();
+            let (mut client_io, broker_io) = duplex(4096);
+            let mut broker = SecureConnection::new(broker_io, broker_crypto, 77);
+            if invalid_length {
+                client_io.write_all(&[0, 0]).await.unwrap();
+            } else {
+                client_io.write_all(&[0, 16]).await.unwrap();
+                client_io.write_all(&[0; 16]).await.unwrap();
+            }
+            drop(client_io);
+            let result = broker.receive().await;
+            if invalid_length {
+                assert!(matches!(result, Err(TransportError::Protocol(_))));
+            } else {
+                assert!(matches!(result, Err(TransportError::Crypto(_))));
+            }
+        }
     }
 
     #[tokio::test]

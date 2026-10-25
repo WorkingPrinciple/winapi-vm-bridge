@@ -520,6 +520,17 @@ mod tests {
         let expected = request(vec![0xa5; LOGICAL_MAX]);
         let messages = expected.messages().unwrap();
         assert_eq!(messages.len(), 18);
+        assert!(
+            messages
+                .iter()
+                .map(|message| message.payload.len())
+                .sum::<usize>()
+                > LOGICAL_MAX
+        );
+        assert!(matches!(
+            request(vec![0; LOGICAL_MAX + 1]).messages(),
+            Err(CallError::BoundExceeded)
+        ));
         let mut assembler = CallAssembler::default();
         let mut observed = None;
         for message in messages {
@@ -559,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn result_round_trips_and_validates_total() {
+    fn one_mebibyte_result_round_trips_with_separate_status_and_envelopes() {
         let expected = CallResult {
             response_schema_id: 0x4000_0007,
             operation_uuid: Some([8; 16]),
@@ -570,9 +581,22 @@ mod tests {
                 .unwrap()
                 .encode()
                 .unwrap(),
-            body: vec![9; CHUNK_MAX + 5],
+            body: vec![9; LOGICAL_MAX],
         };
         let messages = expected.messages().unwrap();
+        assert!(
+            messages
+                .iter()
+                .map(|message| message.payload.len())
+                .sum::<usize>()
+                > LOGICAL_MAX
+        );
+        let mut oversized = expected.clone();
+        oversized.body.push(9);
+        assert!(matches!(
+            oversized.messages(),
+            Err(CallError::BoundExceeded)
+        ));
         let mut assembler = ResultAssembler::default();
         let mut observed = None;
         for message in messages {

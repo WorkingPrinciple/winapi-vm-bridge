@@ -1,0 +1,37 @@
+{
+  "schema": "whiny.adapter-contract.v3",
+  "contract_id": "windows.kernel32.get_current_process_id",
+  "contract_version": "1.0.0",
+  "profile": "native-c-scalar-x64-v1",
+  "target": {
+    "family": "native-c-dll",
+    "architecture": "x86-64",
+    "relative_path": "target/kernel32.dll",
+    "sha256": "e132eba4166256e2f414b91fe7d5386590bc5ea8626aee5af9c9738383cf2ae1"
+  },
+  "dependencies": [],
+  "types": {
+    "u32": { "kind": "scalar", "encoding": "u32-le" }
+  },
+  "wire_schemas": [
+    { "id": 268500993, "size": 0, "fields": [] },
+    { "id": 268500994, "size": 4, "fields": [
+      { "name": "result", "type_id": "u32", "offset": 0 }
+    ] }
+  ],
+  "operations": [
+    {
+      "id": 1,
+      "name": "RemoteGetCurrentProcessId",
+      "entry": { "kind": "name", "value": "GetCurrentProcessId" },
+      "calling_convention": "win64",
+      "timeout_ms": 5000,
+      "request_schema_id": 268500993,
+      "response_schema_id": 268500994,
+      "parameters": [],
+      "result_type_id": "u32",
+      "managed": null
+    }
+  ],
+  "unsupported": ["pointers", "callbacks", "caller-visible exceptions"]
+}

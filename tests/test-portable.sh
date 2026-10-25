@@ -9,6 +9,7 @@ python3 -m unittest \
   tests.test_runtime_package_builder \
   tests.test_topology_benchmark \
   tests.test_windows_vm_acceptance \
+  tests.test_generated_call_driver \
   tests.test_whiny_pin
 
 cargo fmt --all -- --check
@@ -41,9 +42,9 @@ Path(sys.argv[1]).write_text(
     encoding="utf-8",
 )
 PY
-cargo run -q -p wvb-runtime -- init-state \
+cargo run -q -p wvb-runtime --features legacy-admin -- init-state \
   --state "$tmp/runtime-state.db" >/dev/null
-cargo run -q -p wvb-runtime -- doctor \
+cargo run -q -p wvb-runtime --features legacy-admin -- doctor \
   --state "$tmp/runtime-state.db" \
   --package-root "$tmp/runtime-package" \
   --receipt "$tmp/runtime-health.json" >/dev/null
@@ -66,11 +67,9 @@ fi
 python3 -c 'import json; from pathlib import Path; p=Path("setup/runtime-pins/windows-dotnet8-x64.json"); v=json.loads(p.read_text(encoding="utf-8")); assert v["version"]=="8.0.32"; assert v["rid"]=="win-x64"; assert len(v["runtime"]["sha256"])==64; assert len(v["runtime"]["sha512"])==128; assert len(v["nethostPackage"]["sha256"])==64; assert len(v["files"]["hostfxr"]["sha256"])==64; assert len(v["files"]["nethost"]["sha256"])==64'
 for script in \
   setup/provision_windows_dotnet_runtime.py \
-  setup/run_cross_platform_managed_e2e.py \
+  setup/run_generated_call.py \
   setup/build_windows_vm_acceptance.py \
   setup/run_utm_deploy.py \
-  setup/run_utm_scalar_e2e.py \
-  setup/run_utm_scalar_benchmark.py \
   setup/generate_windows_vm_evidence_manifest.py \
   setup/run_utm_acceptance.py \
   setup/generate_runtime_metadata.py \

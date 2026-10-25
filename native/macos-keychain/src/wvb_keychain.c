@@ -1,4 +1,5 @@
 #include "wvb_keychain.h"
+#include "wvb_unix_runtime.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
@@ -33,6 +34,36 @@ static CFMutableDictionaryRef query(CFStringRef account) {
   CFDictionarySetValue(value, kSecAttrAccount, account);
   CFRelease(service);
   return value;
+}
+
+int32_t wvb_keychain_create_runtime(const char *account_value,
+                                    const WvbKeychainRecordV1 *record) {
+  if (!wvb_runtime_account_valid(account_value) || !wvb_runtime_record_valid(record))
+    return WVB_KEYCHAIN_INVALID_ARGUMENT;
+  CFStringRef account = string(account_value);
+  CFMutableDictionaryRef match = account ? query(account) : NULL;
+  /* Borrow the caller's erasable record, rather than allocate a secret copy. */
+  CFDataRef data = CFDataCreateWithBytesNoCopy(
+      kCFAllocatorDefault, (const UInt8 *)record, sizeof(*record), kCFAllocatorNull);
+  if (!account || !match || !data) {
+    if (data) CFRelease(data);
+    if (match) CFRelease(match);
+    if (account) CFRelease(account);
+    return WVB_KEYCHAIN_OS_ERROR;
+  }
+  CFDictionarySetValue(match, kSecValueData, data);
+  CFDictionarySetValue(match, kSecAttrSynchronizable, kCFBooleanFalse);
+  /* C Security API compatibility: fail instead of authorizing an auth prompt. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  CFDictionarySetValue(match, kSecUseAuthenticationUI, kSecUseAuthenticationUIFail);
+#pragma clang diagnostic pop
+  const OSStatus status = SecItemAdd(match, NULL);
+  CFRelease(data);
+  CFRelease(match);
+  CFRelease(account);
+  if (status == errSecDuplicateItem) return WVB_KEYCHAIN_ALREADY_EXISTS;
+  return status == errSecSuccess ? WVB_KEYCHAIN_OK : WVB_KEYCHAIN_OS_ERROR;
 }
 
 int32_t wvb_keychain_store(const char *account_value, const uint8_t *data,

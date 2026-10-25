@@ -259,10 +259,16 @@ where
     let permits = Arc::new(Semaphore::new(max_concurrent));
     let (completed_sender, mut completed_receiver) = mpsc::channel(max_concurrent);
     let mut incoming = BTreeMap::<u32, IncomingCall>::new();
+    let mut pending_calls = 0_usize;
+    let mut completed_call = false;
     loop {
         tokio::select! {
             received = connection.receive() => {
-                let (envelope, payload) = received?;
+                let (envelope, payload) = match received {
+                    Err(TransportError::Closed)
+                        if completed_call && incoming.is_empty() && pending_calls == 0 => return Ok(()),
+                    other => other?,
+                };
                 let request = receive_call_frame(&mut incoming, &envelope, &payload)?;
                 if let Some(request) = request {
                     let completed = incoming.remove(&envelope.stream_id)
@@ -272,6 +278,7 @@ where
                     })?;
                     let sender = completed_sender.clone();
                     let handler = handler.clone();
+                    pending_calls += 1;
                     tokio::spawn(async move {
                         let response = handler.handle_call(request).await;
                         let _ = sender.send(CompletedCall {
@@ -288,6 +295,8 @@ where
             completed = completed_receiver.recv() => {
                 let Some(completed) = completed else { return Ok(()); };
                 send_call_result(&mut connection, completed).await?;
+                pending_calls -= 1;
+                completed_call = true;
             }
         }
     }
@@ -567,6 +576,207 @@ mod tests {
 
     struct Echo;
     struct EchoCall;
+    struct PendingSecondCall;
+
+    #[async_trait]
+    impl CallHandler for PendingSecondCall {
+        async fn handle_call(&self, request: CallRequest) -> Result<CallResult, BrokerError> {
+            if request.operation_id == 2 {
+                std::future::pending().await
+            } else {
+                EchoCall.handle_call(request).await
+            }
+        }
+    }
+
+    async fn send_test_call(
+        connection: &mut SecureConnection<tokio::io::DuplexStream>,
+        stream: u32,
+        operation: u32,
+        begin_only: bool,
+    ) -> usize {
+        let request = CallRequest {
+            adapter_hash: [3; 32],
+            operation_id: operation,
+            request_schema_id: 0x3000_0001,
+            deduplication_mode: 0,
+            idempotency_key: None,
+            disconnect_policy: 0,
+            sensitivity: 0,
+            body: vec![42],
+        };
+        let messages = request.messages().unwrap();
+        let count = messages.len();
+        for (index, message) in messages.into_iter().enumerate() {
+            let mut flags = EnvelopeFlags::REQUEST;
+            if index + 1 == count {
+                flags = flags | EnvelopeFlags::END_STREAM;
+            }
+            connection
+                .send(
+                    &Envelope {
+                        minor: 0,
+                        message_type: message.message_type as u16,
+                        flags,
+                        connection_epoch: 99,
+                        stream_id: stream,
+                        stream_sequence: u32::try_from(index).unwrap(),
+                        message_id: [1; 16],
+                        correlation_id: [0; 16],
+                        remaining_budget_ms: 1000,
+                        payload_length: u32::try_from(message.payload.len()).unwrap(),
+                    },
+                    &message.payload,
+                )
+                .await
+                .unwrap();
+            if begin_only {
+                break;
+            }
+        }
+        count
+    }
+
+    #[tokio::test]
+    async fn only_completed_calls_with_no_pending_work_allow_idle_disconnect() {
+        for case in 0..4 {
+            let (client_crypto, broker_crypto) = paired_transports();
+            let (client_io, broker_io) = duplex(64 * 1024);
+            let mut client = SecureConnection::new(client_io, client_crypto, 99);
+            let server = tokio::spawn(serve_calls(
+                SecureConnection::new(broker_io, broker_crypto, 99),
+                Arc::new(PendingSecondCall),
+                4,
+            ));
+            if case != 0 {
+                let count = send_test_call(&mut client, 1, 1, false).await;
+                for _ in 0..count {
+                    client.receive().await.unwrap();
+                }
+            }
+            if case >= 2 {
+                send_test_call(&mut client, 3, 2, case == 2).await;
+            }
+            client.close().await.unwrap();
+            let result = tokio::time::timeout(Duration::from_secs(2), server)
+                .await
+                .unwrap()
+                .unwrap();
+            if case == 1 {
+                assert!(result.is_ok(), "{result:?}");
+            } else {
+                assert!(
+                    matches!(result, Err(BrokerError::Transport(TransportError::Closed))),
+                    "{result:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn disconnect_cannot_succeed_while_completed_result_send_is_held() {
+        use std::pin::Pin;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::task::{Context, Poll};
+        use tokio::io::ReadBuf;
+        use tokio::sync::oneshot;
+
+        struct HeldResultIo {
+            io: tokio::io::DuplexStream,
+            hold: Arc<AtomicBool>,
+            blocked: Option<oneshot::Sender<()>>,
+            release: oneshot::Receiver<()>,
+        }
+
+        impl AsyncRead for HeldResultIo {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buffer: &mut ReadBuf<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.io).poll_read(cx, buffer)
+            }
+        }
+
+        impl AsyncWrite for HeldResultIo {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                bytes: &[u8],
+            ) -> Poll<std::io::Result<usize>> {
+                if self.hold.load(Ordering::SeqCst) {
+                    if let Some(blocked) = self.blocked.take() {
+                        blocked.send(()).unwrap();
+                    }
+                    if std::future::Future::poll(Pin::new(&mut self.release), cx).is_pending() {
+                        return Poll::Pending;
+                    }
+                    self.hold.store(false, Ordering::SeqCst);
+                }
+                Pin::new(&mut self.io).poll_write(cx, bytes)
+            }
+
+            fn poll_flush(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.io).poll_flush(cx)
+            }
+
+            fn poll_shutdown(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                Pin::new(&mut self.io).poll_shutdown(cx)
+            }
+        }
+
+        let (client_crypto, broker_crypto) = paired_transports();
+        let (client_io, broker_io) = duplex(64 * 1024);
+        let hold = Arc::new(AtomicBool::new(false));
+        let (blocked_sender, blocked) = oneshot::channel();
+        let (release, release_receiver) = oneshot::channel();
+        let broker_io = HeldResultIo {
+            io: broker_io,
+            hold: hold.clone(),
+            blocked: Some(blocked_sender),
+            release: release_receiver,
+        };
+        let mut client = SecureConnection::new(client_io, client_crypto, 99);
+        let server = tokio::spawn(serve_calls(
+            SecureConnection::new(broker_io, broker_crypto, 99),
+            Arc::new(EchoCall),
+            4,
+        ));
+        let count = send_test_call(&mut client, 1, 1, false).await;
+        for _ in 0..count {
+            client.receive().await.unwrap();
+        }
+        hold.store(true, Ordering::SeqCst);
+        send_test_call(&mut client, 3, 2, false).await;
+        tokio::time::timeout(Duration::from_secs(2), blocked)
+            .await
+            .unwrap()
+            .unwrap();
+        // The second handler has completed; its result send has entered AsyncWrite
+        // but cannot write even its first header byte until explicitly released.
+        client.close().await.unwrap();
+        assert!(!server.is_finished());
+        release.send(()).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                Err(BrokerError::Transport(TransportError::Io(ref error)))
+                    if error.kind() == std::io::ErrorKind::BrokenPipe
+            ),
+            "{result:?}"
+        );
+    }
+
     struct ScalarAdd;
     struct ProcessFixture {
         limits: Limits,

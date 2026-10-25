@@ -7,14 +7,40 @@ repository.workspace = true
 rust-version.workspace = true
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+cli = ["dep:clap", "dep:serde", "dep:serde_json", "dep:zeroize", "dep:ring", "dep:wvb-admission", "dep:wvb-authz", "dep:wvb-broker", "dep:wvb-integrity", "dep:wvb-native-host", "dep:wvb-transport"]
+
+[[bin]]
+name = "wvb"
+path = "src/bin/wvb.rs"
+required-features = ["cli"]
 
 [dependencies]
+clap = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+ring = { workspace = true, optional = true }
+wvb-admission = { path = "../wvb-admission", optional = true }
+wvb-authz = { path = "../wvb-authz", optional = true }
+wvb-broker = { path = "../wvb-broker", optional = true }
+wvb-integrity = { path = "../wvb-integrity", optional = true }
+wvb-native-host = { path = "../wvb-native-host", optional = true }
+wvb-transport = { path = "../wvb-transport", optional = true }
 tokio.workspace = true
 wvb-call = { path = "../wvb-call" }
 wvb-crypto = { path = "../wvb-crypto" }
 wvb-runtime = { path = "../wvb-runtime" }
 wvb-session = { path = "../wvb-session" }
+
+[dev-dependencies]
+async-trait.workspace = true
+tempfile.workspace = true
+serde_json.workspace = true
+wvb-broker = { path = "../wvb-broker" }
+wvb-transport = { path = "../wvb-transport" }
 
 [lints]
 workspace = true

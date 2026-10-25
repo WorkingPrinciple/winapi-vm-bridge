@@ -6,18 +6,26 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+legacy-admin = ["dep:clap", "dep:serde_json", "dep:wvb-state", "dep:wvb-operations", "dep:wvb-owner", "dep:wvb-package"]
+
+[[bin]]
+name = "wvb-runtime"
+path = "src/main.rs"
+required-features = ["legacy-admin"]
+
 [dependencies]
-clap.workspace = true
-serde_json.workspace = true
+clap = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 tokio.workspace = true
 wvb-call = { path = "../wvb-call" }
 wvb-client = { path = "../wvb-client" }
 wvb-crypto = { path = "../wvb-crypto" }
 wvb-session = { path = "../wvb-session" }
-wvb-state = { path = "../wvb-state" }
-wvb-operations = { path = "../wvb-operations" }
-wvb-owner = { path = "../wvb-owner" }
-wvb-package = { path = "../wvb-package" }
+wvb-state = { path = "../wvb-state", optional = true }
+wvb-operations = { path = "../wvb-operations", optional = true }
+wvb-owner = { path = "../wvb-owner", optional = true }
+wvb-package = { path = "../wvb-package", optional = true }
 wvb-transport = { path = "../wvb-transport" }
 
 [dev-dependencies]
