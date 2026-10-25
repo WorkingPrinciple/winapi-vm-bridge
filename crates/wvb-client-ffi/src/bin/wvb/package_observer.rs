@@ -73,6 +73,12 @@ pub(super) struct Plan {
     app_id: String,
     timeout_ms: u64,
     max_output_bytes: usize,
+    #[serde(default = "default_prevent_breakaway")]
+    prevent_breakaway: bool,
+}
+
+fn default_prevent_breakaway() -> bool {
+    true
 }
 
 fn hash_string(value: &str) -> bool {
@@ -508,6 +514,7 @@ mod tests {
             app_id: "Microsoft.Xbox.App".into(),
             timeout_ms: 5000,
             max_output_bytes: 4096,
+            prevent_breakaway: true,
         }
     }
 
@@ -781,8 +788,11 @@ mod tests {
         assert!(SCRIPT.contains("SessionId -ne 1"));
         assert!(SCRIPT.contains("WTSQuerySessionInformationW"));
         assert!(SCRIPT.contains("Get-SessionOneSid"));
-        assert!(SCRIPT.contains("Invoke-CommandInDesktopPackage -PackageFamilyName"));
-        assert!(SCRIPT.contains("-AppId $plan.app_id"));
+        assert!(SCRIPT.contains("Invoke-CommandInDesktopPackage @launch"));
+        assert!(SCRIPT.contains("AppId = $plan.app_id"));
+        assert!(
+            SCRIPT.contains("if ($plan.prevent_breakaway) { $launch.PreventBreakaway = $true }")
+        );
         assert!(SCRIPT.contains("--context "));
         assert!(SCRIPT.contains(" --out "));
         assert!(!SCRIPT.contains("-Password"));
@@ -803,6 +813,20 @@ mod tests {
         assert!(launcher_command(Path::new("relative")).is_err());
         assert!(SCRIPT.contains("-EncodedCommand"));
         assert!(!SCRIPT.contains("-NonInteractive -File"));
+        let mut legacy = serde_json::to_value(plan()).unwrap();
+        legacy.as_object_mut().unwrap().remove("prevent_breakaway");
+        assert!(
+            serde_json::from_value::<Plan>(legacy)
+                .unwrap()
+                .prevent_breakaway
+        );
+        let mut control = serde_json::to_value(plan()).unwrap();
+        control["prevent_breakaway"] = json!(false);
+        assert!(
+            !serde_json::from_value::<Plan>(control)
+                .unwrap()
+                .prevent_breakaway
+        );
     }
 
     #[cfg(not(windows))]

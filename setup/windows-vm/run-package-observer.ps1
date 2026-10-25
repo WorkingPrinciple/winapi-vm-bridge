@@ -134,13 +134,19 @@ if ($Worker) {
             worker_pid = $PID
             package_family_name = $plan.package_family_name
             app_id = $plan.app_id
-            prevent_breakaway = $true
+            prevent_breakaway = $plan.prevent_breakaway
             source = 'wrapper-declared launch parameters, not native claim-bit attestation'
         }
         [IO.File]::WriteAllText((Join-Path $Stage 'output\activation-control.json'),
             ($activation | ConvertTo-Json -Compress))
-        Invoke-CommandInDesktopPackage -PackageFamilyName $plan.package_family_name `
-            -AppId $plan.app_id -Command $observer -Args $arguments -PreventBreakaway | Out-Null
+        $launch = @{
+            PackageFamilyName = $plan.package_family_name
+            AppId = $plan.app_id
+            Command = $observer
+            Args = $arguments
+        }
+        if ($plan.prevent_breakaway) { $launch.PreventBreakaway = $true }
+        Invoke-CommandInDesktopPackage @launch | Out-Null
         $step = 'observer-output-wait'
         $deadline = [DateTime]::UtcNow.AddMilliseconds($plan.timeout_ms)
         while (-not (Test-Path -LiteralPath $output)) {
