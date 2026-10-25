@@ -356,3 +356,13 @@ AccessCheck evidence. Native `coremessaging.dll` SHA256 was
 `e770ec95d5bac814efd8b76f8c37caee2a6d05aa8f0fe57f7e14a29b5f513b16`.
 The artifact path/hash were delivered to the coordinator and Calimocho sessions;
 token/account contents are not committed to the repository.
+
+The requested query-only extension adds `TokenOwner`, `TokenPrimaryGroup` and
+the exact eight-byte `TokenSource` name plus source LUID. Its full native-token
+measurement is retained as `coremessaging-service-token-v2.json` (4972 bytes),
+SHA256 `25ccc6591c9738b7692a5d52edb4dce90be241a2cea15124be5b6e24b4580ec4`,
+linking the first measurement's hash. The service PID remained 1280. The
+collector added only `TOKEN_QUERY_SOURCE` access and made no service changes.
+The first wrapper receipt had empty stdout; a read-only reconciliation found
+the completed output, which was pulled and hash-verified without replay.
+The new path/hash were sent directly to Calimocho.
